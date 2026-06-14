@@ -3,6 +3,7 @@ import {
   IsEnum,
   IsInt,
   IsNotEmpty,
+  IsOptional,
   IsString,
   Max,
   Min,
@@ -34,9 +35,11 @@ export class EnvironmentVariables {
   @IsNotEmpty()
   SUPABASE_URL!: string;
 
+  // Opcional por ahora: las escrituras del bot usan Prisma con DATABASE_URL.
+  // Requerido sólo si se usa el cliente supabase-js con service_role.
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  SUPABASE_SERVICE_ROLE_KEY!: string;
+  SUPABASE_SERVICE_ROLE_KEY?: string;
 
   // --- WhatsApp Cloud API ---
   @IsString()
@@ -68,9 +71,10 @@ export class EnvironmentVariables {
   GEMINI_API_KEY!: string;
 
   // --- Infra ---
+  // Opcional hasta el paso 6 (cola BullMQ); el webhook funciona sin Redis.
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  REDIS_URL!: string;
+  REDIS_URL?: string;
 
   @IsInt()
   @Min(1)
