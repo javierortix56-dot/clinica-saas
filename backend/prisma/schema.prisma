@@ -2,11 +2,12 @@
 // migraciones SQL en supabase/migrations). NO usar `prisma migrate`.
 // Workflow oficial: aplicar migraciones en Supabase -> `prisma db pull` -> `prisma generate`.
 //
-// Este schema fue derivado A MANO desde supabase/migrations/0001-0003 (estado
-// final, incluidos los renombres de enum y columnas de la 0002), en el estilo
+// Este schema fue derivado A MANO desde supabase/migrations/0001-0005 (estado
+// final, incluidos los renombres de enum y columnas de la 0002, el catálogo
+// comercial de la 0004 y la sync de Google Calendar de la 0005), en el estilo
 // snake_case que produce `prisma db pull`, para que correr `db pull` contra la
 // base real no genere diff. Restricciones no representables por Prisma (EXCLUDE
-// gist de no-solape, índices únicos PARCIALES) viven en la BD y se anotan abajo.
+// gist de no-solape, CHECKs, índices únicos PARCIALES) viven en la BD y se anotan abajo.
 
 generator client {
   provider = "prisma-client-js"
@@ -65,6 +66,8 @@ model clinics {
   created_at       DateTime  @default(now()) @db.Timestamptz(6)
   updated_at       DateTime  @default(now()) @db.Timestamptz(6)
   deleted_at       DateTime? @db.Timestamptz(6)
+  currency         String    @default("ARS")
+  valuation_fee    Decimal?  @db.Decimal(12, 2)
 
   staff_members             staff_members[]
   professionals             professionals[]
@@ -80,6 +83,7 @@ model clinics {
   whatsapp_channels         whatsapp_channels[]
   conversations             conversations[]
   conversation_messages     conversation_messages[]
+  professional_calendar_links professional_calendar_links[]
 }
 
 model staff_members {
@@ -115,11 +119,12 @@ model professionals {
   staff_members staff_members @relation(fields: [staff_member_id], references: [id])
   clinics       clinics       @relation(fields: [clinic_id], references: [id])
 
-  treatments                treatments[]
-  appointments              appointments[]
-  professional_availability professional_availability[]
-  availability_exceptions   availability_exceptions[]
-  clinical_notes            clinical_notes[]
+  treatments                  treatments[]
+  appointments                appointments[]
+  professional_availability   professional_availability[]
+  availability_exceptions     availability_exceptions[]
+  clinical_notes              clinical_notes[]
+  professional_calendar_links professional_calendar_links?
 
   @@index([clinic_id])
 }
@@ -158,12 +163,16 @@ model treatment_types {
   created_at  DateTime  @default(now()) @db.Timestamptz(6)
   updated_at  DateTime  @default(now()) @db.Timestamptz(6)
   deleted_at  DateTime? @db.Timestamptz(6)
+  price_min   Decimal?  @db.Decimal(12, 2)
+  price_max   Decimal?  @db.Decimal(12, 2)
 
   clinics clinics @relation(fields: [clinic_id], references: [id])
 
   treatment_phase_templates treatment_phase_templates[]
   treatments                treatments[]
 
+  // NOTA: CHECK `chk_price_range` (price_max >= price_min) vive en Postgres;
+  //       Prisma no representa CHECK constraints.
   @@index([clinic_id])
 }
 
@@ -320,14 +329,19 @@ model availability_exceptions {
   kind            availability_exception_kind
   starts_at       DateTime                    @db.Timestamptz(6)
   ends_at         DateTime                    @db.Timestamptz(6)
-  reason          String?
-  created_at      DateTime                    @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime                    @default(now()) @db.Timestamptz(6)
-  deleted_at      DateTime?                   @db.Timestamptz(6)
+  reason            String?
+  created_at        DateTime                    @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime                    @default(now()) @db.Timestamptz(6)
+  deleted_at        DateTime?                   @db.Timestamptz(6)
+  source            String                      @default("manual")
+  external_event_id String?
 
   clinics       clinics       @relation(fields: [clinic_id], references: [id])
   professionals professionals @relation(fields: [professional_id], references: [id])
 
+  // NOTA: índice único PARCIAL `uq_exception_external` (professional_id, external_event_id)
+  //       WHERE external_event_id IS NOT NULL AND deleted_at IS NULL vive en Postgres
+  //       (evita reimportar el mismo evento de Google). Prisma no representa el predicado.
   @@index([professional_id, starts_at])
 }
 
@@ -410,4 +424,29 @@ model conversation_messages {
   //       WHERE wa_message_id IS NOT NULL vive en Postgres (idempotencia de
   //       webhooks de WhatsApp). Prisma no representa el predicado; sigue en la BD.
   @@index([conversation_id, created_at])
+}
+
+// -----------------------------------------------------------------------------
+// SINCRONIZACIÓN CON GOOGLE CALENDAR (0005)
+//   Tokens OAuth NO se guardan en claro: oauth_secret_ref apunta a Supabase Vault.
+// -----------------------------------------------------------------------------
+model professional_calendar_links {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinic_id          String    @db.Uuid
+  professional_id    String    @unique @db.Uuid
+  provider           String    @default("google")
+  source_calendar_id String?
+  target_calendar_id String?
+  sync_token         String?
+  oauth_secret_ref   String?
+  is_active          Boolean   @default(true)
+  last_synced_at     DateTime? @db.Timestamptz(6)
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at         DateTime? @db.Timestamptz(6)
+
+  clinics       clinics       @relation(fields: [clinic_id], references: [id])
+  professionals professionals @relation(fields: [professional_id], references: [id])
+
+  @@index([clinic_id])
 }
