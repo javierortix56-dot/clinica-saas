@@ -1,0 +1,413 @@
+// Prisma — solo introspecta el esquema existente (fuente de verdad: las
+// migraciones SQL en supabase/migrations). NO usar `prisma migrate`.
+// Workflow oficial: aplicar migraciones en Supabase -> `prisma db pull` -> `prisma generate`.
+//
+// Este schema fue derivado A MANO desde supabase/migrations/0001-0003 (estado
+// final, incluidos los renombres de enum y columnas de la 0002), en el estilo
+// snake_case que produce `prisma db pull`, para que correr `db pull` contra la
+// base real no genere diff. Restricciones no representables por Prisma (EXCLUDE
+// gist de no-solape, índices únicos PARCIALES) viven en la BD y se anotan abajo.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// -----------------------------------------------------------------------------
+// ENUMS (estado final tras 0002: owner->admin, professional->doctor)
+// -----------------------------------------------------------------------------
+enum user_role {
+  admin
+  doctor
+  reception
+}
+
+enum appointment_status {
+  proposed
+  confirmed
+  in_progress
+  completed
+  cancelled
+  no_show
+}
+
+enum treatment_status {
+  planned
+  in_progress
+  completed
+  cancelled
+}
+
+enum phase_kind {
+  clinical
+  lab_wait
+}
+
+enum availability_exception_kind {
+  block
+  extra
+}
+
+// -----------------------------------------------------------------------------
+// TENANT + STAFF + PACIENTES
+// -----------------------------------------------------------------------------
+model clinics {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name             String
+  timezone         String    @default("America/Argentina/Buenos_Aires")
+  prime_time_start DateTime  @default(dbgenerated("'17:00:00'::time without time zone")) @db.Time(6)
+  prime_time_end   DateTime  @default(dbgenerated("'20:00:00'::time without time zone")) @db.Time(6)
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at       DateTime? @db.Timestamptz(6)
+
+  staff_members             staff_members[]
+  professionals             professionals[]
+  patients                  patients[]
+  treatment_types           treatment_types[]
+  treatment_phase_templates treatment_phase_templates[]
+  technology_modifiers      technology_modifiers[]
+  treatments                treatments[]
+  appointments              appointments[]
+  professional_availability professional_availability[]
+  availability_exceptions   availability_exceptions[]
+  clinical_notes            clinical_notes[]
+  whatsapp_channels         whatsapp_channels[]
+  conversations             conversations[]
+  conversation_messages     conversation_messages[]
+}
+
+model staff_members {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  auth_user_id String    @unique @db.Uuid
+  clinic_id    String    @db.Uuid
+  role         user_role
+  full_name    String
+  email        String?
+  is_active    Boolean   @default(true)
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at   DateTime? @db.Timestamptz(6)
+
+  clinics       clinics        @relation(fields: [clinic_id], references: [id])
+  professionals professionals?
+
+  @@index([clinic_id])
+}
+
+model professionals {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  staff_member_id  String    @unique @db.Uuid
+  clinic_id        String    @db.Uuid
+  license_number   String?
+  specialties      String[]  @default([])
+  prime_time_start DateTime  @default(dbgenerated("'17:00:00'::time without time zone")) @db.Time(6)
+  prime_time_end   DateTime  @default(dbgenerated("'20:00:00'::time without time zone")) @db.Time(6)
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at       DateTime? @db.Timestamptz(6)
+
+  staff_members staff_members @relation(fields: [staff_member_id], references: [id])
+  clinics       clinics       @relation(fields: [clinic_id], references: [id])
+
+  treatments                treatments[]
+  appointments              appointments[]
+  professional_availability professional_availability[]
+  availability_exceptions   availability_exceptions[]
+  clinical_notes            clinical_notes[]
+
+  @@index([clinic_id])
+}
+
+model patients {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinic_id   String    @db.Uuid
+  national_id String
+  full_name   String
+  phone       String?
+  birth_date  DateTime? @db.Date
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at  DateTime? @db.Timestamptz(6)
+
+  clinics clinics @relation(fields: [clinic_id], references: [id])
+
+  treatments     treatments[]
+  appointments   appointments[]
+  clinical_notes clinical_notes[]
+  conversations  conversations[]
+
+  @@unique([clinic_id, national_id], map: "uq_patient_national_id")
+  @@index([clinic_id])
+}
+
+// -----------------------------------------------------------------------------
+// CATÁLOGO
+// -----------------------------------------------------------------------------
+model treatment_types {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinic_id   String    @db.Uuid
+  name        String
+  description String?
+  is_active   Boolean   @default(true)
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at  DateTime? @db.Timestamptz(6)
+
+  clinics clinics @relation(fields: [clinic_id], references: [id])
+
+  treatment_phase_templates treatment_phase_templates[]
+  treatments                treatments[]
+
+  @@index([clinic_id])
+}
+
+model treatment_phase_templates {
+  id                String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinic_id         String     @db.Uuid
+  treatment_type_id String     @db.Uuid
+  sequence_order    Int
+  name              String
+  phase_kind        phase_kind
+  duration_minutes  Int?
+  cooldown_days     Int        @default(0)
+  created_at        DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime   @default(now()) @db.Timestamptz(6)
+  deleted_at        DateTime?  @db.Timestamptz(6)
+
+  clinics         clinics         @relation(fields: [clinic_id], references: [id])
+  treatment_types treatment_types @relation(fields: [treatment_type_id], references: [id])
+
+  appointments appointments[]
+
+  @@unique([treatment_type_id, sequence_order], map: "uq_phase_order")
+  @@index([treatment_type_id])
+}
+
+model technology_modifiers {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinic_id     String    @db.Uuid
+  name          String
+  extra_minutes Int       @default(0)
+  is_active     Boolean   @default(true)
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at    DateTime? @db.Timestamptz(6)
+
+  clinics clinics @relation(fields: [clinic_id], references: [id])
+
+  appointment_modifiers appointment_modifiers[]
+
+  @@index([clinic_id])
+}
+
+// -----------------------------------------------------------------------------
+// INSTANCIAS OPERATIVAS
+// -----------------------------------------------------------------------------
+model treatments {
+  id                      String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinic_id               String           @db.Uuid
+  patient_id              String           @db.Uuid
+  treatment_type_id       String           @db.Uuid
+  primary_professional_id String?          @db.Uuid
+  status                  treatment_status @default(planned)
+  created_at              DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime         @default(now()) @db.Timestamptz(6)
+  deleted_at              DateTime?        @db.Timestamptz(6)
+
+  clinics         clinics         @relation(fields: [clinic_id], references: [id])
+  patients        patients        @relation(fields: [patient_id], references: [id])
+  treatment_types treatment_types @relation(fields: [treatment_type_id], references: [id])
+  professionals   professionals?  @relation(fields: [primary_professional_id], references: [id])
+
+  appointments   appointments[]
+  clinical_notes clinical_notes[]
+
+  @@index([clinic_id])
+  @@index([patient_id])
+}
+
+model appointments {
+  id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinic_id         String             @db.Uuid
+  treatment_id      String?            @db.Uuid
+  phase_template_id String?            @db.Uuid
+  patient_id        String             @db.Uuid
+  professional_id   String             @db.Uuid
+  start_at          DateTime           @db.Timestamptz(6)
+  end_at            DateTime           @db.Timestamptz(6)
+  status            appointment_status @default(proposed)
+  origin            String             @default("staff")
+  created_at        DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime           @default(now()) @db.Timestamptz(6)
+  deleted_at        DateTime?          @db.Timestamptz(6)
+
+  clinics                   clinics                    @relation(fields: [clinic_id], references: [id])
+  treatments                treatments?                @relation(fields: [treatment_id], references: [id])
+  treatment_phase_templates treatment_phase_templates? @relation(fields: [phase_template_id], references: [id])
+  patients                  patients                   @relation(fields: [patient_id], references: [id])
+  professionals             professionals              @relation(fields: [professional_id], references: [id])
+
+  appointment_modifiers appointment_modifiers[]
+
+  @@index([clinic_id])
+  @@index([professional_id, start_at])
+  @@index([treatment_id])
+  @@index([patient_id])
+}
+
+model appointment_modifiers {
+  appointment_id         String @db.Uuid
+  technology_modifier_id String @db.Uuid
+  applied_extra_minutes  Int
+
+  appointments         appointments         @relation(fields: [appointment_id], references: [id])
+  technology_modifiers technology_modifiers @relation(fields: [technology_modifier_id], references: [id])
+
+  @@id([appointment_id, technology_modifier_id])
+}
+
+// -----------------------------------------------------------------------------
+// AUDITORÍA (append-only; sin FK a clinics — clinic_id es uuid plano)
+// -----------------------------------------------------------------------------
+model audit_logs {
+  id          BigInt    @id @default(autoincrement())
+  clinic_id   String?   @db.Uuid
+  table_name  String
+  record_id   String?   @db.Uuid
+  action      String
+  actor_id    String?   @db.Uuid
+  actor_role  String?
+  source      String?
+  old_data    Json?
+  new_data    Json?
+  occurred_at DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([clinic_id, table_name, record_id])
+}
+
+// -----------------------------------------------------------------------------
+// DISPONIBILIDAD + EXCEPCIONES + FICHA CLÍNICA (0002)
+// -----------------------------------------------------------------------------
+model professional_availability {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinic_id       String    @db.Uuid
+  professional_id String    @db.Uuid
+  weekday         Int       @db.SmallInt
+  start_time      DateTime  @db.Time(6)
+  end_time        DateTime  @db.Time(6)
+  effective_from  DateTime  @default(dbgenerated("CURRENT_DATE")) @db.Date
+  effective_to    DateTime? @db.Date
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at      DateTime? @db.Timestamptz(6)
+
+  clinics       clinics       @relation(fields: [clinic_id], references: [id])
+  professionals professionals @relation(fields: [professional_id], references: [id])
+
+  @@index([professional_id, weekday])
+}
+
+model availability_exceptions {
+  id              String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinic_id       String                      @db.Uuid
+  professional_id String                      @db.Uuid
+  kind            availability_exception_kind
+  starts_at       DateTime                    @db.Timestamptz(6)
+  ends_at         DateTime                    @db.Timestamptz(6)
+  reason          String?
+  created_at      DateTime                    @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime                    @default(now()) @db.Timestamptz(6)
+  deleted_at      DateTime?                   @db.Timestamptz(6)
+
+  clinics       clinics       @relation(fields: [clinic_id], references: [id])
+  professionals professionals @relation(fields: [professional_id], references: [id])
+
+  @@index([professional_id, starts_at])
+}
+
+model clinical_notes {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinic_id    String    @db.Uuid
+  patient_id   String    @db.Uuid
+  treatment_id String?   @db.Uuid
+  author_id    String    @db.Uuid
+  note_type    String
+  body         String
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at   DateTime? @db.Timestamptz(6)
+
+  clinics       clinics       @relation(fields: [clinic_id], references: [id])
+  patients      patients      @relation(fields: [patient_id], references: [id])
+  treatments    treatments?   @relation(fields: [treatment_id], references: [id])
+  professionals professionals @relation(fields: [author_id], references: [id])
+
+  @@index([clinic_id, patient_id])
+}
+
+// -----------------------------------------------------------------------------
+// ESTADO CONVERSACIONAL DEL BOT (0003)
+// -----------------------------------------------------------------------------
+model whatsapp_channels {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinic_id       String    @db.Uuid
+  phone_number_id String    @unique
+  display_number  String?
+  is_active       Boolean   @default(true)
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at      DateTime? @db.Timestamptz(6)
+
+  clinics clinics @relation(fields: [clinic_id], references: [id])
+
+  @@index([clinic_id])
+}
+
+model conversations {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinic_id       String    @db.Uuid
+  contact_phone   String
+  patient_id      String?   @db.Uuid
+  status          String    @default("active")
+  current_intent  String?
+  context         Json      @default("{}")
+  last_message_at DateTime? @db.Timestamptz(6)
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at      DateTime? @db.Timestamptz(6)
+
+  clinics  clinics   @relation(fields: [clinic_id], references: [id])
+  patients patients? @relation(fields: [patient_id], references: [id])
+
+  conversation_messages conversation_messages[]
+
+  // NOTA: índice único PARCIAL `uq_active_conversation` (clinic_id, contact_phone)
+  //       WHERE status='active' AND deleted_at IS NULL vive en Postgres. Prisma no
+  //       representa predicados parciales; sigue vigente y se aplica en la BD.
+  @@index([clinic_id, patient_id])
+}
+
+model conversation_messages {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinic_id       String   @db.Uuid
+  conversation_id String   @db.Uuid
+  role            String
+  content         String?
+  tool_calls      Json?
+  wa_message_id   String?
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  clinics       clinics       @relation(fields: [clinic_id], references: [id])
+  conversations conversations @relation(fields: [conversation_id], references: [id])
+
+  // NOTA: índice único PARCIAL `uq_wa_message` (clinic_id, wa_message_id)
+  //       WHERE wa_message_id IS NOT NULL vive en Postgres (idempotencia de
+  //       webhooks de WhatsApp). Prisma no representa el predicado; sigue en la BD.
+  @@index([conversation_id, created_at])
+}
