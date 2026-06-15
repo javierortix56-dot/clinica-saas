@@ -1,9 +1,14 @@
 import { Module } from '@nestjs/common';
+import { ConsultarCatalogoHandler } from './handlers/consultar-catalogo.handler';
+import { ConsultarPoliticasHandler } from './handlers/consultar-politicas.handler';
 
 /**
- * CatalogModule — funciones de lectura del catálogo (`consultar_catalogo`,
- * tipos de tratamiento, modificadores, etc.).
- * (Esqueleto: sin implementación todavía.)
+ * CatalogModule — handlers de tools de catálogo/políticas: `consultar_catalogo`
+ * y `consultar_politicas_clinica` (sintetizado de columnas/triggers).
+ * Exporta los handlers para que `AiModule` arme el registro `TOOL_HANDLERS`.
  */
-@Module({})
+@Module({
+  providers: [ConsultarCatalogoHandler, ConsultarPoliticasHandler],
+  exports: [ConsultarCatalogoHandler, ConsultarPoliticasHandler],
+})
 export class CatalogModule {}

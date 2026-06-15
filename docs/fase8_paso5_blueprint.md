@@ -166,6 +166,20 @@ Las tools traducen fallos de la BD a `error_code` estables, leyendo
 | `AMBIGUOUS_TREATMENT` | Lógica del handler | `>1` tratamiento activo del mismo tipo (§5.H · C2) |
 | `NO_SLOTS` | Lógica del handler | `proponer_turnos` sin resultados en la ventana (§5.E · B7) |
 | `NOT_CONFIGURED` | Lógica del handler | Dato de política inexistente para el `tema` pedido |
+| `INTERNAL_ERROR` | **Cualquier SQLSTATE no mapeado** | Fallo inesperado: incluye `42501 insufficient_privilege` si una query golpea el REVOKE de `clinical_notes` |
+
+**Regla de no-filtración (defensa en profundidad del §A1):** los `error_code` de
+negocio llevan mensajes legibles para el modelo, pero **un error no mapeado nunca
+expone el mensaje crudo de Postgres** al `ToolResult`. En particular, un
+`42501 insufficient_privilege` contra `clinical_notes` (que por diseño no debería
+ocurrir, ya que ningún handler la consulta) cae a
+`{ ok:false, error_code:'INTERNAL_ERROR', message:'<texto genérico>' }`. El
+detalle real (incluido cualquier nombre de tabla) va **solo al log del servidor**;
+así el modelo no puede inferir que `clinical_notes` existe o tiene datos para ese
+paciente. Esto **corrige** el `catch` del Paso 4, que devolvía `err.message`
+directo en `TOOL_EXECUTION_ERROR`: en Paso 5 el `catch` genérico de
+`ToolExecutorService` (y del mapper) loguea el error real y devuelve un mensaje
+sanitizado.
 
 Implementación: las funciones plpgsql `raise exception` sin SQLSTATE custom caen
 en `P0001` (`raise_exception`); cuando varios triggers comparten `P0001`, se

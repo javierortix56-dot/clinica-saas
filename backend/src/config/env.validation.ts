@@ -75,6 +75,11 @@ export class EnvironmentVariables {
   @IsString()
   GEMINI_MODEL?: string;
 
+  // Colchón de adyacencia para proponer_turnos (minutos). Opcional; default 5.
+  @IsOptional()
+  @IsString()
+  SCHEDULING_ADJACENCY_BUFFER_MIN?: string;
+
   // --- Infra ---
   // Opcional hasta el paso 6 (cola BullMQ); el webhook funciona sin Redis.
   @IsOptional()
