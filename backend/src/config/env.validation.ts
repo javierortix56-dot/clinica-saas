@@ -1,4 +1,4 @@
-import { plainToInstance } from 'class-transformer';
+import { plainToInstance, Type } from 'class-transformer';
 import {
   IsEnum,
   IsInt,
@@ -76,6 +76,7 @@ export class EnvironmentVariables {
   @IsString()
   REDIS_URL?: string;
 
+  @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(65535)
