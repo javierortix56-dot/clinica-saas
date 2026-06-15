@@ -132,6 +132,18 @@ export class WhatsappIncomingProcessor extends WorkerHost {
     });
 
     // D4 — persistir el turno completo (incluye el mensaje del usuario con wa_id).
+    //
+    // ORDEN DELIBERADO (B1): persistir ANTES de enviar. El `wa_message_id` que se
+    // graba acá es la marca de idempotencia que lee `isAlreadyProcessed`.
+    //  - Crash ANTES de este insert → el retry no encuentra la marca → reprocesa
+    //    el turno completo (las acciones aún no se ejecutaron de forma persistida).
+    //  - Crash DESPUÉS de este insert (incluida la ventana entre persistir y
+    //    enviar) → el retry encuentra la marca y aborta: NO se re-ejecuta el loop
+    //    ni se manda un segundo mensaje. El costo es que la respuesta de ESE turno
+    //    puede no llegar (entrega perdida) — trade-off elegido: priorizar
+    //    no-duplicar (acciones de tools y mensajes al paciente) sobre garantía de
+    //    entrega. Como el envío va DESPUÉS, nunca ocurre "respondí pero no quedó
+    //    registrado → retry duplica el mensaje".
     await this.conversation.persistTurn(
       clinicId,
       conv.id,

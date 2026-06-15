@@ -174,9 +174,12 @@ lock se toma **antes** de cualquier query.
 2. **Routing** (D1): `clinic_id` desde `whatsapp_channels` por `phone_number_id`
    (is_active, deleted_at null). Desconocido → log + return (no reintentar).
 3. **Conversación** (D2): activa por `(clinic_id, contact_phone)`; crear si no hay.
-4. **Dedup BD** (B1): insertar el mensaje del usuario en `conversation_messages`
-   con `wa_message_id`. Si viola `uq_wa_message` (ya procesado) → return idempotente.
-5. **Historial** (D3): `loadHistory(conv)` → `LlmMessage[]` en **formato neutro**:
+4. **Dedup BD** (B1): pre-check `isAlreadyProcessed(clinic, wa_message_id)`. El
+   mensaje del usuario se persiste **al final** del turno (paso 9), no acá, así que
+   su presencia implica que el turno **se completó**. Si existe → return
+   idempotente.
+5. **Historial** (D3): `loadHistory(conv)` → `LlmMessage[]` en **formato neutro**
+   (excluye el mensaje actual, todavía no persistido):
    - `role='user'|'assistant'` con `content`.
    - `role='assistant'` con `tool_calls` jsonb = `LlmToolCall[]` (`{id,name,args}`).
    - `role='tool'` con `content` = JSON del resultado y `tool_calls` jsonb =
@@ -186,9 +189,19 @@ lock se toma **antes** de cualquier query.
 6. **System prompt** (E1): `SystemPromptService.build(clinic)` mínimo.
 7. **ctx** (F1): `{ conversationId, clinicId, actor: { actorId: BOT_ACTOR_ID, source: 'whatsapp_bot' }, patientId: conv.patient_id ?? undefined }`.
 8. **Loop**: `runTurn({ ctx, history, system, incomingMessage: text })`.
-9. **Persistencia** (D4): guardar **todos** los `newMessages` (excepto el mensaje
-   de usuario ya insertado en el paso 4) en `conversation_messages`, en formato
-   neutro. Actualizar `conversations.last_message_at`.
+9. **Persistencia atómica** (D4): guardar **todos** los `newMessages` (incluido el
+   mensaje del usuario, único `role:'user'`, que lleva el `wa_message_id`) en un
+   `createMany`. Actualizar `conversations.last_message_at`.
+   > **Orden persistir → enviar (semántica de crash, B1).** Persistir va ANTES del
+   > envío (paso 11). El `wa_message_id` grabado acá es la marca de idempotencia:
+   > - Crash **antes** de este insert → el retry no halla la marca → reprocesa el
+   >   turno completo (caso de crash temprano).
+   > - Crash **después** de este insert (incluida la ventana entre persistir y
+   >   enviar) → el retry halla la marca y **aborta**: NO re-ejecuta el loop ni
+   >   manda un segundo mensaje. Costo: la respuesta de ese turno puede no llegar
+   >   (entrega perdida). Trade-off elegido: **no-duplicar** acciones de tools ni
+   >   mensajes al paciente por sobre la garantía de entrega. Como el envío va
+   >   después, **nunca** ocurre "respondí pero no quedó registrado → retry duplica".
 10. **patient_id** (D5): inspeccionar los resultados de tools en `newMessages`:
     - Si `buscar_paciente_por_dni`/`registrar_paciente` devolvió `ok` con un
       `patient_id` y `conv.patient_id` es null → fijarlo (`update conversations`).
@@ -215,9 +228,11 @@ desconocido (D1) **no** se reintentan (no son transitorios).
 `runAsBot` con `BOT_ACTOR_ID`):
 - `route(phoneNumberId): clinicId | null`
 - `resolveConversation(clinicId, contactPhone): conversation` (find active or create)
+- `isAlreadyProcessed(clinicId, waMessageId): boolean` (B1 pre-check; la marca la
+  graba `persistTurn` al final del turno)
 - `loadHistory(conversationId): LlmMessage[]` (mapeo neutro D3)
-- `persistTurn(conversation, newMessages, waMessageId)` (D4; idempotencia B1 en el
-  mensaje de usuario)
+- `persistTurn(clinicId, conversationId, newMessages, waMessageId)` (D4; persistencia
+  atómica del turno completo, el mensaje de usuario lleva el `wa_message_id`)
 - `setPatientIfUnset(conversationId, patientId): { set: boolean; discrepancy: boolean }` (D5)
 - `markHandedOff(conversationId)`
 
