@@ -350,3 +350,19 @@ No (Paso 6+):
 | `using errcode` custom en triggers | Hoy se distingue por SQLSTATE/constraint/pre-check | Migración que toque las funciones plpgsql |
 | Multi-profesional en `proponer_turnos` sin `professional_id` | MVP opera con 1 profesional activo | Filtro por `specialties` o tabla de capacidades profesional↔tratamiento |
 | Continuación día-siguiente vía bot (excepción cool-down) | Hoy la hace el staff directo en el panel | Definir regla de excepción y cómo el bot la invoca |
+
+---
+
+## 9. Pendiente bloqueante para el Paso 7
+
+**Pre-Paso 7 — agregar jest + tests unitarios** de:
+- **resolución de fase / cool-down (B4):** próxima fase clínica pendiente derivada
+  de `appointments` y cálculo de `minStart` por cool-down acumulado
+  (`SchedulingService.cooldownConstraint` / `ProponerTurnosHandler.resolveTarget`).
+- **slot-ranking (B1):** orden por adyacencia + colchón (`rankSlots` /
+  `nearestGapMinutes`).
+
+Con **Prisma mockeado** (sin BD), para fijar la lógica pura antes de la prueba
+end-to-end del Escenario 2. En el Paso 5 estas piezas se verificaron solo con
+smoke tests throwaway; este punto deja el runner y los tests formales como
+prerequisito del Paso 7.
