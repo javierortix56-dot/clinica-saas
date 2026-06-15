@@ -38,7 +38,7 @@ errores y handoff manejados. Prueba end-to-end real del Escenario 2: Paso 7.
 | A1 | Deps | `bullmq` + `ioredis`; `REDIS_URL` **requerido** cuando el worker está activo |
 | A2 | Integración | `@nestjs/bullmq` (oficial) |
 | A3 | Proceso | MVP **mismo proceso** (webhook + worker en el `AppModule`), pero el worker **desacoplado del ciclo de vida del webhook**: separarlo a `worker.ts` después debe ser mover un entrypoint, no refactorizar |
-| A4 | Orden / concurrencia | **Serializar por conversación, paralelizar entre conversaciones** vía **mutex por clave en Redis** (no concurrencia 1 global). Clave = `phone_number_id:contact_phone` |
+| A4 | Orden / concurrencia | **Serializar por conversación, paralelizar entre conversaciones** vía **mutex por clave en Redis** (no concurrencia 1 global). Clave = `phone_number_id:contact_phone`. Contención → **reencolado diferido** (sin consumir `attempts`); lock con **heartbeat** de renovación + TTL como red ante worker muerto |
 | A5 | Reintentos | `attempts: 3` + backoff exponencial; al agotar → **fallback genérico al paciente** + log |
 | B1 | Idempotencia | Doble capa: `jobId = wa_message_id` (al encolar) + índice `uq_wa_message` (al insertar el mensaje del usuario) |
 | C1 | Parsing | Extraer `value.metadata.phone_number_id`, `messages[].from/id/type/text.body` |
@@ -108,13 +108,31 @@ conversaciones distintas **sí** deben correr en paralelo. BullMQ OSS no tiene
 - Al tomar un job, el processor intenta `SET lock:wa:<phone_number_id>:<contact_phone> <token> NX PX <ttl>`.
   - **Lock adquirido** → procesa; libera en `finally` (solo si el token coincide,
     vía script Lua, para no liberar el lock de otro).
-  - **Lock NO adquirido** (otra mensaje de esa misma conversación en vuelo) →
-    lanzar un error retryable: BullMQ reintenta con backoff; el job se difiere y
-    se reintenta cuando el lock se libere. Así se **serializa por conversación** y
-    se **paraliza entre** conversaciones.
-- TTL del lock > tiempo máximo razonable de un turno (incluye latencia del LLM);
-  p.ej. 60s, renovable si hiciera falta. El TTL evita locks colgados si el worker
-  muere.
+  - **Lock NO adquirido** (otro mensaje de esa misma conversación en vuelo) →
+    **reencolar el MISMO job diferido** (`job.moveToDelayed(now + QUEUE_CONTENTION_DELAY_MS)`
+    + lanzar `DelayedError`), NO esperar bloqueando el slot del worker. Diferir
+    **no consume `attempts`** (no es un fallo de procesamiento; es contención): el
+    job vuelve a `delayed` y se reintenta cuando el lock se libere. Así se
+    **serializa por conversación** y se **paraliza entre** conversaciones.
+  - **Tope de diferimientos**: se cuenta el nº de diferimientos en `job.data`
+    (`deferrals`) con cap `ceil(QUEUE_LOCK_TTL_MS / QUEUE_CONTENTION_DELAY_MS) + N`.
+    Si se supera (no debería: ver dead-holder) → tratar como fallo → dispara A5
+    (fallback genérico). El segundo mensaje **nunca** queda atascado sin salida.
+
+### TTL del lock + extensión (renovación)
+
+- `QUEUE_LOCK_TTL_MS` **default 120000** (2 min): margen sobre el peor caso de un
+  turno = `MAX_TOOL_ROUNDS` (8) × latencia de Gemini por ronda (~10s) + queries de
+  tools ≈ 80s. El TTL **no** corre contra el reloj de un turno largo:
+- **Lock extension (heartbeat):** mientras el job está vivo, un timer renueva el
+  lock cada `QUEUE_LOCK_TTL_MS / 3` (PEXPIRE con check de token vía Lua). Un turno
+  legítimamente lento (LLM lento, 8 rondas) **no pierde** el lock a mitad de
+  camino. El timer se cancela en el `finally` junto con la liberación.
+- El TTL sigue siendo la **red de seguridad ante worker muerto** (A5): si el
+  proceso que tiene el lock muere, deja de renovar y el lock **expira solo** a los
+  ≤ `QUEUE_LOCK_TTL_MS`. El segundo mensaje (diferido) adquiere el lock dentro de
+  ~TTL y **procesa normalmente** — no se queda colgado ni necesita el fallback.
+  Solo si incluso tras la expiración el procesamiento real falla 3× aplica A5.
 
 Clave = `phone_number_id:contact_phone` (no `conversation_id`): el
 `phone_number_id` mapea 1:1 a la clínica y está en el payload **sin** consultar la
@@ -150,7 +168,9 @@ lock se toma **antes** de cualquier query.
 
 `WhatsappIncomingProcessor.process(job)` con `job.data = { phoneNumberId, contactPhone, waMessageId, text }`:
 
-1. **Lock** (A4): si no se adquiere, lanzar retryable.
+1. **Lock** (A4): adquirir el mutex; si no se adquiere → `moveToDelayed` + `DelayedError`
+   (reencolado sin consumir `attempts`); si se adquiere → arrancar el heartbeat de
+   renovación y liberar+cancelar en el `finally`.
 2. **Routing** (D1): `clinic_id` desde `whatsapp_channels` por `phone_number_id`
    (is_active, deleted_at null). Desconocido → log + return (no reintentar).
 3. **Conversación** (D2): activa por `(clinic_id, contact_phone)`; crear si no hay.
@@ -213,10 +233,11 @@ desconocido (D1) **no** se reintentan (no son transitorios).
 ## 7. Variables de entorno nuevas
 
 ```
-REDIS_URL=                 # ahora REQUERIDO (cola + locks)
-BOT_ACTOR_ID=              # uuid fijo del bot (auditoría runAsBot)
-QUEUE_CONCURRENCY=5        # opcional; concurrencia global del worker
-QUEUE_LOCK_TTL_MS=60000    # opcional; TTL del mutex por conversación
+REDIS_URL=                   # ahora REQUERIDO (cola + locks)
+BOT_ACTOR_ID=                # uuid fijo del bot (auditoría runAsBot)
+QUEUE_CONCURRENCY=5          # opcional; concurrencia global del worker
+QUEUE_LOCK_TTL_MS=120000     # opcional; TTL del mutex (margen sobre peor caso); se renueva por heartbeat
+QUEUE_CONTENTION_DELAY_MS=1000  # opcional; delay de reencolado al perder el lock
 ```
 
 ---
@@ -263,8 +284,7 @@ No (Paso 7+):
 
 | Deuda | Por qué se difiere | Requiere |
 |---|---|---|
-| FIFO estricto por conversación | Mutex da serialización best-effort; suficiente para MVP | BullMQ Pro Groups o cola por-conversación |
+| FIFO estricto por conversación | Mutex da serialización (no-concurrencia) pero **no orden**. Cubre dos casos: (a) sin orden global entre conversaciones distintas; (b) **el reencolado bajo contención puede reordenar mensajes de la MISMA conversación** — si B pierde el lock y se difiere, C (posterior) podría tomarlo antes del reintento de B. Aceptable para MVP (mensajes del mismo usuario llegan espaciados) | BullMQ Pro Groups o cola por-conversación con orden FIFO |
 | Respuesta a no-texto (audio/imagen/interactive) | MVP text-only | Manejo de tipos + transcripción/branching |
 | Persona y flujos completos del prompt | Mínimo viable en Paso 6 | Paso 7 (Escenario 1/2) |
 | Worker en proceso separado (`worker.ts`) | MVP mismo proceso (ya desacoplado) | Nuevo entrypoint + config de despliegue |
-| Renovación de lock para turnos largos | TTL fijo cubre el caso normal | Heartbeat/extend del lock durante el turno |
