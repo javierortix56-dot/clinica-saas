@@ -81,6 +81,12 @@ export class EnvironmentVariables {
   @Min(1)
   @Max(65535)
   PORT = 3000;
+
+  // Diagnóstico: 'true' fuerza a Prisma a conectarse por DIRECT_URL (ver
+  // PrismaService). Opcional; ausente/'false' => operación normal por el pooler.
+  @IsOptional()
+  @IsString()
+  PRISMA_USE_DIRECT_URL?: string;
 }
 
 export function validate(

@@ -4,6 +4,7 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma, PrismaClient } from '@prisma/client';
 
 /**
@@ -56,6 +57,27 @@ export class PrismaService
   implements OnModuleInit, OnModuleDestroy
 {
   private readonly logger = new Logger(PrismaService.name);
+
+  constructor(config: ConfigService) {
+    // DIAGNÓSTICO TEMPORAL: con PRISMA_USE_DIRECT_URL=true, el runtime se conecta
+    // por DIRECT_URL (conexión directa, 5432) en lugar de DATABASE_URL (pooler,
+    // 6543). Sirve para distinguir un fallo del pooler de un fallo de credencial
+    // ante un P1000. Dejar sin setear (o 'false') para operar normal por el pooler.
+    const useDirectUrl =
+      config.get<string>('PRISMA_USE_DIRECT_URL') === 'true';
+
+    // super() debe ser sentencia raíz: se calculan las opciones antes.
+    const options: Prisma.PrismaClientOptions | undefined = useDirectUrl
+      ? { datasources: { db: { url: config.getOrThrow<string>('DIRECT_URL') } } }
+      : undefined;
+    super(options);
+
+    if (useDirectUrl) {
+      this.logger.warn(
+        'PRISMA_USE_DIRECT_URL=true → Prisma se conecta vía DIRECT_URL (modo diagnóstico, NO usar en producción).',
+      );
+    }
+  }
 
   async onModuleInit(): Promise<void> {
     await this.$connect();
