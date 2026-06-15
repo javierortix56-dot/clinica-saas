@@ -81,10 +81,30 @@ export class EnvironmentVariables {
   SCHEDULING_ADJACENCY_BUFFER_MIN?: string;
 
   // --- Infra ---
-  // Opcional hasta el paso 6 (cola BullMQ); el webhook funciona sin Redis.
+  // Requerido desde el Paso 6: la cola BullMQ y el mutex por conversación usan Redis.
+  @IsString()
+  @IsNotEmpty()
+  REDIS_URL!: string;
+
+  // Actor del bot para auditoría (runAsBot). UUID fijo que representa al bot.
+  @IsString()
+  @IsNotEmpty()
+  BOT_ACTOR_ID!: string;
+
+  // Concurrencia global del worker de WhatsApp. Opcional; default 5.
   @IsOptional()
   @IsString()
-  REDIS_URL?: string;
+  QUEUE_CONCURRENCY?: string;
+
+  // TTL del mutex por conversación (ms). Opcional; default 120000 (se renueva por heartbeat).
+  @IsOptional()
+  @IsString()
+  QUEUE_LOCK_TTL_MS?: string;
+
+  // Delay de reencolado al perder el lock por contención (ms). Opcional; default 1000.
+  @IsOptional()
+  @IsString()
+  QUEUE_CONTENTION_DELAY_MS?: string;
 
   @Type(() => Number)
   @IsInt()
