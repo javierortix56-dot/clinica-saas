@@ -70,6 +70,11 @@ export class EnvironmentVariables {
   @IsNotEmpty()
   GEMINI_API_KEY!: string;
 
+  // Modelo de Gemini. Opcional; GeminiLlmClient usa 'gemini-2.5-flash' si falta.
+  @IsOptional()
+  @IsString()
+  GEMINI_MODEL?: string;
+
   // --- Infra ---
   // Opcional hasta el paso 6 (cola BullMQ); el webhook funciona sin Redis.
   @IsOptional()
