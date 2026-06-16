@@ -44,13 +44,11 @@ export class ProponerTurnosHandler implements ToolHandler {
   ): Promise<ToolResult> {
     let treatmentType: string;
     let fase: string | undefined;
-    let professionalId: string | undefined;
     let desde: Date | undefined;
     let hasta: Date | undefined;
     try {
       treatmentType = requireString(args, 'treatment_type');
       fase = optionalString(args, 'fase');
-      professionalId = optionalString(args, 'professional_id');
       desde = optionalDate(args, 'desde');
       hasta = optionalDate(args, 'hasta');
     } catch (e) {
@@ -59,10 +57,7 @@ export class ProponerTurnosHandler implements ToolHandler {
     }
 
     try {
-      const prof = await this.scheduling.resolveProfessional(
-        ctx.clinicId,
-        professionalId,
-      );
+      const prof = await this.scheduling.resolveProfessional(ctx.clinicId);
       if (!prof) return fail('NOT_FOUND', 'No hay un profesional activo disponible.');
 
       const type = await this.scheduling.resolveTreatmentType(
