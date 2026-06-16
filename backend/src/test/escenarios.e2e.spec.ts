@@ -59,6 +59,8 @@ function finalText(messages: LlmMessage[]): string {
 }
 
 describeE2E('E2E Escenarios de conversación (Gemini + BD)', () => {
+  jest.setTimeout(60000);
+
   let moduleRef: TestingModule;
   let prisma: PrismaService;
   let loop: ConversationLoopService;
@@ -99,12 +101,12 @@ describeE2E('E2E Escenarios de conversación (Gemini + BD)', () => {
     // luego siembra desde cero.
     await cleanup();
     await seed();
-  });
+  }, 60000);
 
   afterAll(async () => {
     await cleanup();
     await moduleRef?.close();
-  });
+  }, 60000);
 
   /** Siembra el set mínimo para ambos escenarios. */
   async function seed(): Promise<void> {
