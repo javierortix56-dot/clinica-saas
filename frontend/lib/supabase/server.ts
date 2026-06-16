@@ -1,6 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import type { Appointment } from "@clinica/shared";
+import type { Appointment, Patient } from "@clinica/shared";
 
 // Cliente Supabase para Server Components y Route Handlers.
 // Persiste la sesión vía cookies (requerido por @supabase/ssr en Next.js App Router).
@@ -94,4 +94,55 @@ export async function getProposedAppointments(): Promise<Appointment[]> {
       ? { full_name: row.professionals.staff_members.full_name }
       : undefined,
   }));
+}
+
+// Columnas que seleccionamos de `patients`. La columna real es `national_id`
+// (el spec la llamaba `document_id` — usamos el nombre real de la BD).
+const PATIENT_SELECT = "id, clinic_id, full_name, phone, national_id, created_at";
+
+function rowToPatient(row: Record<string, unknown>): Patient {
+  return {
+    id: row.id as string,
+    clinic_id: row.clinic_id as string,
+    full_name: row.full_name as string,
+    phone: (row.phone as string | null) ?? null,
+    national_id: row.national_id as string,
+    created_at: row.created_at as string,
+  };
+}
+
+// Lista todos los pacientes de la clínica ordenados por nombre.
+// RLS (`tenant_all`) filtra por clinic_id del JWT automáticamente.
+export async function getPatients(): Promise<Patient[]> {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("patients")
+    .select(PATIENT_SELECT)
+    .order("full_name", { ascending: true });
+
+  if (error) {
+    throw new Error(`No se pudieron cargar los pacientes: ${error.message}`);
+  }
+
+  return ((data ?? []) as Record<string, unknown>[]).map(rowToPatient);
+}
+
+// Devuelve un paciente por ID, o null si no existe (o RLS lo oculta).
+export async function getPatientById(id: string): Promise<Patient | null> {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("patients")
+    .select(PATIENT_SELECT)
+    .eq("id", id)
+    .single();
+
+  if (error) {
+    // PGRST116: no rows — el paciente no existe o RLS lo filtró.
+    if (error.code === "PGRST116") return null;
+    throw new Error(`No se pudo cargar el paciente: ${error.message}`);
+  }
+
+  return data ? rowToPatient(data as Record<string, unknown>) : null;
 }
