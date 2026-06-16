@@ -1,0 +1,9 @@
+{
+  "name": "clinica-saas",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "frontend",
+    "backend"
+  ]
+}
