@@ -125,8 +125,8 @@ Regla general: **leer es directo (con RLS), escribir lo sensible es vía backend
 | Operación | Vía | Enforcement |
 |---|---|---|
 | **Reads** (pacientes, turnos, catálogo, etc.) | Directo a Supabase desde el frontend | **RLS** filtra por `clinic_id` del JWT |
-| **Writes de turnos** (crear/modificar appointments) | **Exclusivamente** endpoint NestJS (`POST /appointments`, etc.) | El backend valida reglas (`slot_is_available`, cool-down, prime time) y deja el turno en `proposed`. **Nunca** escritura directa a Supabase. |
-| **Aprobación `proposed → confirmed`** | Endpoint NestJS dedicado (`POST /appointments/:id/confirm`) | El backend valida la transición de estado y la autorización del rol |
+| **Writes de turnos** (crear/modificar appointments) | **Exclusivamente** endpoint NestJS (`POST /appointments`, etc.) — **a implementar en Phase 9; no existe todavía** | El backend valida reglas (`slot_is_available`, cool-down, prime time) y deja el turno en `proposed`. **Nunca** escritura directa a Supabase. |
+| **Aprobación `proposed → confirmed`** | Endpoint NestJS dedicado (`POST /appointments/:id/confirm`) — **a implementar en Phase 9; no existe todavía** | El backend valida la transición de estado y la autorización del rol |
 | **Writes administrativos** (config de clínica, alta/baja de staff) | Directo a Supabase con RLS | RLS restringe a `admin` (por rol en el JWT) |
 
 ### Por qué los turnos no van directo a Supabase
