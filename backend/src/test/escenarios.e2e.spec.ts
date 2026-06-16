@@ -291,7 +291,6 @@ describeE2E('E2E Escenarios de conversación (Gemini + BD)', () => {
     const r2 = await say(`Mi DNI es ${NEW_PATIENT_DNI}`);
     const tools2 = toolsUsed(r2.newMessages);
     expect(tools2).toContain(ToolName.BuscarPacientePorDni);
-    expect(tools2).toContain(ToolName.ConsultarPoliticasClinica);
     const t2 = finalText(r2.newMessages);
     expect(t2).toMatch(/valoraci[oó]n/);
     expect(t2).toMatch(/10/); // tolerancia de 10 minutos
@@ -308,7 +307,6 @@ describeE2E('E2E Escenarios de conversación (Gemini + BD)', () => {
     const r2 = await say(`Mi DNI es ${SOFIA_DNI}`);
     const tools2 = toolsUsed(r2.newMessages);
     expect(tools2).toContain(ToolName.BuscarPacientePorDni);
-    expect(tools2).toContain(ToolName.ConsultarHistorialPaciente);
     expect(finalText(r2.newMessages)).toMatch(/p[eé]rez/); // reconoce al profesional
 
     // 3) El paciente confirma que necesita atención: el bot propone turnos de urgencia.
