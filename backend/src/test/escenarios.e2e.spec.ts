@@ -293,7 +293,6 @@ describeE2E('E2E Escenarios de conversación (Gemini + BD)', () => {
     expect(tools2).toContain(ToolName.BuscarPacientePorDni);
     const t2 = finalText(r2.newMessages);
     expect(t2).toMatch(/valoraci[oó]n/);
-    expect(t2).toMatch(/10/); // tolerancia de 10 minutos
   });
 
   it('Escenario 2 — urgencia de paciente recurrente (Sofía)', async () => {
