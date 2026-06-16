@@ -36,7 +36,7 @@ export async function confirmAppointment(
     );
 
     if (res.status === 404) {
-      return { error: "Endpoint no implementado aún" };
+      return { error: "El turno no existe o ya no está disponible." };
     }
 
     if (!res.ok) {
