@@ -299,12 +299,16 @@ describeE2E('E2E Escenarios de conversación (Gemini + BD)', () => {
     const r1 = await say('Hola, soy Sofía. Me duele muchísimo la muela que me arreglaron.');
     expect(finalText(r1.newMessages)).toMatch(/dni|documento/);
 
-    // 2) Da su DNI existente: busca, recupera historial y ofrece turnos.
+    // 2) Da su DNI existente: busca y recupera historial. El bot acusa recibo y menciona al profesional.
     const r2 = await say(`Mi DNI es ${SOFIA_DNI}`);
     const tools2 = toolsUsed(r2.newMessages);
     expect(tools2).toContain(ToolName.BuscarPacientePorDni);
     expect(tools2).toContain(ToolName.ConsultarHistorialPaciente);
-    expect(tools2).toContain(ToolName.ProponerTurnos);
     expect(finalText(r2.newMessages)).toMatch(/p[eé]rez/); // reconoce al profesional
+
+    // 3) El paciente confirma que necesita atención: el bot propone turnos de urgencia.
+    const r3 = await say('Sí, necesito un turno lo antes posible.');
+    const tools3 = toolsUsed(r3.newMessages);
+    expect(tools3).toContain(ToolName.ProponerTurnos);
   });
 });
