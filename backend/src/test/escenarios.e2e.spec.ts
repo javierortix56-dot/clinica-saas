@@ -38,6 +38,10 @@ const E2E_ENABLED =
 
 const describeE2E = E2E_ENABLED ? describe : describe.skip;
 
+// clinic_id FIJO: permite pre-limpiar en beforeAll (borrar residuo de una corrida
+// anterior que haya fallado el teardown) y volver a sembrar. Hace el e2e
+// idempotente: correrlo dos veces seguidas da el mismo resultado.
+const CLINIC_ID = '11111111-1111-4111-8111-1111111111e2';
 const NEW_PATIENT_DNI = '99887766';
 const SOFIA_DNI = '30111222';
 
@@ -91,6 +95,9 @@ describeE2E('E2E Escenarios de conversación (Gemini + BD)', () => {
       timezone: 'America/Argentina/Buenos_Aires',
     });
 
+    // Pre-limpieza: borra cualquier residuo de una corrida previa (idempotencia),
+    // luego siembra desde cero.
+    await cleanup();
     await seed();
   });
 
@@ -103,6 +110,7 @@ describeE2E('E2E Escenarios de conversación (Gemini + BD)', () => {
   async function seed(): Promise<void> {
     const clinic = await prisma.clinics.create({
       data: {
+        id: CLINIC_ID, // id fijo para pre-limpieza idempotente
         name: 'Clínica Premium',
         timezone: 'America/Argentina/Buenos_Aires',
         currency: 'ARS',
@@ -216,16 +224,34 @@ describeE2E('E2E Escenarios de conversación (Gemini + BD)', () => {
     ids.sofiaTreatment = treatment.id;
   }
 
+  /**
+   * Borra TODO lo asociado a la clínica fija, en orden FK-safe (hijos → padres).
+   * Cubre también lo que el LLM pudiera escribir en un turno (appointments,
+   * treatments, patients…), para que el teardown no falle por una FK colgada y el
+   * e2e quede idempotente. Se corre en beforeAll (pre-limpieza) y en afterAll.
+   */
   async function cleanup(): Promise<void> {
-    // Orden FK-safe (hijos → padres). Best-effort.
-    await prisma.treatments.deleteMany({ where: { clinic_id: ids.clinic } });
-    await prisma.treatment_phase_templates.deleteMany({ where: { clinic_id: ids.clinic } });
-    await prisma.treatment_types.deleteMany({ where: { clinic_id: ids.clinic } });
-    await prisma.professional_availability.deleteMany({ where: { clinic_id: ids.clinic } });
-    await prisma.patients.deleteMany({ where: { clinic_id: ids.clinic } });
-    await prisma.professionals.deleteMany({ where: { clinic_id: ids.clinic } });
-    await prisma.staff_members.deleteMany({ where: { clinic_id: ids.clinic } });
-    await prisma.clinics.deleteMany({ where: { id: ids.clinic } });
+    const where = { clinic_id: CLINIC_ID };
+    await prisma.appointment_modifiers.deleteMany({
+      where: { appointments: { clinic_id: CLINIC_ID } },
+    });
+    await prisma.appointments.deleteMany({ where });
+    await prisma.clinical_notes.deleteMany({ where });
+    await prisma.treatments.deleteMany({ where });
+    await prisma.treatment_phase_templates.deleteMany({ where });
+    await prisma.treatment_types.deleteMany({ where });
+    await prisma.technology_modifiers.deleteMany({ where });
+    await prisma.availability_exceptions.deleteMany({ where });
+    await prisma.professional_availability.deleteMany({ where });
+    await prisma.conversation_messages.deleteMany({ where });
+    await prisma.conversations.deleteMany({ where });
+    await prisma.professional_calendar_links.deleteMany({ where });
+    await prisma.patients.deleteMany({ where });
+    await prisma.professionals.deleteMany({ where });
+    await prisma.staff_members.deleteMany({ where });
+    await prisma.whatsapp_channels.deleteMany({ where });
+    await prisma.audit_logs.deleteMany({ where }); // sin FK; se borra por prolijidad
+    await prisma.clinics.deleteMany({ where: { id: CLINIC_ID } });
   }
 
   /** Corre una conversación multi-turno acumulando historial. */
