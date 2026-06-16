@@ -12,6 +12,11 @@ import { SystemPromptService } from '../conversation/system-prompt.service';
 import { LlmMessage } from '../ai/llm/llm-client.interface';
 import { ToolName } from '../ai/tools/tool-declarations';
 
+// ==========================================
+// CONFIGURACIÓN DE TIMEOUT GLOBAL PARA JEST
+// ==========================================
+jest.setTimeout(60000); // 60 segundos de colchón para llamadas de red/BD
+
 /**
  * E2E de los Escenarios 1 y 2 (docs/flujos_conversacion_whatsapp.md), Paso 7.
  *
@@ -59,8 +64,6 @@ function finalText(messages: LlmMessage[]): string {
 }
 
 describeE2E('E2E Escenarios de conversación (Gemini + BD)', () => {
-  jest.setTimeout(60000);
-
   let moduleRef: TestingModule;
   let prisma: PrismaService;
   let loop: ConversationLoopService;
@@ -80,6 +83,7 @@ describeE2E('E2E Escenarios de conversación (Gemini + BD)', () => {
     sofiaTreatment: '',
   };
 
+  // Se añade explícitamente el timeout de 60000 como segundo parámetro del hook
   beforeAll(async () => {
     moduleRef = await Test.createTestingModule({
       imports: [
@@ -103,6 +107,7 @@ describeE2E('E2E Escenarios de conversación (Gemini + BD)', () => {
     await seed();
   }, 60000);
 
+  // Se añade explícitamente el timeout de 60000 como segundo parámetro del hook
   afterAll(async () => {
     await cleanup();
     await moduleRef?.close();
