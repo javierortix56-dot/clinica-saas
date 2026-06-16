@@ -125,10 +125,6 @@ export const TOOL_DECLARATIONS: ToolDeclaration[] = [
           type: 'string',
           description: 'Fase del tratamiento, si aplica. Opcional.',
         },
-        professional_id: {
-          type: 'string',
-          description: 'Profesional preferido, si lo hay. Opcional.',
-        },
         desde: {
           type: 'string',
           description: 'Fecha/hora ISO-8601 mínima a considerar. Opcional.',
