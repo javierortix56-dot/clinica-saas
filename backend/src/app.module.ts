@@ -9,6 +9,7 @@ import { SchedulingModule } from './scheduling/scheduling.module';
 import { PatientsModule } from './patients/patients.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { WorkerModule } from './worker/worker.module';
+import { AppointmentsModule } from './appointments/appointments.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { WorkerModule } from './worker/worker.module';
     SchedulingModule,
     PatientsModule,
     CatalogModule,
+    AppointmentsModule,
     // Worker (consumidor de la cola)
     WorkerModule,
   ],

@@ -10,9 +10,14 @@ export interface CreateAppointmentResponse {
 }
 
 // POST /appointments/:id/confirm
-export interface ConfirmAppointmentRequest {
-  // TODO: definir campos en Phase 9
-}
+// El id del turno viaja en la URL; no hay body. Auth: Bearer JWT de Supabase
+// (roles admin | reception). Idempotente: confirmar un turno ya confirmado
+// devuelve 200 con el mismo turno.
+export type ConfirmAppointmentRequest = Record<string, never>;
+
 export interface ConfirmAppointmentResponse {
-  // TODO
+  id: string;
+  status: string;
+  start_at: string; // ISO-8601
+  end_at: string; // ISO-8601
 }
