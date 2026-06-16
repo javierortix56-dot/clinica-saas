@@ -308,9 +308,17 @@ describeE2E('E2E Escenarios de conversación (Gemini + BD)', () => {
     expect(tools2).toContain(ToolName.BuscarPacientePorDni);
     expect(finalText(r2.newMessages)).toMatch(/p[eé]rez/); // reconoce al profesional
 
-    // 3) El paciente confirma que necesita atención: el bot propone turnos de urgencia.
+    // 3) El paciente confirma que necesita atención: el bot propone turnos.
     const r3 = await say('Sí, necesito un turno lo antes posible.');
-    const tools3 = toolsUsed(r3.newMessages);
-    expect(tools3).toContain(ToolName.ProponerTurnos);
+
+    // El bot propone turnos en algún punto del flujo: a veces ya en el turno 2
+    // (tras ver el historial), a veces recién en el turno 3 (tras la
+    // confirmación). El modelo no es determinista sobre el turno exacto, así que
+    // validamos la llamada a través de ambos turnos.
+    const toolsTurnos = [
+      ...toolsUsed(r2.newMessages),
+      ...toolsUsed(r3.newMessages),
+    ];
+    expect(toolsTurnos).toContain(ToolName.ProponerTurnos);
   });
 });
