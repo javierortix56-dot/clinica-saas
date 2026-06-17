@@ -1,6 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
-import { getPatients } from "@/lib/supabase/server";
+import { getPatients, getSessionAuth, isDoctorRole } from "@/lib/supabase/server";
 import {
   Table,
   TableBody,
@@ -23,6 +24,12 @@ function formatDate(iso: string): string {
 }
 
 export default async function PatientsPage() {
+  // Guard de rol: el listado completo es solo para admin/reception. El doctor va a /calendar.
+  const { role } = await getSessionAuth();
+  if (isDoctorRole(role)) {
+    redirect("/calendar");
+  }
+
   const patients = await getPatients();
 
   return (

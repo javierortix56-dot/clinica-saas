@@ -1,4 +1,10 @@
-import { getProposedAppointments } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
+
+import {
+  getProposedAppointments,
+  getSessionAuth,
+  isDoctorRole,
+} from "@/lib/supabase/server";
 import {
   Table,
   TableBody,
@@ -25,6 +31,12 @@ function formatDateTime(iso: string): string {
 }
 
 export default async function ApprovalsPage() {
+  // Guard de rol: la bandeja es solo para admin/reception. El doctor va a /calendar.
+  const { role } = await getSessionAuth();
+  if (isDoctorRole(role)) {
+    redirect("/calendar");
+  }
+
   const appointments = await getProposedAppointments();
 
   return (

@@ -25,6 +25,39 @@ export function createClient() {
   );
 }
 
+// Estado de autenticación del request: si hay sesión y qué rol trae el JWT.
+// El claim `user_role` lo inyecta el Custom Access Token Hook (admin | doctor |
+// reception; "professional" es el alias histórico de doctor).
+export async function getSessionAuth(): Promise<{
+  hasSession: boolean;
+  role: string | null;
+}> {
+  const supabase = createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) return { hasSession: false, role: null };
+
+  let role: string | null = null;
+  try {
+    const payload = session.access_token.split(".")[1];
+    role =
+      (
+        JSON.parse(Buffer.from(payload, "base64").toString("utf8")) as {
+          user_role?: string;
+        }
+      ).user_role ?? null;
+  } catch {
+    role = null;
+  }
+  return { hasSession: true, role };
+}
+
+// True si el rol corresponde a un profesional (doctor / professional).
+export function isDoctorRole(role: string | null): boolean {
+  return role === "doctor" || role === "professional";
+}
+
 // Forma cruda de cada fila devuelta por el select con joins de PostgREST.
 // El nombre del profesional vive en staff_members (professionals -> staff_members),
 // y la etiqueta del tratamiento se deriva de treatments -> treatment_types.name.
