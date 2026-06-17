@@ -51,6 +51,12 @@ export default async function DashboardLayout({
               >
                 Pacientes
               </Link>
+              <Link
+                href="/staff"
+                className="text-sm text-muted-foreground hover:text-foreground"
+              >
+                Equipo
+              </Link>
             </>
           )}
         </nav>
