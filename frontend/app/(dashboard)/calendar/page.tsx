@@ -1,11 +1,6 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 
-import {
-  getWeeklyAppointments,
-  getSessionAuth,
-  isDoctorRole,
-} from "@/lib/supabase/server";
+import { getWeeklyAppointments } from "@/lib/supabase/server";
 import { CalendarGrid } from "./CalendarGrid";
 import {
   addDays,
@@ -18,23 +13,13 @@ import {
 
 export const dynamic = "force-dynamic";
 
-// ─── Auth guard ───────────────────────────────────────────────────────────────
-
-// El calendario es exclusivo del doctor. Sin sesión → /login; otro rol → /approvals.
-async function assertDoctorRole() {
-  const { hasSession, role } = await getSessionAuth();
-  if (!hasSession) redirect("/login");
-  if (!isDoctorRole(role)) redirect("/approvals");
-}
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
+// Todos los roles autenticados tienen acceso. Guard de sesión en middleware.ts.
 
 export default async function CalendarPage({
   searchParams,
 }: {
   searchParams: Record<string, string | string[] | undefined>;
 }) {
-  await assertDoctorRole();
 
   const now = new Date();
   const currentMonday = getMondayOf(now);
