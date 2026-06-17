@@ -47,18 +47,24 @@ export async function upsertStaff(
 
   // ── Professionals + disponibilidad (solo para doctores) ───────────────────
   if (role === "doctor" && id) {
-    // Aseguramos que existe la fila en professionals
+    const license_number =
+      (formData.get("license_number") as string | null)?.trim() || null;
+
+    // Aseguramos que existe la fila en professionals (necesitamos clinic_id)
     const { data: sm } = await supabase
       .from("staff_members")
-      .select("id")
+      .select("id, clinic_id")
       .eq("id", id)
       .single();
 
     if (sm) {
-      // Upsert en professionals
+      // Upsert en professionals con clinic_id + license_number
       const { data: prof, error: profErr } = await supabase
         .from("professionals")
-        .upsert({ staff_member_id: id }, { onConflict: "staff_member_id" })
+        .upsert(
+          { staff_member_id: id, clinic_id: sm.clinic_id, license_number },
+          { onConflict: "staff_member_id" }
+        )
         .select("id")
         .single();
 

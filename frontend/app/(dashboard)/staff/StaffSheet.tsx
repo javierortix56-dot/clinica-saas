@@ -240,6 +240,21 @@ export function StaffSheet({
             </div>
           )}
 
+          {/* Matrícula (solo para doctores) */}
+          {currentRole === "doctor" && (
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-slate-700">
+                Matrícula <span className="text-slate-400">(opcional)</span>
+              </label>
+              <input
+                name="license_number"
+                defaultValue={member?.license_number ?? ""}
+                placeholder="MP 12345"
+                className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400"
+              />
+            </div>
+          )}
+
           {/* Disponibilidad (solo para doctores en edición) */}
           {mode === "edit" && currentRole === "doctor" && member && (
             <AvailabilityEditor availability={member.availability} />

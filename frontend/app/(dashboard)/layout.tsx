@@ -57,6 +57,14 @@ export default async function DashboardLayout({
               >
                 Equipo
               </Link>
+              {role === "admin" && (
+                <Link
+                  href="/settings"
+                  className="text-sm text-muted-foreground hover:text-foreground"
+                >
+                  Ajustes
+                </Link>
+              )}
             </>
           )}
         </nav>
