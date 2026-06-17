@@ -104,6 +104,38 @@ function isToday(date: Date): boolean {
   return today === d;
 }
 
+// Compara si un ISO cae en el mismo día local (Buenos Aires) que `ref`.
+function isSameLocalDay(iso: string, ref: Date): boolean {
+  const a = new Date(iso).toLocaleDateString("es-AR", {
+    timeZone: "America/Argentina/Buenos_Aires",
+  });
+  const b = ref.toLocaleDateString("es-AR", {
+    timeZone: "America/Argentina/Buenos_Aires",
+  });
+  return a === b;
+}
+
+// Resumen del día actual derivado de los turnos de la semana (sin query nueva).
+interface DaySummary {
+  todayCount: number;
+  remaining: WeeklyAppointment[];
+  next: WeeklyAppointment | null;
+}
+
+function buildDaySummary(
+  appointments: WeeklyAppointment[],
+  now: Date
+): DaySummary {
+  const todays = appointments.filter((a) => isSameLocalDay(a.start_at, now));
+  // `appointments` ya viene ordenado ascendente por start_at.
+  const remaining = todays.filter((a) => new Date(a.start_at) >= now);
+  return {
+    todayCount: todays.length,
+    remaining,
+    next: remaining[0] ?? null,
+  };
+}
+
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default async function CalendarPage() {
@@ -113,6 +145,7 @@ export default async function CalendarPage() {
   const weekDays = getWeekDays();
 
   const now = new Date();
+  const summary = buildDaySummary(appointments, now);
   const weekLabel = `Semana del ${weekDays[0].toLocaleDateString("es-AR", {
     day: "numeric",
     month: "long",
@@ -132,6 +165,54 @@ export default async function CalendarPage() {
           <p className="text-sm text-slate-500">{weekLabel}</p>
         </div>
         <RefreshButton />
+      </div>
+
+      {/* Resumen del día actual (derivado de los turnos de la semana) */}
+      <div className="grid gap-3 sm:grid-cols-3">
+        {/* Turnos confirmados hoy */}
+        <div className="rounded-lg border border-slate-200 bg-white p-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+            Turnos hoy
+          </p>
+          <p className="mt-1 text-2xl font-semibold text-slate-900">
+            {summary.todayCount}
+          </p>
+          <p className="text-xs text-slate-500">confirmados</p>
+        </div>
+
+        {/* Próximo turno */}
+        <div className="rounded-lg border border-slate-200 bg-white p-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+            Próximo turno
+          </p>
+          {summary.next ? (
+            <div className="mt-1 space-y-0.5">
+              <p className="text-sm font-semibold text-slate-900 truncate">
+                {summary.next.patient_name}
+              </p>
+              <p className="text-xs text-slate-500 truncate">
+                {summary.next.treatment_label ?? "—"}
+              </p>
+              <p className="text-xs text-slate-400">
+                {formatTime(summary.next.start_at)} –{" "}
+                {formatTime(summary.next.end_at)}
+              </p>
+            </div>
+          ) : (
+            <p className="mt-1 text-sm text-slate-400">Sin turnos pendientes</p>
+          )}
+        </div>
+
+        {/* Turnos restantes del día */}
+        <div className="rounded-lg border border-slate-200 bg-white p-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+            Restantes hoy
+          </p>
+          <p className="mt-1 text-2xl font-semibold text-slate-900">
+            {summary.remaining.length}
+          </p>
+          <p className="text-xs text-slate-500">por atender</p>
+        </div>
       </div>
 
       {appointments.length === 0 && (
