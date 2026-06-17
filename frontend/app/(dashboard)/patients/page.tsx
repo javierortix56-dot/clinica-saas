@@ -10,8 +10,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { RefreshButton } from "./refresh-button";
-
 export const dynamic = "force-dynamic";
 
 const dateFormatter = new Intl.DateTimeFormat("es-AR", {
@@ -41,7 +39,6 @@ export default async function PatientsPage() {
             Todos los pacientes registrados en la clínica.
           </p>
         </div>
-        <RefreshButton />
       </div>
 
       {patients.length === 0 ? (

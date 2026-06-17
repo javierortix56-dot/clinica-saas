@@ -6,7 +6,6 @@ import {
   getSessionAuth,
   isDoctorRole,
 } from "@/lib/supabase/server";
-import { RefreshButton } from "./refresh-button";
 import { CalendarGrid } from "./CalendarGrid";
 import {
   addDays,
@@ -96,7 +95,6 @@ export default async function CalendarPage({
           <Link href={`/calendar?week=${nextWeek}`} className={navLinkBase}>
             Siguiente →
           </Link>
-          <RefreshButton />
         </div>
       </div>
 

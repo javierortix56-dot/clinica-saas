@@ -73,15 +73,21 @@ interface ProposedRow {
   status: Appointment["status"];
   origin: string | null;
   created_at: string;
-  patients: { full_name: string; phone: string | null } | null;
+  patients: { full_name: string; phone: string | null; national_id: string } | null;
   professionals: { staff_members: { full_name: string } | null } | null;
   treatments: { treatment_types: { name: string } | null } | null;
   treatment_phase_templates: { name: string } | null;
 }
 
+// Tipo extendido para la bandeja de aprobaciones con campos extra.
+export interface ProposedAppointment extends Appointment {
+  patient_national_id: string | null;
+  phase_name: string | null;
+}
+
 // Lee los turnos en estado `proposed` de la clínica del usuario.
 // RLS (`tenant_all`) filtra por clinic_id del JWT automáticamente.
-export async function getProposedAppointments(): Promise<Appointment[]> {
+export async function getProposedAppointments(): Promise<ProposedAppointment[]> {
   const supabase = createClient();
 
   const { data, error } = await supabase
@@ -90,7 +96,7 @@ export async function getProposedAppointments(): Promise<Appointment[]> {
       `
         id, clinic_id, treatment_id, phase_template_id, patient_id, professional_id,
         start_at, end_at, status, origin, created_at,
-        patients ( full_name, phone ),
+        patients ( full_name, phone, national_id ),
         professionals ( staff_members ( full_name ) ),
         treatments ( treatment_types ( name ) ),
         treatment_phase_templates ( name )
@@ -127,6 +133,8 @@ export async function getProposedAppointments(): Promise<Appointment[]> {
     professional: row.professionals?.staff_members
       ? { full_name: row.professionals.staff_members.full_name }
       : undefined,
+    patient_national_id: row.patients?.national_id ?? null,
+    phase_name: row.treatment_phase_templates?.name ?? null,
   }));
 }
 
@@ -330,5 +338,64 @@ export async function getStaffMembers(): Promise<StaffMember[]> {
     availability: (row.professionals?.professional_availability ?? []).sort(
       (a, b) => a.weekday - b.weekday
     ),
+  }));
+}
+
+// ─── Historial de turnos por paciente ──────────────────────────────────────────
+
+export interface PatientAppointment {
+  id: string;
+  start_at: string;
+  end_at: string;
+  status: string;
+  professional_name: string | null;
+  treatment_label: string | null;
+}
+
+interface PatientApptRow {
+  id: string;
+  start_at: string;
+  end_at: string;
+  status: string;
+  professionals: { staff_members: { full_name: string } | null } | null;
+  treatments: { treatment_types: { name: string } | null } | null;
+  treatment_phase_templates: { name: string } | null;
+}
+
+// Lista todos los turnos de un paciente ordenados del más reciente al más antiguo.
+export async function getAppointmentsByPatient(
+  patientId: string
+): Promise<PatientAppointment[]> {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("appointments")
+    .select(
+      `
+        id, start_at, end_at, status,
+        professionals ( staff_members ( full_name ) ),
+        treatments ( treatment_types ( name ) ),
+        treatment_phase_templates ( name )
+      `
+    )
+    .eq("patient_id", patientId)
+    .is("deleted_at", null)
+    .order("start_at", { ascending: false });
+
+  if (error) {
+    throw new Error(`No se pudo cargar el historial: ${error.message}`);
+  }
+
+  return ((data ?? []) as unknown as PatientApptRow[]).map((row) => ({
+    id: row.id,
+    start_at: row.start_at,
+    end_at: row.end_at,
+    status: row.status,
+    professional_name:
+      row.professionals?.staff_members?.full_name ?? null,
+    treatment_label:
+      row.treatments?.treatment_types?.name ??
+      row.treatment_phase_templates?.name ??
+      null,
   }));
 }

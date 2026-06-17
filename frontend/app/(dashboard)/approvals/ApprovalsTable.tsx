@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 import { createClient } from "@/lib/supabase/client";
-import type { Appointment } from "@clinica/shared";
+import type { ProposedAppointment } from "@/lib/supabase/server";
 import {
   Table,
   TableBody,
@@ -28,47 +29,42 @@ function formatDateTime(iso: string): string {
 
 // ─── Fila con botón de confirmación ─────────────────────────────────────────
 
-function ConfirmRow({ appt }: { appt: Appointment }) {
+function ConfirmRow({ appt }: { appt: ProposedAppointment }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
 
   function handleClick() {
-    setError(null);
     startTransition(async () => {
       const result = await confirmAppointment(appt.id);
       if (result.error) {
-        setError(result.error);
+        toast.error(result.error);
         return;
       }
+      toast.success("Turno confirmado.");
       router.refresh();
     });
   }
 
   return (
-    <TableRow key={appt.id}>
+    <TableRow>
       <TableCell className="font-medium">
         {appt.patient?.full_name ?? "—"}
-        {appt.patient?.phone && (
-          <span className="block text-xs text-muted-foreground">
-            {appt.patient.phone}
-          </span>
-        )}
+      </TableCell>
+      <TableCell className="text-sm text-muted-foreground">
+        {appt.patient_national_id ?? "—"}
+      </TableCell>
+      <TableCell className="text-sm text-muted-foreground">
+        {appt.patient?.phone ?? "—"}
       </TableCell>
       <TableCell>{appt.professional?.full_name ?? "—"}</TableCell>
-      <TableCell>{appt.treatment_type ?? "—"}</TableCell>
+      <TableCell>
+        {appt.phase_name ?? appt.treatment_type ?? "—"}
+      </TableCell>
       <TableCell>{formatDateTime(appt.start_at)}</TableCell>
       <TableCell className="text-right">
-        <div className="flex flex-col items-end gap-1">
-          <Button size="sm" onClick={handleClick} disabled={isPending}>
-            {isPending ? "Confirmando…" : "Confirmar"}
-          </Button>
-          {error && (
-            <span className="text-xs text-destructive" role="alert">
-              {error}
-            </span>
-          )}
-        </div>
+        <Button size="sm" onClick={handleClick} disabled={isPending}>
+          {isPending ? "Confirmando…" : "Confirmar"}
+        </Button>
       </TableCell>
     </TableRow>
   );
@@ -76,17 +72,12 @@ function ConfirmRow({ appt }: { appt: Appointment }) {
 
 // ─── Tabla con Realtime ───────────────────────────────────────────────────────
 
-// Recibe los turnos iniciales del Server Component. Suscribe al canal Realtime
-// de la tabla `appointments` para detectar inserts/updates en `proposed` y
-// llama router.refresh() para que Next.js re-fetche los datos del servidor.
-// Esto evita polling y mantiene la bandeja al día sin intervención del usuario.
 export function ApprovalsTable({
   initialAppointments,
 }: {
-  initialAppointments: Appointment[];
+  initialAppointments: ProposedAppointment[];
 }) {
   const router = useRouter();
-  // Indicador de "nuevo turno recibido por Realtime" — desaparece al refrescar.
   const [hasNew, setHasNew] = useState(false);
   const channelRef = useRef<ReturnType<
     ReturnType<typeof createClient>["channel"]
@@ -106,8 +97,6 @@ export function ApprovalsTable({
           filter: "status=eq.proposed",
         },
         () => {
-          // Re-fetcha los datos del servidor silenciosamente, con un pequeño
-          // indicador visual para que el usuario sepa que llegó algo nuevo.
           setHasNew(true);
           router.refresh();
         }
@@ -115,14 +104,9 @@ export function ApprovalsTable({
       .subscribe();
 
     channelRef.current = channel;
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [router]);
 
-  // Cuando la lista se actualiza (router.refresh() trigger → nuevo render
-  // del server), limpiamos el indicador.
   useEffect(() => {
     setHasNew(false);
   }, [initialAppointments]);
@@ -148,8 +132,10 @@ export function ApprovalsTable({
           <TableHeader>
             <TableRow>
               <TableHead>Paciente</TableHead>
+              <TableHead>DNI</TableHead>
+              <TableHead>Teléfono</TableHead>
               <TableHead>Profesional</TableHead>
-              <TableHead>Tratamiento</TableHead>
+              <TableHead>Fase / Tratamiento</TableHead>
               <TableHead>Fecha/hora</TableHead>
               <TableHead className="text-right">Acción</TableHead>
             </TableRow>
