@@ -1,7 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { createClient, getSessionAuth, isDoctorRole } from "@/lib/supabase/server";
+import { createClient, getSessionAuth } from "@/lib/supabase/server";
+
+const ROLE_BADGE: Record<string, { label: string; className: string }> = {
+  admin:     { label: "Admin",      className: "bg-slate-700 text-white" },
+  doctor:    { label: "Profesional", className: "bg-blue-600 text-white" },
+  reception: { label: "Recepción",  className: "bg-green-600 text-white" },
+};
 
 export default async function DashboardLayout({
   children,
@@ -18,55 +24,69 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
-  // El control de acceso por ROL vive en cada página, no acá: /approvals y
-  // /patients rebotan al doctor a /calendar; /calendar rebota a no-doctores a
-  // /approvals. Centralizar el redirect acá causaría un loop infinito, porque
-  // este layout también envuelve a /calendar (la única vista del doctor).
   const { role } = await getSessionAuth();
-  const doctor = isDoctorRole(role);
+
+  // Nombre para mostrar en el nav: busca la fila en staff_members.
+  const { data: sm } = await supabase
+    .from("staff_members")
+    .select("full_name")
+    .eq("auth_user_id", user.id)
+    .single();
+  const displayName = sm?.full_name ?? user.email ?? "Usuario";
+
+  const badge = role ? ROLE_BADGE[role] : null;
 
   return (
     <div className="flex min-h-screen flex-col">
       <header className="border-b">
         <nav className="mx-auto flex h-14 max-w-5xl items-center gap-6 px-4">
           <span className="font-semibold">Clínica</span>
-          {doctor ? (
+
+          {/* Todos los roles ven todos los links; /settings solo admin */}
+          <Link
+            href="/approvals"
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
+            Aprobaciones
+          </Link>
+          <Link
+            href="/calendar"
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
+            Calendario
+          </Link>
+          <Link
+            href="/patients"
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
+            Pacientes
+          </Link>
+          <Link
+            href="/staff"
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
+            Equipo
+          </Link>
+          {role === "admin" && (
             <Link
-              href="/calendar"
+              href="/settings"
               className="text-sm text-muted-foreground hover:text-foreground"
             >
-              Calendario
+              Ajustes
             </Link>
-          ) : (
-            <>
-              <Link
-                href="/approvals"
-                className="text-sm text-muted-foreground hover:text-foreground"
-              >
-                Aprobaciones
-              </Link>
-              <Link
-                href="/patients"
-                className="text-sm text-muted-foreground hover:text-foreground"
-              >
-                Pacientes
-              </Link>
-              <Link
-                href="/staff"
-                className="text-sm text-muted-foreground hover:text-foreground"
-              >
-                Equipo
-              </Link>
-              {role === "admin" && (
-                <Link
-                  href="/settings"
-                  className="text-sm text-muted-foreground hover:text-foreground"
-                >
-                  Ajustes
-                </Link>
-              )}
-            </>
           )}
+
+          {/* Identidad del usuario logueado */}
+          <div className="ml-auto flex items-center gap-2">
+            <span className="text-sm text-slate-600 hidden sm:inline">{displayName}</span>
+            {badge && (
+              <span
+                className={`rounded px-2 py-0.5 text-xs font-medium ${badge.className}`}
+              >
+                {badge.label}
+              </span>
+            )}
+          </div>
         </nav>
       </header>
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">

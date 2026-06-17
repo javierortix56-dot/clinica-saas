@@ -190,14 +190,17 @@ export function PatientTabs({
   appointments,
   notes,
   treatments,
+  role,
 }: {
   patientId: string;
   appointments: PatientAppointment[];
   notes: ClinicalNote[];
   treatments: PatientTreatment[];
+  role: string | null;
 }) {
   const [tab, setTab] = useState<"turnos" | "historia">("turnos");
   const [showForm, setShowForm] = useState(false);
+  const canCreateNote = role === "admin" || role === "doctor";
 
   return (
     <div className="flex flex-col gap-4">
@@ -260,7 +263,7 @@ export function PatientTabs({
             <p className="text-sm text-muted-foreground">
               Notas clínicas del paciente ordenadas por fecha.
             </p>
-            {!showForm && (
+            {!showForm && canCreateNote && (
               <Button size="sm" onClick={() => setShowForm(true)}>
                 + Nueva nota
               </Button>

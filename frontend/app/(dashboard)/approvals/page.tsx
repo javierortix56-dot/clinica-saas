@@ -1,25 +1,14 @@
-import { redirect } from "next/navigation";
-
 import {
   getProposedAppointments,
-  getSessionAuth,
-  isDoctorRole,
   type ProposedAppointment,
 } from "@/lib/supabase/server";
 import { ApprovalsTable } from "./ApprovalsTable";
 
-// Bandeja de aprobaciones: turnos en estado `proposed` esperando confirmación
-// del staff. Server Component — datos frescos en cada request (sin cache).
-// La actualización en tiempo real la maneja ApprovalsTable (Realtime).
+// Bandeja de aprobaciones: todos los roles autenticados tienen acceso.
+// El guard de sesión vive en middleware.ts.
 export const dynamic = "force-dynamic";
 
 export default async function ApprovalsPage() {
-  // Guard de rol: la bandeja es solo para admin/reception. El doctor va a /calendar.
-  const { role } = await getSessionAuth();
-  if (isDoctorRole(role)) {
-    redirect("/calendar");
-  }
-
   const appointments = await getProposedAppointments();
 
   return (

@@ -1,7 +1,6 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 
-import { getPatients, getSessionAuth, isDoctorRole } from "@/lib/supabase/server";
+import { getPatients } from "@/lib/supabase/server";
 import {
   Table,
   TableBody,
@@ -21,13 +20,8 @@ function formatDate(iso: string): string {
   return dateFormatter.format(new Date(iso));
 }
 
+// Todos los roles autenticados tienen acceso. Guard de sesión en middleware.ts.
 export default async function PatientsPage() {
-  // Guard de rol: el listado completo es solo para admin/reception. El doctor va a /calendar.
-  const { role } = await getSessionAuth();
-  if (isDoctorRole(role)) {
-    redirect("/calendar");
-  }
-
   const patients = await getPatients();
 
   return (

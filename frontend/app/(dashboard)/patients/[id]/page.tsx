@@ -6,6 +6,7 @@ import {
   getAppointmentsByPatient,
   getClinicalNotes,
   getPatientTreatments,
+  getSessionAuth,
 } from "@/lib/supabase/server";
 import { PatientTabs } from "../PatientTabs";
 
@@ -21,7 +22,8 @@ export default async function PatientDetailPage({
 }: {
   params: { id: string };
 }) {
-  const [patient, appointments, notes, treatments] = await Promise.all([
+  const [{ role }, patient, appointments, notes, treatments] = await Promise.all([
+    getSessionAuth(),
     getPatientById(params.id),
     getAppointmentsByPatient(params.id),
     getClinicalNotes(params.id),
@@ -79,6 +81,7 @@ export default async function PatientDetailPage({
         appointments={appointments}
         notes={notes}
         treatments={treatments}
+        role={role}
       />
     </div>
   );

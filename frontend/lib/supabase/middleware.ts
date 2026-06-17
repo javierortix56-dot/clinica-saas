@@ -48,5 +48,16 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Guard de rol: /settings es exclusivo de admin.
+  // El claim user_role viene del Custom Access Token Hook (migration 0007).
+  if (user && request.nextUrl.pathname.startsWith("/settings")) {
+    const userRole = (user.app_metadata?.user_role as string | undefined) ?? null;
+    if (userRole !== "admin") {
+      const url = request.nextUrl.clone();
+      url.pathname = "/approvals";
+      return NextResponse.redirect(url);
+    }
+  }
+
   return supabaseResponse;
 }
