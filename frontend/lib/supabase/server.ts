@@ -264,3 +264,71 @@ export async function getPatientById(id: string): Promise<Patient | null> {
 
   return data ? rowToPatient(data as Record<string, unknown>) : null;
 }
+
+// ─── Staff / Profesionales ─────────────────────────────────────────────────────
+
+export interface StaffMember {
+  id: string;
+  full_name: string;
+  role: "admin" | "doctor" | "reception";
+  email: string | null;
+  is_active: boolean;
+  professional_id: string | null;
+  license_number: string | null;
+  // weekday 1=Lun … 6=Sáb; time como "HH:MM:SS"
+  availability: { weekday: number; start_time: string; end_time: string }[];
+}
+
+interface StaffRow {
+  id: string;
+  full_name: string;
+  role: StaffMember["role"];
+  email: string | null;
+  is_active: boolean;
+  professionals: {
+    id: string;
+    license_number: string | null;
+    professional_availability: {
+      weekday: number;
+      start_time: string;
+      end_time: string;
+    }[];
+  } | null;
+}
+
+// Lista todos los staff members de la clínica con sus horarios de disponibilidad.
+// RLS (`tenant_all`) filtra por clinic_id del JWT automáticamente.
+export async function getStaffMembers(): Promise<StaffMember[]> {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("staff_members")
+    .select(
+      `
+        id, full_name, role, email, is_active,
+        professionals (
+          id, license_number,
+          professional_availability ( weekday, start_time, end_time )
+        )
+      `
+    )
+    .is("deleted_at", null)
+    .order("full_name", { ascending: true });
+
+  if (error) {
+    throw new Error(`No se pudo cargar el staff: ${error.message}`);
+  }
+
+  return ((data ?? []) as unknown as StaffRow[]).map((row) => ({
+    id: row.id,
+    full_name: row.full_name,
+    role: row.role,
+    email: row.email,
+    is_active: row.is_active,
+    professional_id: row.professionals?.id ?? null,
+    license_number: row.professionals?.license_number ?? null,
+    availability: (row.professionals?.professional_availability ?? []).sort(
+      (a, b) => a.weekday - b.weekday
+    ),
+  }));
+}
