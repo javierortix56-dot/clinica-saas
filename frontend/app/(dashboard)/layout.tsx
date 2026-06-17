@@ -3,6 +3,13 @@ import { redirect } from "next/navigation";
 
 import { createClient, getSessionAuth } from "@/lib/supabase/server";
 
+async function signOut() {
+  "use server";
+  const supabase = createClient();
+  await supabase.auth.signOut();
+  redirect("/login");
+}
+
 const ROLE_BADGE: Record<string, { label: string; className: string }> = {
   admin:     { label: "Admin",      className: "bg-slate-700 text-white" },
   doctor:    { label: "Profesional", className: "bg-blue-600 text-white" },
@@ -76,8 +83,8 @@ export default async function DashboardLayout({
             </Link>
           )}
 
-          {/* Identidad del usuario logueado */}
-          <div className="ml-auto flex items-center gap-2">
+          {/* Identidad del usuario logueado + cerrar sesión */}
+          <div className="ml-auto flex items-center gap-3">
             <span className="text-sm text-slate-600 hidden sm:inline">{displayName}</span>
             {badge && (
               <span
@@ -86,6 +93,14 @@ export default async function DashboardLayout({
                 {badge.label}
               </span>
             )}
+            <form action={signOut}>
+              <button
+                type="submit"
+                className="text-sm text-slate-400 hover:text-slate-700 transition-colors"
+              >
+                Cerrar sesión
+              </button>
+            </form>
           </div>
         </nav>
       </header>
