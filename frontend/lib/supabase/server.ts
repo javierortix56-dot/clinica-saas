@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import type { Appointment, Patient } from "@clinica/shared";
 
 // Cliente Supabase para Server Components y Route Handlers.
@@ -126,6 +127,91 @@ export async function getPatients(): Promise<Patient[]> {
   }
 
   return ((data ?? []) as Record<string, unknown>[]).map(rowToPatient);
+}
+
+// Tipo local para la vista de calendario — específico de esta vista, no en @clinica/shared.
+export interface WeeklyAppointment {
+  id: string;
+  start_at: string;
+  end_at: string;
+  patient_name: string;
+  treatment_label: string | null;
+}
+
+function getWeekBounds(): { weekStart: Date; weekEnd: Date } {
+  const now = new Date();
+  const day = now.getDay(); // 0=dom … 6=sáb
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diffToMonday);
+  monday.setHours(0, 0, 0, 0);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(23, 59, 59, 999);
+  return { weekStart: monday, weekEnd: sunday };
+}
+
+// Lee los turnos `confirmed` del profesional logueado para la semana actual.
+// El professional_id se resuelve server-side desde el JWT (sub → staff_members → professionals).
+// Devuelve [] si el usuario no tiene fila en `professionals` (sin error — mostrar estado vacío).
+export async function getWeeklyAppointments(): Promise<WeeklyAppointment[]> {
+  const supabase = createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  // Resolver professional_id desde auth_user_id vía join interno.
+  const { data: prof } = await supabase
+    .from("professionals")
+    .select("id, staff_members!inner(auth_user_id)")
+    .eq("staff_members.auth_user_id", user.id)
+    .single();
+
+  if (!prof) return [];
+
+  const { weekStart, weekEnd } = getWeekBounds();
+
+  const { data, error } = await supabase
+    .from("appointments")
+    .select(
+      `
+        id, start_at, end_at,
+        patients ( full_name ),
+        treatments ( treatment_types ( name ) ),
+        treatment_phase_templates ( name )
+      `
+    )
+    .eq("professional_id", prof.id)
+    .eq("status", "confirmed")
+    .gte("start_at", weekStart.toISOString())
+    .lte("start_at", weekEnd.toISOString())
+    .order("start_at", { ascending: true });
+
+  if (error) {
+    throw new Error(`No se pudieron cargar los turnos: ${error.message}`);
+  }
+
+  type ApptRow = {
+    id: string;
+    start_at: string;
+    end_at: string;
+    patients: { full_name: string } | null;
+    treatments: { treatment_types: { name: string } | null } | null;
+    treatment_phase_templates: { name: string } | null;
+  };
+
+  return ((data ?? []) as unknown as ApptRow[]).map((row) => ({
+    id: row.id,
+    start_at: row.start_at,
+    end_at: row.end_at,
+    patient_name: row.patients?.full_name ?? "Paciente",
+    treatment_label:
+      row.treatments?.treatment_types?.name ??
+      row.treatment_phase_templates?.name ??
+      null,
+  }));
 }
 
 // Devuelve un paciente por ID, o null si no existe (o RLS lo oculta).

@@ -41,7 +41,7 @@ export default async function DashboardLayout({
   } = await supabase.auth.getSession();
   const role = session ? decodeRole(session.access_token) : null;
   if (role === "doctor" || role === "professional") {
-    redirect("/patients");
+    redirect("/calendar");
   }
 
   return (
@@ -60,6 +60,12 @@ export default async function DashboardLayout({
             className="text-sm text-muted-foreground hover:text-foreground"
           >
             Pacientes
+          </Link>
+          <Link
+            href="/calendar"
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
+            Calendario
           </Link>
         </nav>
       </header>
