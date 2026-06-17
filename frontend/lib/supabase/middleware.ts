@@ -49,9 +49,21 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Guard de rol: /settings es exclusivo de admin.
-  // El claim user_role viene del Custom Access Token Hook (migration 0007).
+  // user_role es un claim top-level del JWT (inyectado por el Custom Access Token
+  // Hook, migración 0007) — NO vive en app_metadata. Se decodifica desde el JWT
+  // de la sesión; getUser() devuelve app_metadata de raw_app_meta_data (BD), que
+  // no incluye los claims custom del hook.
   if (user && request.nextUrl.pathname.startsWith("/settings")) {
-    const userRole = (user.app_metadata?.user_role as string | undefined) ?? null;
+    let userRole: string | null = null;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      try {
+        const payload = JSON.parse(
+          Buffer.from(session.access_token.split(".")[1], "base64").toString("utf8")
+        ) as { user_role?: string };
+        userRole = payload.user_role ?? null;
+      } catch {}
+    }
     if (userRole !== "admin") {
       const url = request.nextUrl.clone();
       url.pathname = "/approvals";

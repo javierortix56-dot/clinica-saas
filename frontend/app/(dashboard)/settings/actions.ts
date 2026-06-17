@@ -4,17 +4,31 @@ import { revalidatePath } from "next/cache";
 
 import { createClient } from "@/lib/supabase/server";
 
-async function requireAdmin() {
+// Decodifica el JWT de sesión y devuelve user_role y clinic_id.
+// Ambos son claims top-level inyectados por el Custom Access Token Hook (migración 0007).
+// NO leer desde user.app_metadata — ese campo viene de raw_app_meta_data en la BD
+// y no incluye los claims custom del hook.
+async function requireAdmin(): Promise<
+  { error: string } | { supabase: ReturnType<typeof createClient>; clinicId: string }
+> {
   const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Sesión expirada." as const };
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { error: "Sesión expirada." };
 
-  const role = user.app_metadata?.user_role as string | undefined;
-  if (role !== "admin") return { error: "Solo administradores pueden realizar esta acción." as const };
+  let role: string | null = null;
+  let clinicId: string | null = null;
+  try {
+    const payload = JSON.parse(
+      Buffer.from(session.access_token.split(".")[1], "base64").toString("utf8")
+    ) as { user_role?: string; clinic_id?: string };
+    role = payload.user_role ?? null;
+    clinicId = payload.clinic_id ?? null;
+  } catch {}
 
-  return { supabase };
+  if (role !== "admin") return { error: "Solo administradores pueden realizar esta acción." };
+  if (!clinicId) return { error: "No se pudo determinar la clínica del usuario." };
+
+  return { supabase, clinicId };
 }
 
 export async function updateClinicSettings(
@@ -36,7 +50,7 @@ export async function updateClinicSettings(
     return { error: "Todos los campos obligatorios deben estar completos." };
   }
 
-  // clinic_id resuelto por RLS (tenant_self) — no viene del form
+  // clinic_id resuelto por RLS (tenant_self — id = auth_clinic_id()) — no viene del form.
   const { error } = await supabase
     .from("clinics")
     .update({ name, timezone, prime_time_start, prime_time_end, currency, valuation_fee });
@@ -52,7 +66,7 @@ export async function upsertTreatmentType(
 ): Promise<{ error?: string }> {
   const result = await requireAdmin();
   if ("error" in result) return { error: result.error };
-  const { supabase } = result;
+  const { supabase, clinicId } = result;
 
   const id = (formData.get("id") as string | null) || null;
   const name = (formData.get("name") as string)?.trim();
@@ -70,16 +84,17 @@ export async function upsertTreatmentType(
     if (error) return { error: `Error al actualizar: ${error.message}` };
     typeId = id;
   } else {
+    // clinic_id es NOT NULL sin default — debe venir del JWT, nunca del form.
     const { data, error } = await supabase
       .from("treatment_types")
-      .insert({ name, description })
+      .insert({ name, description, clinic_id: clinicId })
       .select("id")
       .single();
     if (error) return { error: `Error al crear: ${error.message}` };
     typeId = (data as { id: string }).id;
   }
 
-  // Rebuild phases: delete all + insert new (same pattern as professional_availability)
+  // Rebuild phases: delete all + insert new (mismo patrón que professional_availability).
   await supabase
     .from("treatment_phase_templates")
     .delete()
@@ -105,6 +120,7 @@ export async function upsertTreatmentType(
 
       phases.push({
         treatment_type_id: typeId,
+        clinic_id: clinicId,  // NOT NULL — resuelto del JWT, nunca del form
         sequence_order: i + 1,
         name: finalName,
         phase_kind: phaseKind || "clinical",
