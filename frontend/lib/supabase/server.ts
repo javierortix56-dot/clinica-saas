@@ -399,3 +399,154 @@ export async function getAppointmentsByPatient(
       null,
   }));
 }
+
+// ─── Historia clínica ──────────────────────────────────────────────────────────
+
+export interface ClinicalNote {
+  id: string;
+  note_type: string;
+  body: string;
+  created_at: string;
+  author_name: string | null;
+  treatment_name: string | null;
+}
+
+interface ClinicalNoteRow {
+  id: string;
+  note_type: string;
+  body: string;
+  created_at: string;
+  professionals: { staff_members: { full_name: string } | null } | null;
+  treatments: { treatment_types: { name: string } | null } | null;
+}
+
+export async function getClinicalNotes(patientId: string): Promise<ClinicalNote[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("clinical_notes")
+    .select(
+      `id, note_type, body, created_at,
+       professionals ( staff_members ( full_name ) ),
+       treatments ( treatment_types ( name ) )`
+    )
+    .eq("patient_id", patientId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(`No se pudo cargar la historia clínica: ${error.message}`);
+  return ((data ?? []) as unknown as ClinicalNoteRow[]).map((row) => ({
+    id: row.id,
+    note_type: row.note_type,
+    body: row.body,
+    created_at: row.created_at,
+    author_name: row.professionals?.staff_members?.full_name ?? null,
+    treatment_name: row.treatments?.treatment_types?.name ?? null,
+  }));
+}
+
+export interface PatientTreatment {
+  id: string;
+  name: string;
+  status: string;
+}
+
+interface PatientTreatmentRow {
+  id: string;
+  status: string;
+  treatment_types: { name: string } | null;
+}
+
+export async function getPatientTreatments(patientId: string): Promise<PatientTreatment[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("treatments")
+    .select("id, status, treatment_types ( name )")
+    .eq("patient_id", patientId)
+    .is("deleted_at", null);
+  if (error) throw new Error(`No se pudo cargar los tratamientos: ${error.message}`);
+  return ((data ?? []) as unknown as PatientTreatmentRow[]).map((row) => ({
+    id: row.id,
+    name: row.treatment_types?.name ?? "—",
+    status: row.status,
+  }));
+}
+
+// ─── Configuración de la clínica ──────────────────────────────────────────────
+
+export interface ClinicSettings {
+  id: string;
+  name: string;
+  timezone: string;
+  prime_time_start: string;
+  prime_time_end: string;
+  currency: string;
+  valuation_fee: string | null;
+}
+
+export async function getClinicSettings(): Promise<ClinicSettings | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("clinics")
+    .select("id, name, timezone, prime_time_start, prime_time_end, currency, valuation_fee")
+    .single();
+  if (error) {
+    if (error.code === "PGRST116") return null;
+    throw new Error(`No se pudo cargar la configuración: ${error.message}`);
+  }
+  const row = data as Record<string, unknown>;
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    timezone: row.timezone as string,
+    prime_time_start: ((row.prime_time_start as string) ?? "17:00:00").slice(0, 5),
+    prime_time_end: ((row.prime_time_end as string) ?? "20:00:00").slice(0, 5),
+    currency: row.currency as string,
+    valuation_fee: row.valuation_fee != null ? String(row.valuation_fee) : null,
+  };
+}
+
+export interface TreatmentPhase {
+  id: string;
+  sequence_order: number;
+  name: string;
+  phase_kind: "clinical" | "lab_wait";
+  duration_minutes: number | null;
+  cooldown_days: number;
+}
+
+export interface TreatmentTypeWithPhases {
+  id: string;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+  phases: TreatmentPhase[];
+}
+
+interface TreatmentTypeRow {
+  id: string;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+  treatment_phase_templates: TreatmentPhase[];
+}
+
+export async function getTreatmentTypesWithPhases(): Promise<TreatmentTypeWithPhases[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("treatment_types")
+    .select(
+      `id, name, description, is_active,
+       treatment_phase_templates ( id, sequence_order, name, phase_kind, duration_minutes, cooldown_days )`
+    )
+    .is("deleted_at", null)
+    .order("name", { ascending: true });
+  if (error) throw new Error(`No se pudo cargar los tipos de tratamiento: ${error.message}`);
+  return ((data ?? []) as unknown as TreatmentTypeRow[]).map((row) => ({
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    is_active: row.is_active,
+    phases: [...(row.treatment_phase_templates ?? [])].sort(
+      (a, b) => a.sequence_order - b.sequence_order
+    ),
+  }));
+}
