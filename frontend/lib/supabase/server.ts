@@ -138,12 +138,11 @@ export interface WeeklyAppointment {
   treatment_label: string | null;
 }
 
-function getWeekBounds(): { weekStart: Date; weekEnd: Date } {
-  const now = new Date();
-  const day = now.getDay(); // 0=dom … 6=sáb
+function getWeekBounds(ref: Date = new Date()): { weekStart: Date; weekEnd: Date } {
+  const day = ref.getDay(); // 0=dom … 6=sáb
   const diffToMonday = day === 0 ? -6 : 1 - day;
-  const monday = new Date(now);
-  monday.setDate(now.getDate() + diffToMonday);
+  const monday = new Date(ref);
+  monday.setDate(ref.getDate() + diffToMonday);
   monday.setHours(0, 0, 0, 0);
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
@@ -151,10 +150,10 @@ function getWeekBounds(): { weekStart: Date; weekEnd: Date } {
   return { weekStart: monday, weekEnd: sunday };
 }
 
-// Lee los turnos `confirmed` del profesional logueado para la semana actual.
+// Lee los turnos `confirmed` del profesional logueado para la semana de `refDate` (default: hoy).
 // El professional_id se resuelve server-side desde el JWT (sub → staff_members → professionals).
 // Devuelve [] si el usuario no tiene fila en `professionals` (sin error — mostrar estado vacío).
-export async function getWeeklyAppointments(): Promise<WeeklyAppointment[]> {
+export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppointment[]> {
   const supabase = createClient();
 
   const {
@@ -171,7 +170,7 @@ export async function getWeeklyAppointments(): Promise<WeeklyAppointment[]> {
 
   if (!prof) return [];
 
-  const { weekStart, weekEnd } = getWeekBounds();
+  const { weekStart, weekEnd } = getWeekBounds(refDate);
 
   const { data, error } = await supabase
     .from("appointments")
