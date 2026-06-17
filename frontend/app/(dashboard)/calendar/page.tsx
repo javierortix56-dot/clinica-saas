@@ -1,44 +1,24 @@
 import React from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
-import { createServerClient } from "@supabase/ssr";
 
-import { getWeeklyAppointments, type WeeklyAppointment } from "@/lib/supabase/server";
+import {
+  getWeeklyAppointments,
+  getSessionAuth,
+  isDoctorRole,
+  type WeeklyAppointment,
+} from "@/lib/supabase/server";
 import { RefreshButton } from "./refresh-button";
 
 export const dynamic = "force-dynamic";
 
 // ─── Auth guard ───────────────────────────────────────────────────────────────
 
+// El calendario es exclusivo del doctor. Sin sesión → /login; otro rol → /approvals.
 async function assertDoctorRole() {
-  const cookieStore = cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll: () => cookieStore.getAll(),
-        setAll: (cookiesToSet) =>
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          ),
-      },
-    }
-  );
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session) redirect("/login");
-
-  const payload = session.access_token.split(".")[1];
-  const { user_role } = JSON.parse(
-    Buffer.from(payload, "base64").toString("utf8")
-  ) as { user_role?: string };
-
-  if (user_role !== "doctor" && user_role !== "professional") {
-    redirect("/approvals");
-  }
+  const { hasSession, role } = await getSessionAuth();
+  if (!hasSession) redirect("/login");
+  if (!isDoctorRole(role)) redirect("/approvals");
 }
 
 // ─── Grid constants ───────────────────────────────────────────────────────────
