@@ -4,6 +4,7 @@ import {
   getProposedAppointments,
   getSessionAuth,
   isDoctorRole,
+  type ProposedAppointment,
 } from "@/lib/supabase/server";
 import { ApprovalsTable } from "./ApprovalsTable";
 

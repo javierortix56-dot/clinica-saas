@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Check, Circle, Lock, PlayCircle, Phone } from "lucide-react";
+import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { Check, Circle, Lock, PlayCircle, Phone, CreditCard } from "lucide-react";
+import { toast } from "sonner";
 
 import { createClient } from "@/lib/supabase/client";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Sheet,
   SheetContent,
@@ -12,6 +15,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { addDays, formatDuration, formatTime } from "./grid-utils";
+import { cancelAppointment } from "./actions";
 
 const TZ = "America/Argentina/Buenos_Aires";
 
@@ -33,7 +37,12 @@ interface ApptRow {
   treatment_id: string | null;
   phase_template_id: string | null;
   patient_id: string;
-  patients: { id: string; full_name: string; phone: string | null } | null;
+  patients: {
+    id: string;
+    full_name: string;
+    phone: string | null;
+    national_id: string;
+  } | null;
   treatments: {
     id: string;
     treatment_type_id: string;
@@ -74,13 +83,12 @@ interface PhaseView {
   duration_minutes: number | null;
   cooldown_days: number;
   state: PhaseState;
-  availableFrom: string | null; // ISO, solo si state === "blocked"
+  availableFrom: string | null;
 }
 
 const COMPLETED_STATUSES: ApptStatus[] = ["confirmed", "completed"];
 const REALIZED_STATUSES: ApptStatus[] = ["confirmed", "completed", "in_progress"];
 
-// El appointment realizado más reciente para una fase (para contar cooldown).
 function lastRealizedForPhase(
   history: HistoryRow[],
   phaseId: string
@@ -106,7 +114,6 @@ export function computePhaseViews(
     let availableFrom: string | null = null;
 
     if (activePhaseId && p.id === activePhaseId) {
-      // 1. activa — es la fase del turno actual
       state = "active";
     } else if (
       history.some(
@@ -115,10 +122,8 @@ export function computePhaseViews(
           COMPLETED_STATUSES.includes(h.status)
       )
     ) {
-      // 2. completada — hay un turno confirmado/completado para esta fase
       state = "completed";
     } else {
-      // 3. bloqueada — la fase anterior tiene cooldown vigente
       const prev = phases[i - 1];
       let blocked = false;
       if (prev && prev.cooldown_days > 0) {
@@ -134,7 +139,6 @@ export function computePhaseViews(
           }
         }
       }
-      // 4. pendiente — ninguna de las anteriores
       state = blocked ? "blocked" : "pending";
     }
 
@@ -205,13 +209,7 @@ const PHASE_STATE_LABELS: Record<PhaseState, string> = {
   pending: "pendiente",
 };
 
-function PhaseTimeline({
-  phases,
-  has3D,
-}: {
-  phases: PhaseView[];
-  has3D: boolean;
-}) {
+function PhaseTimeline({ phases, has3D }: { phases: PhaseView[]; has3D: boolean }) {
   if (phases.length === 0) {
     return (
       <p className="text-sm text-slate-400">
@@ -231,33 +229,18 @@ function PhaseTimeline({
               : "—";
         return (
           <li key={p.id} className="flex gap-3">
-            {/* Riel: nodo + línea vertical */}
             <div className="flex flex-col items-center">
               <div className="flex h-6 w-6 items-center justify-center">
                 <PhaseIcon state={p.state} />
               </div>
               {!isLast && <div className="w-px flex-1 bg-slate-200" />}
             </div>
-
-            {/* Contenido */}
             <div className={`flex-1 ${isLast ? "pb-0" : "pb-4"}`}>
               <div className="flex items-center justify-between gap-2">
-                <p
-                  className={`text-sm font-medium ${
-                    p.state === "active" ? "text-slate-900" : "text-slate-700"
-                  }`}
-                >
+                <p className={`text-sm font-medium ${p.state === "active" ? "text-slate-900" : "text-slate-700"}`}>
                   {p.name}
                 </p>
-                <span
-                  className={`text-xs ${
-                    p.state === "blocked"
-                      ? "text-amber-600"
-                      : p.state === "active"
-                        ? "text-slate-900"
-                        : "text-slate-400"
-                  }`}
-                >
+                <span className={`text-xs ${p.state === "blocked" ? "text-amber-600" : p.state === "active" ? "text-slate-900" : "text-slate-400"}`}>
                   {PHASE_STATE_LABELS[p.state]}
                 </span>
               </div>
@@ -289,17 +272,12 @@ function HistoryList({ history }: { history: HistoryRow[] }) {
   return (
     <ul className="space-y-1.5">
       {history.map((h) => (
-        <li
-          key={h.id}
-          className="flex items-center justify-between gap-2 text-sm"
-        >
+        <li key={h.id} className="flex items-center justify-between gap-2 text-sm">
           <span className="text-slate-500">{formatShortDate(h.start_at)}</span>
           <span className="flex-1 truncate text-slate-700">
             {h.treatment_phase_templates?.name ?? "—"}
           </span>
-          <span className="text-xs text-slate-400">
-            {STATUS_LABELS[h.status]}
-          </span>
+          <span className="text-xs text-slate-400">{STATUS_LABELS[h.status]}</span>
         </li>
       ))}
     </ul>
@@ -355,7 +333,7 @@ export function AppointmentSheet({
         .select(
           `
             id, start_at, end_at, status, treatment_id, phase_template_id, patient_id,
-            patients ( id, full_name, phone ),
+            patients ( id, full_name, phone, national_id ),
             treatments ( id, treatment_type_id, treatment_types ( name ) ),
             treatment_phase_templates ( id, treatment_type_id, name )
           `
@@ -379,18 +357,14 @@ export function AppointmentSheet({
       const phasesPromise = treatmentTypeId
         ? supabase
             .from("treatment_phase_templates")
-            .select(
-              "id, sequence_order, name, phase_kind, duration_minutes, cooldown_days"
-            )
+            .select("id, sequence_order, name, phase_kind, duration_minutes, cooldown_days")
             .eq("treatment_type_id", treatmentTypeId)
             .order("sequence_order", { ascending: true })
         : Promise.resolve({ data: [] as PhaseRow[] });
 
       const historyBase = supabase
         .from("appointments")
-        .select(
-          "id, start_at, status, phase_template_id, treatment_phase_templates ( name )"
-        )
+        .select("id, start_at, status, phase_template_id, treatment_phase_templates ( name )")
         .order("start_at", { ascending: false });
       const historyPromise = appt.treatment_id
         ? historyBase.eq("treatment_id", appt.treatment_id)
@@ -419,9 +393,7 @@ export function AppointmentSheet({
       });
     })();
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [appointmentId, open]);
 
   return (
@@ -435,7 +407,11 @@ export function AppointmentSheet({
         ) : state.status === "error" ? (
           <SheetError />
         ) : (
-          <SheetReady state={state} />
+          <SheetReady
+            state={state}
+            onClose={() => onOpenChange(false)}
+            onCancelled={() => setState({ status: "idle" })}
+          />
         )}
       </SheetContent>
     </Sheet>
@@ -481,20 +457,44 @@ function SheetError() {
 
 function SheetReady({
   state,
+  onClose,
+  onCancelled,
 }: {
   state: Extract<LoadState, { status: "ready" }>;
+  onClose: () => void;
+  onCancelled: () => void;
 }) {
+  const router = useRouter();
+  const [isCancelling, startCancelling] = useTransition();
   const { appt, treatmentName, phases, history, noShowCount } = state;
   const now = new Date();
 
   const patientName = appt.patients?.full_name ?? "Paciente";
-  const phaseViews = computePhaseViews(
-    appt.phase_template_id,
-    phases,
-    history,
-    now
-  );
+  const phaseViews = computePhaseViews(appt.phase_template_id, phases, history, now);
   const has3D = phases.some((p) => /3d|escaneo/i.test(p.name));
+
+  // Próxima fase disponible: fase siguiente a la activa con cooldown de la activa
+  const activeIdx = phaseViews.findIndex((p) => p.state === "active");
+  const activePhase = activeIdx !== -1 ? phases[activeIdx] : null;
+  const nextPhase = activeIdx !== -1 ? phases[activeIdx + 1] : null;
+  const nextAvailableFrom =
+    activePhase && activePhase.cooldown_days > 0
+      ? addDays(new Date(appt.start_at), activePhase.cooldown_days).toISOString()
+      : null;
+
+  function handleCancel() {
+    startCancelling(async () => {
+      const result = await cancelAppointment(appt.id);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Turno cancelado.");
+      router.refresh();
+      onCancelled();
+      onClose();
+    });
+  }
 
   return (
     <>
@@ -515,6 +515,12 @@ function SheetReady({
             {appt.patients.phone}
           </p>
         )}
+        {appt.patients?.national_id && (
+          <p className="flex items-center gap-1.5 text-xs text-slate-400">
+            <CreditCard className="h-3 w-3" />
+            DNI {appt.patients.national_id}
+          </p>
+        )}
       </SheetHeader>
 
       <div className="space-y-6 p-6">
@@ -529,11 +535,37 @@ function SheetReady({
           <PhaseTimeline phases={phaseViews} has3D={has3D} />
         </section>
 
+        {/* Próxima fase disponible */}
+        {nextPhase && nextAvailableFrom && (
+          <section className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <SectionTitle>Próxima fase disponible</SectionTitle>
+            <p className="text-sm font-medium text-slate-700">{nextPhase.name}</p>
+            <p className="text-xs text-amber-700">
+              Disponible desde {formatShortDate(nextAvailableFrom)}
+            </p>
+          </section>
+        )}
+
         {/* Historial */}
         <section className="space-y-3">
           <SectionTitle>Historial</SectionTitle>
           <HistoryList history={history} />
         </section>
+
+        {/* Cancelar turno */}
+        {appt.status !== "cancelled" && appt.status !== "completed" && (
+          <section className="pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCancel}
+              disabled={isCancelling}
+              className="w-full text-slate-500 hover:text-red-600 hover:border-red-200"
+            >
+              {isCancelling ? "Cancelando…" : "Cancelar turno"}
+            </Button>
+          </section>
+        )}
       </div>
     </>
   );
