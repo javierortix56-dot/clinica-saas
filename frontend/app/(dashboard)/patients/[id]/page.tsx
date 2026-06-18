@@ -9,6 +9,7 @@ import {
   getSessionAuth,
 } from "@/lib/supabase/server";
 import { PatientTabs } from "../PatientTabs";
+import { EditPatientButton } from "../EditPatientButton";
 
 export const dynamic = "force-dynamic";
 
@@ -45,30 +46,29 @@ export default async function PatientDetailPage({
         </Link>
       </div>
 
-      <div>
+      <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold tracking-tight">
           {patient.full_name}
         </h1>
+        <EditPatientButton patient={patient} />
       </div>
 
       <div className="rounded-lg border bg-card p-6">
         <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <dt className="text-sm font-medium text-muted-foreground">
-              DNI / ID
-            </dt>
+            <dt className="text-sm font-medium text-muted-foreground">DNI / ID</dt>
             <dd className="mt-1 text-sm">{patient.national_id}</dd>
           </div>
           <div>
-            <dt className="text-sm font-medium text-muted-foreground">
-              Teléfono
-            </dt>
+            <dt className="text-sm font-medium text-muted-foreground">Teléfono</dt>
             <dd className="mt-1 text-sm">{patient.phone ?? "—"}</dd>
           </div>
           <div>
-            <dt className="text-sm font-medium text-muted-foreground">
-              Fecha de alta
-            </dt>
+            <dt className="text-sm font-medium text-muted-foreground">Email</dt>
+            <dd className="mt-1 text-sm">{patient.email ?? "—"}</dd>
+          </div>
+          <div>
+            <dt className="text-sm font-medium text-muted-foreground">Fecha de alta</dt>
             <dd className="mt-1 text-sm">
               {dateFormatter.format(new Date(patient.created_at))}
             </dd>

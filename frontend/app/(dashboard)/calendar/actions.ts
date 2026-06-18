@@ -24,3 +24,20 @@ export async function cancelAppointment(
   revalidatePath("/calendar");
   return {};
 }
+
+// Actualiza el estado de un turno. Transiciones válidas desde la UI:
+//   confirmed   → in_progress | no_show
+//   in_progress → completed
+export async function updateAppointmentStatus(
+  appointmentId: string,
+  status: "in_progress" | "completed" | "no_show"
+): Promise<{ error?: string }> {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appointments")
+    .update({ status })
+    .eq("id", appointmentId);
+  if (error) return { error: `No se pudo actualizar el estado: ${error.message}` };
+  revalidatePath("/calendar");
+  return {};
+}

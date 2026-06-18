@@ -13,6 +13,7 @@ export interface Patient {
   national_id: string;
   full_name: string;
   phone?: string | null;
+  email?: string | null;
   created_at: string;
 }
 

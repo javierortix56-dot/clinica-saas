@@ -16,7 +16,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { addDays, formatDuration, formatTime } from "./grid-utils";
-import { cancelAppointment } from "./actions";
+import { cancelAppointment, updateAppointmentStatus } from "./actions";
 
 const TZ = "America/Argentina/Buenos_Aires";
 
@@ -467,6 +467,7 @@ function SheetReady({
 }) {
   const router = useRouter();
   const [isCancelling, startCancelling] = useTransition();
+  const [isUpdating, startUpdating] = useTransition();
   const { appt, treatmentName, phases, history, noShowCount } = state;
   const now = new Date();
 
@@ -486,11 +487,24 @@ function SheetReady({
   function handleCancel() {
     startCancelling(async () => {
       const result = await cancelAppointment(appt.id);
-      if (result.error) {
-        toast.error(result.error);
-        return;
-      }
+      if (result.error) { toast.error(result.error); return; }
       toast.success("Turno cancelado.");
+      router.refresh();
+      onCancelled();
+      onClose();
+    });
+  }
+
+  function handleStatus(status: "in_progress" | "completed" | "no_show") {
+    const labels: Record<string, string> = {
+      in_progress: "en curso",
+      completed: "completado",
+      no_show: "no presentado",
+    };
+    startUpdating(async () => {
+      const result = await updateAppointmentStatus(appt.id, status);
+      if (result.error) { toast.error(result.error); return; }
+      toast.success(`Turno marcado como ${labels[status]}.`);
       router.refresh();
       onCancelled();
       onClose();
@@ -560,17 +574,57 @@ function SheetReady({
           <HistoryList history={history} />
         </section>
 
-        {/* Cancelar turno */}
-        {appt.status !== "cancelled" && appt.status !== "completed" && (
-          <section className="pt-2">
+        {/* Cambios de estado */}
+        {appt.status === "confirmed" && (
+          <section className="space-y-2 pt-2">
+            <Button
+              size="sm"
+              onClick={() => handleStatus("in_progress")}
+              disabled={isUpdating || isCancelling}
+              className="w-full"
+            >
+              {isUpdating ? "Actualizando…" : "Marcar en curso"}
+            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleStatus("no_show")}
+                disabled={isUpdating || isCancelling}
+                className="flex-1 text-amber-600 hover:border-amber-200 hover:text-amber-700"
+              >
+                No se presentó
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCancel}
+                disabled={isCancelling || isUpdating}
+                className="flex-1 text-red-600 hover:border-red-200 hover:text-red-700"
+              >
+                {isCancelling ? "Cancelando…" : "Cancelar"}
+              </Button>
+            </div>
+          </section>
+        )}
+        {appt.status === "in_progress" && (
+          <section className="space-y-2 pt-2">
+            <Button
+              size="sm"
+              onClick={() => handleStatus("completed")}
+              disabled={isUpdating || isCancelling}
+              className="w-full"
+            >
+              {isUpdating ? "Actualizando…" : "Completar turno"}
+            </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={handleCancel}
-              disabled={isCancelling}
-              className="w-full text-slate-500 hover:text-red-600 hover:border-red-200"
+              disabled={isCancelling || isUpdating}
+              className="w-full text-red-600 hover:border-red-200 hover:text-red-700"
             >
-              {isCancelling ? "Cancelando…" : "Cancelar turno"}
+              {isCancelling ? "Cancelando…" : "Cancelar"}
             </Button>
           </section>
         )}

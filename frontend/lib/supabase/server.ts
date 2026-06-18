@@ -140,7 +140,7 @@ export async function getProposedAppointments(): Promise<ProposedAppointment[]> 
 
 // Columnas que seleccionamos de `patients`. La columna real es `national_id`
 // (el spec la llamaba `document_id` — usamos el nombre real de la BD).
-const PATIENT_SELECT = "id, clinic_id, full_name, phone, national_id, created_at";
+const PATIENT_SELECT = "id, clinic_id, full_name, phone, email, national_id, created_at";
 
 function rowToPatient(row: Record<string, unknown>): Patient {
   return {
@@ -148,6 +148,7 @@ function rowToPatient(row: Record<string, unknown>): Patient {
     clinic_id: row.clinic_id as string,
     full_name: row.full_name as string,
     phone: (row.phone as string | null) ?? null,
+    email: (row.email as string | null) ?? null,
     national_id: row.national_id as string,
     created_at: row.created_at as string,
   };

@@ -15,7 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { confirmAppointment } from "./actions";
+import { confirmAppointment, rejectAppointment } from "./actions";
 
 const dateFormatter = new Intl.DateTimeFormat("es-AR", {
   dateStyle: "medium",
@@ -31,19 +31,28 @@ function formatDateTime(iso: string): string {
 
 function ConfirmRow({ appt }: { appt: ProposedAppointment }) {
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
+  const [isConfirming, startConfirm] = useTransition();
+  const [isRejecting, startReject] = useTransition();
 
-  function handleClick() {
-    startTransition(async () => {
+  function handleConfirm() {
+    startConfirm(async () => {
       const result = await confirmAppointment(appt.id);
-      if (result.error) {
-        toast.error(result.error);
-        return;
-      }
+      if (result.error) { toast.error(result.error); return; }
       toast.success("Turno confirmado.");
       router.refresh();
     });
   }
+
+  function handleReject() {
+    startReject(async () => {
+      const result = await rejectAppointment(appt.id);
+      if (result.error) { toast.error(result.error); return; }
+      toast.success("Turno rechazado.");
+      router.refresh();
+    });
+  }
+
+  const busy = isConfirming || isRejecting;
 
   return (
     <TableRow>
@@ -62,9 +71,20 @@ function ConfirmRow({ appt }: { appt: ProposedAppointment }) {
       </TableCell>
       <TableCell>{formatDateTime(appt.start_at)}</TableCell>
       <TableCell className="text-right">
-        <Button size="sm" onClick={handleClick} disabled={isPending}>
-          {isPending ? "Confirmando…" : "Confirmar"}
-        </Button>
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleReject}
+            disabled={busy}
+            className="text-red-600 hover:border-red-200 hover:text-red-700"
+          >
+            {isRejecting ? "Rechazando…" : "Rechazar"}
+          </Button>
+          <Button size="sm" onClick={handleConfirm} disabled={busy}>
+            {isConfirming ? "Confirmando…" : "Confirmar"}
+          </Button>
+        </div>
       </TableCell>
     </TableRow>
   );

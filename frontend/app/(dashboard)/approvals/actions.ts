@@ -50,3 +50,19 @@ export async function confirmAppointment(
     return { error: "No se pudo conectar con el servidor." };
   }
 }
+
+// Rechaza (cancela) un turno propuesto. Se hace directo en Supabase —
+// no requiere lógica de negocio en el backend, solo cambio de estado.
+export async function rejectAppointment(
+  appointmentId: string
+): Promise<{ error?: string }> {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("appointments")
+    .update({ status: "cancelled" })
+    .eq("id", appointmentId)
+    .eq("status", "proposed");
+  if (error) return { error: `No se pudo rechazar el turno: ${error.message}` };
+  revalidatePath("/approvals");
+  return {};
+}
