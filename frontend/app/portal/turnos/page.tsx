@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { createClient, getPatientSession } from "@/lib/supabase/server";
+import { CancelButton } from "./CancelButton";
 
 export const dynamic = "force-dynamic";
 
@@ -104,6 +105,10 @@ export default async function PortalTurnosPage() {
                 {treatmentLabel && (
                   <p className="text-xs text-slate-500">{treatmentLabel}</p>
                 )}
+                {["proposed", "confirmed"].includes(appt.status) &&
+                  new Date(appt.start_at) > new Date() && (
+                    <CancelButton appointmentId={appt.id} />
+                  )}
               </li>
             );
           })}

@@ -2,7 +2,8 @@
 
 import React, { useState } from "react";
 
-import type { WeeklyAppointment } from "@/lib/supabase/server";
+import type { WeeklyAppointment, ProfessionalForScheduling } from "@/lib/supabase/server";
+import type { Patient } from "@clinica/shared";
 import {
   DAY_LABELS,
   SLOTS,
@@ -15,6 +16,7 @@ import {
   parseISODate,
 } from "./grid-utils";
 import { AppointmentSheet } from "./AppointmentSheet";
+import { ManualAppointmentSheet } from "./ManualAppointmentSheet";
 
 // Grilla semanal interactiva. page.tsx (Server Component) resuelve auth y datos y
 // pasa solo props serializables: los días como ISO (YYYY-MM-DD) y los turnos.
@@ -22,15 +24,34 @@ import { AppointmentSheet } from "./AppointmentSheet";
 export function CalendarGrid({
   weekDays: weekDayStrs,
   appointments,
+  canCreateAppointment,
+  patients,
+  professionals,
 }: {
   weekDays: string[];
   appointments: WeeklyAppointment[];
+  canCreateAppointment: boolean;
+  patients: Pick<Patient, "id" | "full_name" | "national_id">[];
+  professionals: ProfessionalForScheduling[];
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [newApptOpen, setNewApptOpen] = useState(false);
   const weekDays = weekDayStrs.map(parseISODate);
 
   return (
     <>
+      {canCreateAppointment && (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => setNewApptOpen(true)}
+            className="rounded border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
+          >
+            + Nuevo turno
+          </button>
+        </div>
+      )}
+
       <div className="overflow-x-auto rounded-lg border border-slate-200">
         <div
           className="grid min-w-[520px]"
@@ -148,6 +169,13 @@ export function CalendarGrid({
         onOpenChange={(o) => {
           if (!o) setSelectedId(null);
         }}
+      />
+
+      <ManualAppointmentSheet
+        open={newApptOpen}
+        onOpenChange={setNewApptOpen}
+        patients={patients}
+        professionals={professionals}
       />
     </>
   );

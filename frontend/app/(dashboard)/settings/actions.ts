@@ -141,3 +141,30 @@ export async function upsertTreatmentType(
   revalidatePath("/settings");
   return {};
 }
+
+export async function deleteTreatmentType(
+  id: string
+): Promise<{ error?: string }> {
+  const result = await requireAdmin();
+  if ("error" in result) return { error: result.error };
+  const { supabase } = result;
+
+  // Block deletion if there are treatments (active treatment plans) using this type.
+  const { count } = await supabase
+    .from("treatments")
+    .select("id", { count: "exact", head: true })
+    .eq("treatment_type_id", id);
+
+  if (count && count > 0) {
+    return { error: "No se puede eliminar: hay tratamientos activos que usan este tipo." };
+  }
+
+  // Delete phases first (FK dependency).
+  await supabase.from("treatment_phase_templates").delete().eq("treatment_type_id", id);
+
+  const { error } = await supabase.from("treatment_types").delete().eq("id", id);
+  if (error) return { error: `Error al eliminar: ${error.message}` };
+
+  revalidatePath("/settings");
+  return {};
+}

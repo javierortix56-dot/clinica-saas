@@ -36,6 +36,7 @@ type SheetState =
 
 export function StaffTable({ members }: { members: StaffMember[] }) {
   const [sheet, setSheet] = useState<SheetState>({ open: false });
+  const [search, setSearch] = useState("");
 
   function openEdit(member: StaffMember) {
     setSheet({ open: true, mode: "edit", member });
@@ -49,9 +50,26 @@ export function StaffTable({ members }: { members: StaffMember[] }) {
     setSheet({ open: false });
   }
 
+  const filteredMembers = search.trim()
+    ? members.filter((m) => {
+        const q = search.toLowerCase();
+        return (
+          m.full_name.toLowerCase().includes(q) ||
+          (m.email ?? "").toLowerCase().includes(q)
+        );
+      })
+    : members;
+
   return (
     <>
-      <div className="flex items-center justify-end">
+      <div className="flex items-center gap-3">
+        <input
+          type="search"
+          placeholder="Buscar por nombre o email…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="flex-1 rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400"
+        />
         <Button size="sm" onClick={openCreate}>
           + Nuevo miembro
         </Button>
@@ -60,6 +78,10 @@ export function StaffTable({ members }: { members: StaffMember[] }) {
       {members.length === 0 ? (
         <p className="rounded-lg border bg-card p-6 text-sm text-muted-foreground">
           No hay miembros registrados.
+        </p>
+      ) : filteredMembers.length === 0 ? (
+        <p className="rounded-lg border bg-card p-6 text-sm text-muted-foreground">
+          Sin resultados para "{search}".
         </p>
       ) : (
         <div className="rounded-lg border">
@@ -74,7 +96,7 @@ export function StaffTable({ members }: { members: StaffMember[] }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {members.map((m) => (
+              {filteredMembers.map((m) => (
                 <TableRow
                   key={m.id}
                   className={`cursor-pointer ${!m.is_active ? "opacity-50" : ""}`}

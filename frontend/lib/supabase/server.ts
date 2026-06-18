@@ -592,3 +592,25 @@ export async function getPatientSession(): Promise<{
   }
   return { hasSession: true, patientId };
 }
+
+export interface ProfessionalForScheduling {
+  id: string;
+  name: string;
+}
+
+export async function getProfessionalsForScheduling(): Promise<ProfessionalForScheduling[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("professionals")
+    .select("id, staff_members ( full_name, is_active )")
+    .order("id");
+
+  const rows = (data ?? []) as unknown as {
+    id: string;
+    staff_members: { full_name: string; is_active: boolean } | null;
+  }[];
+
+  return rows
+    .filter((r) => r.staff_members?.is_active !== false)
+    .map((r) => ({ id: r.id, name: r.staff_members?.full_name ?? "Sin nombre" }));
+}

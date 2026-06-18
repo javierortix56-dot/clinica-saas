@@ -200,7 +200,20 @@ export function PatientTabs({
 }) {
   const [tab, setTab] = useState<"turnos" | "historia">("turnos");
   const [showForm, setShowForm] = useState(false);
+  const [noteSearch, setNoteSearch] = useState("");
   const canCreateNote = role === "admin" || role === "doctor";
+
+  const filteredNotes = noteSearch.trim()
+    ? notes.filter((n) => {
+        const q = noteSearch.toLowerCase();
+        return (
+          n.body.toLowerCase().includes(q) ||
+          (n.note_type ?? "").toLowerCase().includes(q) ||
+          (n.treatment_name ?? "").toLowerCase().includes(q) ||
+          (n.author_name ?? "").toLowerCase().includes(q)
+        );
+      })
+    : notes;
 
   return (
     <div className="flex flex-col gap-4">
@@ -278,13 +291,26 @@ export function PatientTabs({
             />
           )}
 
+          {notes.length > 0 && (
+            <input
+              type="search"
+              placeholder="Buscar en notas…"
+              value={noteSearch}
+              onChange={(e) => setNoteSearch(e.target.value)}
+              className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400"
+            />
+          )}
+
           {notes.length === 0 && !showForm ? (
             <p className="rounded-lg border bg-card p-6 text-sm text-muted-foreground">
               No hay notas clínicas para este paciente.
             </p>
           ) : (
             <div className="space-y-3">
-              {notes.map((note) => (
+              {filteredNotes.length === 0 && noteSearch ? (
+                <p className="text-sm text-slate-400">Sin resultados para "{noteSearch}".</p>
+              ) : (
+                filteredNotes.map((note) => (
                 <div
                   key={note.id}
                   className="rounded-lg border border-slate-200 bg-white p-4 space-y-2"
@@ -307,7 +333,8 @@ export function PatientTabs({
                   </div>
                   <p className="text-sm text-slate-700 whitespace-pre-wrap">{note.body}</p>
                 </div>
-              ))}
+              ))
+              )}
             </div>
           )}
         </div>

@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { upsertTreatmentType } from "./actions";
+import { upsertTreatmentType, deleteTreatmentType } from "./actions";
 
 interface PhaseInput {
   id?: string;
@@ -56,6 +56,8 @@ export function TreatmentTypeSheet({
   onOpenChange: (open: boolean) => void;
 }) {
   const [isPending, startTransition] = useTransition();
+  const [isDeleting, startDeleting] = useTransition();
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [phases, setPhases] = useState<PhaseInput[]>(() =>
     mode === "edit" && type ? type.phases.map(phaseToInput) : []
   );
@@ -298,10 +300,54 @@ export function TreatmentTypeSheet({
             )}
           </div>
 
-          <div className="mt-auto pt-4">
-            <Button type="submit" disabled={isPending} className="w-full">
+          <div className="mt-auto space-y-2 pt-4">
+            <Button type="submit" disabled={isPending || isDeleting} className="w-full">
               {isPending ? "Guardando…" : mode === "create" ? "Crear tipo" : "Guardar cambios"}
             </Button>
+            {mode === "edit" && type && (
+              confirmDelete ? (
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 text-slate-500"
+                    onClick={() => setConfirmDelete(false)}
+                    disabled={isDeleting}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 text-red-600 hover:border-red-200"
+                    disabled={isDeleting}
+                    onClick={() => {
+                      startDeleting(async () => {
+                        const result = await deleteTreatmentType(type.id);
+                        if (result.error) { toast.error(result.error); setConfirmDelete(false); return; }
+                        toast.success("Tipo eliminado.");
+                        onOpenChange(false);
+                      });
+                    }}
+                  >
+                    {isDeleting ? "Eliminando…" : "Confirmar eliminar"}
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-red-500 hover:border-red-200 hover:text-red-600"
+                  disabled={isPending}
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  Eliminar tipo
+                </Button>
+              )
+            )}
           </div>
         </form>
       </SheetContent>

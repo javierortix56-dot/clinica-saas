@@ -1,6 +1,12 @@
 import Link from "next/link";
 
-import { getWeeklyAppointments } from "@/lib/supabase/server";
+import {
+  getWeeklyAppointments,
+  getSessionAuth,
+  isDoctorRole,
+  getPatients,
+  getProfessionalsForScheduling,
+} from "@/lib/supabase/server";
 import { CalendarGrid } from "./CalendarGrid";
 import {
   addDays,
@@ -34,7 +40,14 @@ export default async function CalendarPage({
       })()
     : currentMonday;
 
-  const appointments = await getWeeklyAppointments(displayedMonday);
+  const { role } = await getSessionAuth();
+  const canCreateAppointment = role === "admin" || role === "reception";
+
+  const [appointments, patients, professionals] = await Promise.all([
+    getWeeklyAppointments(displayedMonday),
+    canCreateAppointment ? getPatients() : Promise.resolve([]),
+    canCreateAppointment ? getProfessionalsForScheduling() : Promise.resolve([]),
+  ]);
   const weekDays = getWeekDays(displayedMonday);
 
   // El resumen siempre refleja "hoy" — si se navega a otra semana muestra 0.
@@ -132,6 +145,9 @@ export default async function CalendarPage({
       <CalendarGrid
         weekDays={weekDays.map(toISODate)}
         appointments={appointments}
+        canCreateAppointment={canCreateAppointment}
+        patients={patients.map((p) => ({ id: p.id, full_name: p.full_name, national_id: p.national_id }))}
+        professionals={professionals}
       />
     </div>
   );
