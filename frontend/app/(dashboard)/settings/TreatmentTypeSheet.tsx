@@ -150,6 +150,21 @@ export function TreatmentTypeSheet({
             />
           </div>
 
+          {mode === "edit" && (
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                name="is_active"
+                id="is_active_treatment"
+                defaultChecked={type?.is_active ?? true}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              <label htmlFor="is_active_treatment" className="text-sm text-slate-700">
+                Tipo activo (visible para agendar turnos)
+              </label>
+            </div>
+          )}
+
           {/* Fases */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">

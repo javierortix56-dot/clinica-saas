@@ -118,3 +118,20 @@ export async function deactivateStaff(
   revalidatePath("/staff");
   return {};
 }
+
+// Reactiva un miembro previamente desactivado.
+export async function reactivateStaff(
+  memberId: string
+): Promise<{ error?: string }> {
+  const supabase = createClient();
+
+  const { error } = await supabase
+    .from("staff_members")
+    .update({ is_active: true })
+    .eq("id", memberId);
+
+  if (error) return { error: `No se pudo reactivar: ${error.message}` };
+
+  revalidatePath("/staff");
+  return {};
+}

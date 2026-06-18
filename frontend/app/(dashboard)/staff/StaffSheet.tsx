@@ -12,7 +12,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { upsertStaff, deactivateStaff } from "./actions";
+import { upsertStaff, deactivateStaff, reactivateStaff } from "./actions";
 
 const WEEKDAYS = [
   { value: 1, label: "Lunes" },
@@ -115,6 +115,7 @@ export function StaffSheet({
   const formRef = useRef<HTMLFormElement>(null);
   const [isPending, startTransition] = useTransition();
   const [isDeactivating, startDeactivating] = useTransition();
+  const [isReactivating, startReactivating] = useTransition();
   const [currentRole, setCurrentRole] = useState<string>(
     member?.role ?? "reception"
   );
@@ -270,10 +271,30 @@ export function StaffSheet({
                 type="button"
                 variant="outline"
                 onClick={handleDeactivate}
-                disabled={isPending || isDeactivating}
+                disabled={isPending || isDeactivating || isReactivating}
                 className="text-slate-500"
               >
                 {isDeactivating ? "Desactivando…" : "Desactivar miembro"}
+              </Button>
+            )}
+            {mode === "edit" && !member?.is_active && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  if (!member) return;
+                  startReactivating(async () => {
+                    const result = await reactivateStaff(member.id);
+                    if (result.error) { toast.error(result.error); return; }
+                    toast.success("Miembro reactivado.");
+                    router.refresh();
+                    onOpenChange(false);
+                  });
+                }}
+                disabled={isPending || isDeactivating || isReactivating}
+                className="text-emerald-600 hover:border-emerald-200"
+              >
+                {isReactivating ? "Reactivando…" : "Reactivar miembro"}
               </Button>
             )}
           </div>

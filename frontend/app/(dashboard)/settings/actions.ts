@@ -71,6 +71,7 @@ export async function upsertTreatmentType(
   const id = (formData.get("id") as string | null) || null;
   const name = (formData.get("name") as string)?.trim();
   const description = (formData.get("description") as string)?.trim() || null;
+  const is_active = id ? formData.get("is_active") === "on" : true;
 
   if (!name) return { error: "El nombre del tipo de tratamiento es obligatorio." };
 
@@ -79,7 +80,7 @@ export async function upsertTreatmentType(
   if (id) {
     const { error } = await supabase
       .from("treatment_types")
-      .update({ name, description })
+      .update({ name, description, is_active })
       .eq("id", id);
     if (error) return { error: `Error al actualizar: ${error.message}` };
     typeId = id;
