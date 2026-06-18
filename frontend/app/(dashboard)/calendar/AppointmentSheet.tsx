@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Check, Circle, Lock, PlayCircle, Phone, CreditCard } from "lucide-react";
 import { toast } from "sonner";
@@ -521,6 +522,13 @@ function SheetReady({
             DNI {appt.patients.national_id}
           </p>
         )}
+        <Link
+          href={`/patients/${appt.patient_id}`}
+          onClick={onClose}
+          className="inline-block text-xs text-slate-500 underline underline-offset-2 hover:text-slate-800"
+        >
+          Ver historia clínica →
+        </Link>
       </SheetHeader>
 
       <div className="space-y-6 p-6">
