@@ -550,3 +550,33 @@ export async function getTreatmentTypesWithPhases(): Promise<TreatmentTypeWithPh
     ),
   }));
 }
+
+// ─── Portal del paciente ───────────────────────────────────────────────────────
+
+// Análogo a getSessionAuth() pero para el portal: lee el claim patient_id del JWT.
+// El claim lo inyecta el Custom Access Token Hook cuando el usuario es paciente
+// (migración 0009). Sin patient_id en el JWT → patientId null (no es paciente).
+export async function getPatientSession(): Promise<{
+  hasSession: boolean;
+  patientId: string | null;
+}> {
+  const supabase = createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) return { hasSession: false, patientId: null };
+
+  let patientId: string | null = null;
+  try {
+    const payload = session.access_token.split(".")[1];
+    patientId =
+      (
+        JSON.parse(Buffer.from(payload, "base64").toString("utf8")) as {
+          patient_id?: string;
+        }
+      ).patient_id ?? null;
+  } catch {
+    patientId = null;
+  }
+  return { hasSession: true, patientId };
+}

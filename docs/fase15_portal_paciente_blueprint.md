@@ -253,6 +253,13 @@ Decodifica el JWT manualmente y lee el claim `patient_id`. Se usa en `/portal/tu
 | Portal solo lectura | No hay cancelación de turnos, ni solicitud de nuevo turno. Dejar para siguiente fase. |
 | Sin campo en admin para email de paciente | El campo `patients.email` existe en la BD pero no hay UI en `/patients/[id]` para editarlo. Requiere ampliar el formulario de edición de paciente (fuera del scope de esta fase). |
 
+## Prerequisito operativo
+
+El portal funciona únicamente para pacientes que tengan email registrado en su fila de `patients`.
+El mecanismo de carga es el bot de WhatsApp (Phase 16): en el flujo de paciente nuevo, el bot
+solicitará email junto al `national_id` antes de confirmar el primer turno.
+Hasta que Phase 16 esté implementado, el email debe cargarse manualmente desde el panel admin o via SQL.
+
 ---
 
 ## Secuencia de implementación
