@@ -201,6 +201,11 @@ export function PatientTabs({
   const [tab, setTab] = useState<"turnos" | "historia">("turnos");
   const [showForm, setShowForm] = useState(false);
   const [noteSearch, setNoteSearch] = useState("");
+
+  function switchTab(next: "turnos" | "historia") {
+    setTab(next);
+    if (next !== "historia") setNoteSearch("");
+  }
   const canCreateNote = role === "admin" || role === "doctor";
 
   const filteredNotes = noteSearch.trim()
@@ -219,10 +224,10 @@ export function PatientTabs({
     <div className="flex flex-col gap-4">
       {/* Tab bar */}
       <div className="flex gap-0 border-b border-slate-200">
-        <TabButton active={tab === "turnos"} onClick={() => setTab("turnos")}>
+        <TabButton active={tab === "turnos"} onClick={() => switchTab("turnos")}>
           Turnos ({appointments.length})
         </TabButton>
-        <TabButton active={tab === "historia"} onClick={() => setTab("historia")}>
+        <TabButton active={tab === "historia"} onClick={() => switchTab("historia")}>
           Historia clínica ({notes.length})
         </TabButton>
       </div>

@@ -63,6 +63,7 @@ export default async function PortalTurnosPage() {
        treatments ( treatment_types ( name ) ),
        treatment_phase_templates ( name )`
     )
+    .eq("patient_id", patientId)
     .order("start_at", { ascending: false });
 
   if (error) {

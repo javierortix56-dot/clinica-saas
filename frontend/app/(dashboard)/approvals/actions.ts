@@ -8,8 +8,6 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
 
 // Confirma un turno propuesto vía el endpoint NestJS POST /appointments/:id/confirm.
 // Los writes de turnos pasan SIEMPRE por el backend (nunca directo a Supabase).
-// El endpoint todavía no existe: si responde 404, devolvemos un error legible
-// sin lanzar excepción para no romper la vista.
 export async function confirmAppointment(
   appointmentId: string
 ): Promise<{ error?: string }> {
