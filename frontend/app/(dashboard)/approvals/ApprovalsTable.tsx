@@ -99,9 +99,18 @@ export function ApprovalsTable({
 }) {
   const router = useRouter();
   const [hasNew, setHasNew] = useState(false);
+  const [filterProfId, setFilterProfId] = useState<string>("all");
   const channelRef = useRef<ReturnType<
     ReturnType<typeof createClient>["channel"]
   > | null>(null);
+
+  const professionals = Array.from(
+    new Map(
+      initialAppointments
+        .filter((a) => a.professional?.id)
+        .map((a) => [a.professional!.id, a.professional!.full_name])
+    ).entries()
+  );
 
   useEffect(() => {
     const supabase = createClient();
@@ -131,6 +140,11 @@ export function ApprovalsTable({
     setHasNew(false);
   }, [initialAppointments]);
 
+  const filtered =
+    filterProfId === "all"
+      ? initialAppointments
+      : initialAppointments.filter((a) => a.professional?.id === filterProfId);
+
   if (initialAppointments.length === 0) {
     return (
       <p className="rounded-lg border bg-card p-6 text-sm text-muted-foreground">
@@ -147,6 +161,25 @@ export function ApprovalsTable({
       {hasNew && (
         <p className="text-xs text-slate-500">Actualizando bandeja…</p>
       )}
+
+      {professionals.length > 1 && (
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-slate-600">Profesional:</label>
+          <select
+            value={filterProfId}
+            onChange={(e) => setFilterProfId(e.target.value)}
+            className="rounded border border-slate-200 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-slate-400"
+          >
+            <option value="all">Todos</option>
+            {professionals.map(([id, name]) => (
+              <option key={id} value={id}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       <div className="rounded-lg border">
         <Table>
           <TableHeader>
@@ -161,9 +194,17 @@ export function ApprovalsTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {initialAppointments.map((appt) => (
-              <ConfirmRow key={appt.id} appt={appt} />
-            ))}
+            {filtered.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-6">
+                  Sin turnos para este profesional.
+                </TableCell>
+              </TableRow>
+            ) : (
+              filtered.map((appt) => (
+                <ConfirmRow key={appt.id} appt={appt} />
+              ))
+            )}
           </TableBody>
         </Table>
       </div>

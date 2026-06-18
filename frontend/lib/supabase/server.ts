@@ -74,7 +74,7 @@ interface ProposedRow {
   origin: string | null;
   created_at: string;
   patients: { full_name: string; phone: string | null; national_id: string } | null;
-  professionals: { staff_members: { full_name: string } | null } | null;
+  professionals: { id: string; staff_members: { full_name: string } | null } | null;
   treatments: { treatment_types: { name: string } | null } | null;
   treatment_phase_templates: { name: string } | null;
 }
@@ -97,7 +97,7 @@ export async function getProposedAppointments(): Promise<ProposedAppointment[]> 
         id, clinic_id, treatment_id, phase_template_id, patient_id, professional_id,
         start_at, end_at, status, origin, created_at,
         patients ( full_name, phone, national_id ),
-        professionals ( staff_members ( full_name ) ),
+        professionals ( id, staff_members ( full_name ) ),
         treatments ( treatment_types ( name ) ),
         treatment_phase_templates ( name )
       `
@@ -131,7 +131,7 @@ export async function getProposedAppointments(): Promise<ProposedAppointment[]> 
       ? { full_name: row.patients.full_name, phone: row.patients.phone }
       : undefined,
     professional: row.professionals?.staff_members
-      ? { full_name: row.professionals.staff_members.full_name }
+      ? { id: row.professionals.id, full_name: row.professionals.staff_members.full_name }
       : undefined,
     patient_national_id: row.patients?.national_id ?? null,
     phase_name: row.treatment_phase_templates?.name ?? null,
@@ -178,6 +178,7 @@ export interface WeeklyAppointment {
   end_at: string;
   patient_name: string;
   treatment_label: string | null;
+  professional_name: string | null;
 }
 
 function getWeekBounds(ref: Date = new Date()): { weekStart: Date; weekEnd: Date } {
@@ -192,9 +193,8 @@ function getWeekBounds(ref: Date = new Date()): { weekStart: Date; weekEnd: Date
   return { weekStart: monday, weekEnd: sunday };
 }
 
-// Lee los turnos `confirmed` del profesional logueado para la semana de `refDate` (default: hoy).
-// El professional_id se resuelve server-side desde el JWT (sub → staff_members → professionals).
-// Devuelve [] si el usuario no tiene fila en `professionals` (sin error — mostrar estado vacío).
+// Lee los turnos `confirmed` para la semana de `refDate` (default: hoy).
+// Doctores: solo sus propios turnos. Admin/recepción: todos los turnos de la semana.
 export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppointment[]> {
   const supabase = createClient();
 
@@ -203,36 +203,17 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // Resolver professional_id desde auth_user_id vía join interno.
-  const { data: prof } = await supabase
-    .from("professionals")
-    .select("id, staff_members!inner(auth_user_id)")
-    .eq("staff_members.auth_user_id", user.id)
-    .single();
-
-  if (!prof) return [];
+  // Leer rol del JWT para decidir el filtro.
+  const { data: { session } } = await supabase.auth.getSession();
+  let role: string | null = null;
+  if (session) {
+    try {
+      role = (JSON.parse(Buffer.from(session.access_token.split(".")[1], "base64").toString("utf8")) as { user_role?: string }).user_role ?? null;
+    } catch {}
+  }
+  const isDoctor = role === "doctor" || role === "professional";
 
   const { weekStart, weekEnd } = getWeekBounds(refDate);
-
-  const { data, error } = await supabase
-    .from("appointments")
-    .select(
-      `
-        id, start_at, end_at,
-        patients ( full_name ),
-        treatments ( treatment_types ( name ) ),
-        treatment_phase_templates ( name )
-      `
-    )
-    .eq("professional_id", prof.id)
-    .eq("status", "confirmed")
-    .gte("start_at", weekStart.toISOString())
-    .lte("start_at", weekEnd.toISOString())
-    .order("start_at", { ascending: true });
-
-  if (error) {
-    throw new Error(`No se pudieron cargar los turnos: ${error.message}`);
-  }
 
   type ApptRow = {
     id: string;
@@ -241,7 +222,36 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
     patients: { full_name: string } | null;
     treatments: { treatment_types: { name: string } | null } | null;
     treatment_phase_templates: { name: string } | null;
+    professionals: { staff_members: { full_name: string } | null } | null;
   };
+
+  let query = supabase
+    .from("appointments")
+    .select(
+      `id, start_at, end_at,
+       patients ( full_name ),
+       treatments ( treatment_types ( name ) ),
+       treatment_phase_templates ( name ),
+       professionals ( staff_members ( full_name ) )`
+    )
+    .eq("status", "confirmed")
+    .gte("start_at", weekStart.toISOString())
+    .lte("start_at", weekEnd.toISOString())
+    .order("start_at", { ascending: true });
+
+  if (isDoctor) {
+    // Filtrar por el profesional logueado.
+    const { data: prof } = await supabase
+      .from("professionals")
+      .select("id, staff_members!inner(auth_user_id)")
+      .eq("staff_members.auth_user_id", user.id)
+      .single();
+    if (!prof) return [];
+    query = query.eq("professional_id", prof.id);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(`No se pudieron cargar los turnos: ${error.message}`);
 
   return ((data ?? []) as unknown as ApptRow[]).map((row) => ({
     id: row.id,
@@ -252,6 +262,7 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
       row.treatments?.treatment_types?.name ??
       row.treatment_phase_templates?.name ??
       null,
+    professional_name: row.professionals?.staff_members?.full_name ?? null,
   }));
 }
 

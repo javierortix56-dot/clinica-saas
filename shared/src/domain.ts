@@ -38,5 +38,5 @@ export interface Appointment {
   // Nota: el nombre del profesional vive en `staff_members.full_name`
   // (professionals -> staff_members), no en `professionals`.
   patient?: { full_name: string; phone: string | null };
-  professional?: { full_name: string };
+  professional?: { id: string; full_name: string };
 }

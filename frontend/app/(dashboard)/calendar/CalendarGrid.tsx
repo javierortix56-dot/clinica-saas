@@ -118,6 +118,11 @@ export function CalendarGrid({
                           <p className="text-xs font-medium text-slate-800 truncate">
                             {a.patient_name}
                           </p>
+                          {a.professional_name && (
+                            <p className="text-xs text-slate-500 truncate">
+                              {a.professional_name}
+                            </p>
+                          )}
                           {a.treatment_label && (
                             <p className="text-xs text-slate-400 truncate">
                               {a.treatment_label}
