@@ -10,6 +10,7 @@ import { PrismaClient } from '@prisma/client';
  * propio PrismaClient usando DIRECT_URL (conexión directa, rol postgres),
  * distinto del PrismaService principal que usa DATABASE_URL (clinic_bot).
  *
+ * La conexión es lazy: Prisma conecta al primer query, no en el arranque.
  * Solo se usa para operaciones de Vault; NUNCA para datos de negocio.
  */
 @Injectable()
@@ -24,14 +25,6 @@ export class VaultService {
     });
   }
 
-  async onModuleInit(): Promise<void> {
-    await this.vaultClient.$connect();
-  }
-
-  async onModuleDestroy(): Promise<void> {
-    await this.vaultClient.$disconnect();
-  }
-
   /** Crea un secreto en Vault y devuelve su UUID de referencia. */
   async createSecret(secret: string, name: string): Promise<string> {
     const rows = await this.vaultClient.$queryRaw<[{ id: string }]>`
@@ -42,15 +35,20 @@ export class VaultService {
 
   /** Lee y descifra un secreto por su UUID. Devuelve null si no existe. */
   async readSecret(secretId: string): Promise<string | null> {
-    const rows = await this.vaultClient.$queryRaw<
-      [{ decrypted_secret: string | null }]
-    >`
-      SELECT decrypted_secret
-      FROM vault.decrypted_secrets
-      WHERE id = ${secretId}::uuid
-      LIMIT 1
-    `;
-    return rows[0]?.decrypted_secret ?? null;
+    try {
+      const rows = await this.vaultClient.$queryRaw<
+        [{ decrypted_secret: string | null }]
+      >`
+        SELECT decrypted_secret
+        FROM vault.decrypted_secrets
+        WHERE id = ${secretId}::uuid
+        LIMIT 1
+      `;
+      return rows[0]?.decrypted_secret ?? null;
+    } catch (err) {
+      this.logger.error(`Error leyendo secreto ${secretId}: ${String(err)}`);
+      return null;
+    }
   }
 
   /** Actualiza el contenido de un secreto existente. */
