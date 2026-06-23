@@ -76,8 +76,14 @@ export async function createManualAppointment(
     return { error: "Todos los campos son obligatorios." };
   }
 
-  const start_at = `${date}T${start_time}:00`;
-  const end_at = `${date}T${end_time}:00`;
+  // start_at/end_at son timestamptz. Si se arma el string sin offset, Postgres
+  // lo interpreta en la zona de la sesión (UTC en Supabase) y el turno queda
+  // corrido -3h respecto a la hora de la clínica → cae fuera de la grilla
+  // (08:00–19:30 ART) o se muestra a la hora equivocada. Por eso fijamos el
+  // offset de Buenos Aires (UTC-3 fijo; Argentina no observa horario de verano).
+  // La grilla del calendario ya hardcodea America/Argentina/Buenos_Aires.
+  const start_at = `${date}T${start_time}:00-03:00`;
+  const end_at = `${date}T${end_time}:00-03:00`;
 
   if (end_at <= start_at) return { error: "El horario de fin debe ser posterior al de inicio." };
 
