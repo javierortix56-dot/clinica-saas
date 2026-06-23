@@ -314,7 +314,7 @@ interface StaffRow {
       start_time: string;
       end_time: string;
     }[];
-    professional_calendar_links: { is_active: boolean }[];
+    professional_calendar_links: { is_active: boolean } | null;
   } | null;
 }
 
@@ -354,9 +354,7 @@ export async function getStaffMembers(): Promise<StaffMember[]> {
       (a, b) => a.weekday - b.weekday
     ),
     gcal_connected:
-      (row.professionals?.professional_calendar_links ?? []).some(
-        (l) => l.is_active
-      ),
+      row.professionals?.professional_calendar_links?.is_active ?? false,
   }));
 }
 
