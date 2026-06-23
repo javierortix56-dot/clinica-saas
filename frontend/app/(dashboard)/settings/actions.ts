@@ -36,7 +36,7 @@ export async function updateClinicSettings(
 ): Promise<{ error?: string }> {
   const result = await requireAdmin();
   if ("error" in result) return { error: result.error };
-  const { supabase } = result;
+  const { supabase, clinicId } = result;
 
   const name = (formData.get("name") as string)?.trim();
   const timezone = (formData.get("timezone") as string)?.trim();
@@ -50,10 +50,12 @@ export async function updateClinicSettings(
     return { error: "Todos los campos obligatorios deben estar completos." };
   }
 
-  // clinic_id resuelto por RLS (tenant_self — id = auth_clinic_id()) — no viene del form.
+  // WHERE explícito por id (del JWT). PostgREST rechaza UPDATE sin filtro aunque
+  // RLS ya restrinja a la propia clínica ("UPDATE requires a WHERE clause").
   const { error } = await supabase
     .from("clinics")
-    .update({ name, timezone, prime_time_start, prime_time_end, currency, valuation_fee });
+    .update({ name, timezone, prime_time_start, prime_time_end, currency, valuation_fee })
+    .eq("id", clinicId);
 
   if (error) return { error: `No se pudo guardar: ${error.message}` };
 

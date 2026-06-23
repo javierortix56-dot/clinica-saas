@@ -89,24 +89,42 @@ export async function upsertStaff(
 
       if (profErr) return { error: `Error en profesional: ${profErr.message}` };
 
-      // Disponibilidad: solo se actualiza si hay días seleccionados (edición).
-      // En creación, el form no muestra el editor de disponibilidad todavía.
-      if (prof && id) {
-        const selectedDays = (formData.getAll("days") as string[]).map(Number);
+      // Disponibilidad: rebuild completo (delete + insert) a partir de las franjas.
+      // Cada franja es un bloque {weekday, start, end}; un mismo día puede tener
+      // varias franjas (día partido) — el motor de scheduling las respeta todas.
+      if (prof) {
+        const blockCount = parseInt(
+          (formData.get("block_count") as string) ?? "0",
+          10
+        );
+
+        const rows: {
+          professional_id: string;
+          weekday: number;
+          start_time: string;
+          end_time: string;
+        }[] = [];
+
+        for (let i = 0; i < blockCount; i++) {
+          const weekday = Number(formData.get(`block_weekday_${i}`));
+          const start = formData.get(`block_start_${i}`) as string;
+          const end = formData.get(`block_end_${i}`) as string;
+          // Saltar franjas inválidas (la BD también valida end > start).
+          if (!weekday || !start || !end || end <= start) continue;
+          rows.push({
+            professional_id: prof.id,
+            weekday,
+            start_time: start,
+            end_time: end,
+          });
+        }
 
         await supabase
           .from("professional_availability")
           .delete()
           .eq("professional_id", prof.id);
 
-        if (selectedDays.length > 0) {
-          const rows = selectedDays.map((weekday) => ({
-            professional_id: prof.id,
-            weekday,
-            start_time: (formData.get(`start_${weekday}`) as string) || "09:00",
-            end_time: (formData.get(`end_${weekday}`) as string) || "18:00",
-          }));
-
+        if (rows.length > 0) {
           const { error: avErr } = await supabase
             .from("professional_availability")
             .insert(rows);

@@ -29,71 +29,113 @@ const ROLE_OPTIONS = [
   { value: "reception", label: "Recepción" },
 ] as const;
 
-function getAvailabilityForDay(
-  availability: StaffMember["availability"],
-  weekday: number
-) {
-  return availability.find((a) => a.weekday === weekday);
+// Una franja de disponibilidad: un día con un rango horario. Un mismo día puede
+// tener varias franjas (ej: 09:00–13:00 y 16:00–20:00) — los huecos del medio
+// quedan automáticamente fuera de la disponibilidad.
+interface Block {
+  weekday: number;
+  start: string;
+  end: string;
 }
 
-// ─── Availability section (solo para rol doctor) ───────────────────────────────
+function blocksFromAvailability(av: StaffMember["availability"]): Block[] {
+  return av
+    .map((a) => ({
+      weekday: a.weekday,
+      start: a.start_time.slice(0, 5),
+      end: a.end_time.slice(0, 5),
+    }))
+    .sort((a, b) => a.weekday - b.weekday || a.start.localeCompare(b.start));
+}
+
+// ─── Editor de franjas (múltiples bloques por día) ──────────────────────────────
 
 function AvailabilityEditor({
-  availability,
+  blocks,
+  setBlocks,
 }: {
-  availability: StaffMember["availability"];
+  blocks: Block[];
+  setBlocks: (updater: (prev: Block[]) => Block[]) => void;
 }) {
-  const [checked, setChecked] = useState<Record<number, boolean>>(() =>
-    Object.fromEntries(
-      WEEKDAYS.map((d) => [d.value, !!getAvailabilityForDay(availability, d.value)])
-    )
-  );
+  function addBlock() {
+    setBlocks((prev) => [...prev, { weekday: 1, start: "09:00", end: "13:00" }]);
+  }
+
+  function updateBlock(index: number, patch: Partial<Block>) {
+    setBlocks((prev) => prev.map((b, i) => (i === index ? { ...b, ...patch } : b)));
+  }
+
+  function removeBlock(index: number) {
+    setBlocks((prev) => prev.filter((_, i) => i !== index));
+  }
 
   return (
     <div className="space-y-2">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-        Disponibilidad semanal
-      </p>
-      {WEEKDAYS.map((day) => {
-        const existing = getAvailabilityForDay(availability, day.value);
-        return (
-          <div key={day.value} className="flex items-center gap-3">
-            <label className="flex items-center gap-2">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+          Disponibilidad semanal
+        </p>
+        <Button type="button" size="sm" variant="outline" onClick={addBlock}>
+          + Agregar franja
+        </Button>
+      </div>
+
+      {blocks.length === 0 && (
+        <p className="text-xs text-slate-400">
+          Sin franjas. Agregá al menos una para que el profesional pueda recibir turnos.
+        </p>
+      )}
+
+      <div className="space-y-2">
+        {blocks.map((block, i) => {
+          const invalid = block.end <= block.start;
+          return (
+            <div
+              key={i}
+              className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2"
+            >
+              <select
+                value={block.weekday}
+                onChange={(e) => updateBlock(i, { weekday: Number(e.target.value) })}
+                className="rounded border border-slate-200 bg-white px-2 py-1 text-sm"
+              >
+                {WEEKDAYS.map((d) => (
+                  <option key={d.value} value={d.value}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
               <input
-                type="checkbox"
-                name="days"
-                value={day.value}
-                checked={checked[day.value] ?? false}
-                onChange={(e) =>
-                  setChecked((prev) => ({
-                    ...prev,
-                    [day.value]: e.target.checked,
-                  }))
-                }
-                className="h-4 w-4 rounded border-slate-300"
+                type="time"
+                value={block.start}
+                onChange={(e) => updateBlock(i, { start: e.target.value })}
+                className={`rounded border px-2 py-1 text-sm ${
+                  invalid ? "border-red-300" : "border-slate-200"
+                }`}
               />
-              <span className="w-20 text-sm text-slate-700">{day.label}</span>
-            </label>
-            {checked[day.value] && (
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="time"
-                  name={`start_${day.value}`}
-                  defaultValue={existing?.start_time?.slice(0, 5) ?? "09:00"}
-                  className="rounded border border-slate-200 px-2 py-1 text-sm"
-                />
-                <span className="text-slate-400">–</span>
-                <input
-                  type="time"
-                  name={`end_${day.value}`}
-                  defaultValue={existing?.end_time?.slice(0, 5) ?? "18:00"}
-                  className="rounded border border-slate-200 px-2 py-1 text-sm"
-                />
-              </div>
-            )}
-          </div>
-        );
-      })}
+              <span className="text-slate-400">–</span>
+              <input
+                type="time"
+                value={block.end}
+                onChange={(e) => updateBlock(i, { end: e.target.value })}
+                className={`rounded border px-2 py-1 text-sm ${
+                  invalid ? "border-red-300" : "border-slate-200"
+                }`}
+              />
+              <button
+                type="button"
+                onClick={() => removeBlock(i)}
+                className="ml-auto rounded px-1.5 py-0.5 text-sm text-red-400 hover:text-red-600"
+              >
+                ×
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-xs text-slate-400">
+        Para un día partido, agregá dos franjas (ej: 09:00–13:00 y 16:00–20:00).
+      </p>
     </div>
   );
 }
@@ -119,16 +161,41 @@ export function StaffSheet({
   const [currentRole, setCurrentRole] = useState<string>(
     member?.role ?? "reception"
   );
+  const [blocks, setBlocks] = useState<Block[]>(() =>
+    member ? blocksFromAvailability(member.availability) : []
+  );
 
-  // Sincronizar el rol al cambiar el member seleccionado
-  // (cuando se cambia de fila sin cerrar el sheet)
+  // Reset al cambiar de miembro sin cerrar el sheet (mismo patrón que TreatmentTypeSheet).
+  const [lastMemberId, setLastMemberId] = useState(member?.id);
+  if (member?.id !== lastMemberId) {
+    setLastMemberId(member?.id);
+    setCurrentRole(member?.role ?? "reception");
+    setBlocks(member ? blocksFromAvailability(member.availability) : []);
+  }
+
   const roleForForm = mode === "edit" ? (member?.role ?? "reception") : "reception";
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const form = formRef.current;
     if (!form) return;
+
+    // Validar franjas antes de enviar.
+    if (currentRole === "doctor") {
+      const invalid = blocks.find((b) => b.end <= b.start);
+      if (invalid) {
+        toast.error("Hay una franja con hora de fin anterior o igual a la de inicio.");
+        return;
+      }
+    }
+
     const formData = new FormData(form);
+    formData.set("block_count", String(blocks.length));
+    blocks.forEach((b, i) => {
+      formData.set(`block_weekday_${i}`, String(b.weekday));
+      formData.set(`block_start_${i}`, b.start);
+      formData.set(`block_end_${i}`, b.end);
+    });
 
     startTransition(async () => {
       const result = await upsertStaff(formData);
@@ -256,9 +323,9 @@ export function StaffSheet({
             </div>
           )}
 
-          {/* Disponibilidad (solo para doctores en edición) */}
-          {mode === "edit" && currentRole === "doctor" && member && (
-            <AvailabilityEditor availability={member.availability} />
+          {/* Disponibilidad (solo para doctores) */}
+          {currentRole === "doctor" && (
+            <AvailabilityEditor blocks={blocks} setBlocks={setBlocks} />
           )}
 
           {/* Acciones */}

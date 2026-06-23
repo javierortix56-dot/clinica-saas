@@ -31,14 +31,16 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
-  const { role } = await getSessionAuth();
-
-  // Nombre para mostrar en el nav: busca la fila en staff_members.
-  const { data: sm } = await supabase
-    .from("staff_members")
-    .select("full_name")
-    .eq("auth_user_id", user.id)
-    .single();
+  // Ambas lecturas dependen solo de `user`; corren en paralelo para no encadenar
+  // round-trips en cada navegación.
+  const [{ role }, { data: sm }] = await Promise.all([
+    getSessionAuth(),
+    supabase
+      .from("staff_members")
+      .select("full_name")
+      .eq("auth_user_id", user.id)
+      .single(),
+  ]);
   const displayName = sm?.full_name ?? user.email ?? "Usuario";
 
   const badge = role ? ROLE_BADGE[role] : null;
