@@ -1,0 +1,5 @@
+[phases.install]
+cmds = ['npm ci']
+
+[start]
+cmd = 'NODE_PATH=/app/node_modules npm run start --workspace=clinica-backend'
