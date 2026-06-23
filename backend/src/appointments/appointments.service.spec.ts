@@ -27,7 +27,8 @@ function buildService() {
     },
     runAsActor: jest.fn(),
   };
-  const service = new AppointmentsService(prisma as never);
+  const gcal = { upsertEvent: jest.fn().mockResolvedValue(undefined) };
+  const service = new AppointmentsService(prisma as never, gcal as never);
   return { service, prisma };
 }
 

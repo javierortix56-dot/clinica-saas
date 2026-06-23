@@ -297,6 +297,7 @@ export interface StaffMember {
   license_number: string | null;
   // weekday 1=Lun … 6=Sáb; time como "HH:MM:SS"
   availability: { weekday: number; start_time: string; end_time: string }[];
+  gcal_connected: boolean;
 }
 
 interface StaffRow {
@@ -313,6 +314,7 @@ interface StaffRow {
       start_time: string;
       end_time: string;
     }[];
+    professional_calendar_links: { is_active: boolean }[];
   } | null;
 }
 
@@ -328,7 +330,8 @@ export async function getStaffMembers(): Promise<StaffMember[]> {
         id, full_name, role, email, is_active,
         professionals (
           id, license_number,
-          professional_availability ( weekday, start_time, end_time )
+          professional_availability ( weekday, start_time, end_time ),
+          professional_calendar_links ( is_active )
         )
       `
     )
@@ -350,6 +353,10 @@ export async function getStaffMembers(): Promise<StaffMember[]> {
     availability: (row.professionals?.professional_availability ?? []).sort(
       (a, b) => a.weekday - b.weekday
     ),
+    gcal_connected:
+      (row.professionals?.professional_calendar_links ?? []).some(
+        (l) => l.is_active
+      ),
   }));
 }
 

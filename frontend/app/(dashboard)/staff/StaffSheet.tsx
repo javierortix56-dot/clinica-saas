@@ -12,7 +12,13 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { upsertStaff, deactivateStaff, reactivateStaff } from "./actions";
+import {
+  upsertStaff,
+  deactivateStaff,
+  reactivateStaff,
+  getGoogleCalendarConnectUrl,
+  disconnectGoogleCalendar,
+} from "./actions";
 
 const WEEKDAYS = [
   { value: 1, label: "Lunes" },
@@ -29,9 +35,8 @@ const ROLE_OPTIONS = [
   { value: "reception", label: "Recepción" },
 ] as const;
 
-// Una franja de disponibilidad: un día con un rango horario. Un mismo día puede
-// tener varias franjas (ej: 09:00–13:00 y 16:00–20:00) — los huecos del medio
-// quedan automáticamente fuera de la disponibilidad.
+// Una franja de disponibilidad: un día con un rango horario.
+// Un mismo día puede tener varias franjas (ej: 09:00–13:00 y 16:00–20:00).
 interface Block {
   weekday: number;
   start: string;
@@ -48,7 +53,7 @@ function blocksFromAvailability(av: StaffMember["availability"]): Block[] {
     .sort((a, b) => a.weekday - b.weekday || a.start.localeCompare(b.start));
 }
 
-// ─── Editor de franjas (múltiples bloques por día) ──────────────────────────────
+// ─── Editor de franjas (múltiples bloques por día) ────────────────────────────
 
 function AvailabilityEditor({
   blocks,
@@ -62,7 +67,9 @@ function AvailabilityEditor({
   }
 
   function updateBlock(index: number, patch: Partial<Block>) {
-    setBlocks((prev) => prev.map((b, i) => (i === index ? { ...b, ...patch } : b)));
+    setBlocks((prev) =>
+      prev.map((b, i) => (i === index ? { ...b, ...patch } : b))
+    );
   }
 
   function removeBlock(index: number) {
@@ -96,7 +103,9 @@ function AvailabilityEditor({
             >
               <select
                 value={block.weekday}
-                onChange={(e) => updateBlock(i, { weekday: Number(e.target.value) })}
+                onChange={(e) =>
+                  updateBlock(i, { weekday: Number(e.target.value) })
+                }
                 className="rounded border border-slate-200 bg-white px-2 py-1 text-sm"
               >
                 {WEEKDAYS.map((d) => (
@@ -140,7 +149,94 @@ function AvailabilityEditor({
   );
 }
 
-// ─── Componente principal ──────────────────────────────────────────────────────
+// ─── Google Calendar section ──────────────────────────────────────────────────
+
+function GoogleCalendarSection({
+  professionalId,
+  connected,
+}: {
+  professionalId: string;
+  connected: boolean;
+}) {
+  const router = useRouter();
+  const [isConnecting, startConnecting] = useTransition();
+  const [isDisconnecting, startDisconnecting] = useTransition();
+
+  function handleConnect() {
+    startConnecting(async () => {
+      const result = await getGoogleCalendarConnectUrl(professionalId);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      if (result.url) {
+        window.location.href = result.url;
+      }
+    });
+  }
+
+  function handleDisconnect() {
+    startDisconnecting(async () => {
+      const result = await disconnectGoogleCalendar(professionalId);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Google Calendar desconectado.");
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="space-y-2 rounded-lg border border-slate-200 p-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-slate-700">
+            Google Calendar
+          </span>
+          {connected ? (
+            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+              Conectado
+            </span>
+          ) : (
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+              Sin conectar
+            </span>
+          )}
+        </div>
+        {connected ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={handleDisconnect}
+            disabled={isDisconnecting}
+            className="text-red-500 hover:border-red-200 hover:text-red-600"
+          >
+            {isDisconnecting ? "Desconectando…" : "Desconectar"}
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={handleConnect}
+            disabled={isConnecting}
+          >
+            {isConnecting ? "Redirigiendo…" : "Conectar"}
+          </Button>
+        )}
+      </div>
+      <p className="text-xs text-slate-400">
+        {connected
+          ? "Los turnos confirmados se sincronizan automáticamente con el Google Calendar del profesional."
+          : "Conectá para que los turnos confirmados aparezcan en el Google Calendar del profesional."}
+      </p>
+    </div>
+  );
+}
+
+// ─── Componente principal ─────────────────────────────────────────────────────
 
 export function StaffSheet({
   member,
@@ -165,7 +261,7 @@ export function StaffSheet({
     member ? blocksFromAvailability(member.availability) : []
   );
 
-  // Reset al cambiar de miembro sin cerrar el sheet (mismo patrón que TreatmentTypeSheet).
+  // Reset al cambiar de miembro sin cerrar el sheet.
   const [lastMemberId, setLastMemberId] = useState(member?.id);
   if (member?.id !== lastMemberId) {
     setLastMemberId(member?.id);
@@ -180,7 +276,6 @@ export function StaffSheet({
     const form = formRef.current;
     if (!form) return;
 
-    // Validar franjas antes de enviar.
     if (currentRole === "doctor") {
       const invalid = blocks.find((b) => b.end <= b.start);
       if (invalid) {
@@ -328,6 +423,14 @@ export function StaffSheet({
             <AvailabilityEditor blocks={blocks} setBlocks={setBlocks} />
           )}
 
+          {/* Google Calendar (solo para doctores en edición) */}
+          {mode === "edit" && currentRole === "doctor" && member?.professional_id && (
+            <GoogleCalendarSection
+              professionalId={member.professional_id}
+              connected={member.gcal_connected}
+            />
+          )}
+
           {/* Acciones */}
           <div className="mt-auto flex flex-col gap-2 pt-4">
             <Button type="submit" disabled={isPending || isDeactivating}>
@@ -352,7 +455,10 @@ export function StaffSheet({
                   if (!member) return;
                   startReactivating(async () => {
                     const result = await reactivateStaff(member.id);
-                    if (result.error) { toast.error(result.error); return; }
+                    if (result.error) {
+                      toast.error(result.error);
+                      return;
+                    }
                     toast.success("Miembro reactivado.");
                     router.refresh();
                     onOpenChange(false);

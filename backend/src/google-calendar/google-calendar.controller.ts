@@ -1,0 +1,98 @@
+import {
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  Redirect,
+  UseGuards,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
+import type { AuthUser } from '../auth/auth-user.interface';
+import { GoogleCalendarOAuthService } from './google-calendar-oauth.service';
+import { GoogleCalendarImportService } from './google-calendar-import.service';
+
+/**
+ * Endpoints de Google Calendar.
+ *
+ * - GET /google-calendar/connect/:professionalId  → URL de OAuth (solo admin)
+ * - GET /auth/google/callback                     → callback de OAuth (sin guard, viene de Google)
+ * - DELETE /google-calendar/disconnect/:professionalId → desconectar (solo admin)
+ * - POST /google-calendar/sync/:professionalId    → forzar sync manual (solo admin)
+ */
+@Controller()
+export class GoogleCalendarController {
+  constructor(
+    private readonly oauth: GoogleCalendarOAuthService,
+    private readonly importer: GoogleCalendarImportService,
+    private readonly config: ConfigService,
+  ) {}
+
+  /** Devuelve la URL de autorización OAuth de Google para el profesional. */
+  @Get('google-calendar/connect/:professionalId')
+  @UseGuards(SupabaseJwtGuard, RolesGuard)
+  @Roles('admin')
+  getConnectUrl(
+    @Param('professionalId', ParseUUIDPipe) professionalId: string,
+    @CurrentUser() user: AuthUser,
+  ): { url: string } {
+    const url = this.oauth.getAuthUrl(professionalId, user.clinicId);
+    return { url };
+  }
+
+  /**
+   * Callback OAuth de Google. No lleva JWT guard (el request viene de Google,
+   * no del frontend). El profesionalId y clinicId vienen en el state firmado.
+   */
+  @Get('auth/google/callback')
+  @Redirect()
+  async handleCallback(
+    @Query('code') code: string,
+    @Query('state') state: string,
+    @Query('error') error?: string,
+  ): Promise<{ url: string }> {
+    const frontendUrl =
+      this.config.get<string>('FRONTEND_URL') ?? 'http://localhost:3001';
+    if (error || !code) {
+      return { url: `${frontendUrl}/staff?gcal_error=1` };
+    }
+    try {
+      await this.oauth.handleCallback(code, state);
+      return { url: `${frontendUrl}/staff?gcal_connected=1` };
+    } catch (err) {
+      return { url: `${frontendUrl}/staff?gcal_error=1` };
+    }
+  }
+
+  /** Desconecta Google Calendar para un profesional. */
+  @Delete('google-calendar/disconnect/:professionalId')
+  @HttpCode(200)
+  @UseGuards(SupabaseJwtGuard, RolesGuard)
+  @Roles('admin')
+  async disconnect(
+    @Param('professionalId', ParseUUIDPipe) professionalId: string,
+    @CurrentUser() user: AuthUser,
+  ): Promise<{ ok: boolean }> {
+    await this.oauth.disconnect(professionalId, user.clinicId);
+    return { ok: true };
+  }
+
+  /** Fuerza una sincronización inmediata Google→App para un profesional. */
+  @Post('google-calendar/sync/:professionalId')
+  @HttpCode(200)
+  @UseGuards(SupabaseJwtGuard, RolesGuard)
+  @Roles('admin')
+  async forceSync(
+    @Param('professionalId', ParseUUIDPipe) professionalId: string,
+  ): Promise<{ ok: boolean }> {
+    await this.importer.syncByProfessionalId(professionalId);
+    return { ok: true };
+  }
+}

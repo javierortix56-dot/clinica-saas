@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 import { createClient } from "@/lib/supabase/client";
 import type { StaffMember } from "@/lib/supabase/server";
@@ -38,6 +39,7 @@ type SheetState =
 
 export function StaffTable({ members }: { members: StaffMember[] }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [sheet, setSheet] = useState<SheetState>({ open: false });
   const [search, setSearch] = useState("");
   const channelRef = useRef<ReturnType<ReturnType<typeof createClient>["channel"]> | null>(null);
@@ -54,6 +56,17 @@ export function StaffTable({ members }: { members: StaffMember[] }) {
     channelRef.current = channel;
     return () => { supabase.removeChannel(channel); };
   }, [router]);
+
+  // Mostrar resultado del callback OAuth de Google Calendar.
+  useEffect(() => {
+    if (searchParams.get("gcal_connected") === "1") {
+      toast.success("Google Calendar conectado correctamente.");
+      router.replace("/staff");
+    } else if (searchParams.get("gcal_error") === "1") {
+      toast.error("No se pudo conectar Google Calendar. Intentá de nuevo.");
+      router.replace("/staff");
+    }
+  }, [searchParams, router]);
 
   function openEdit(member: StaffMember) {
     setSheet({ open: true, mode: "edit", member });
@@ -120,7 +133,17 @@ export function StaffTable({ members }: { members: StaffMember[] }) {
                   onClick={() => openEdit(m)}
                 >
                   <TableCell className="font-medium">
-                    {m.full_name}
+                    <div className="flex items-center gap-2">
+                      {m.full_name}
+                      {m.gcal_connected && (
+                        <span
+                          title="Google Calendar conectado"
+                          className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-700"
+                        >
+                          GCal
+                        </span>
+                      )}
+                    </div>
                     {m.email && (
                       <span className="block text-xs text-muted-foreground">
                         {m.email}

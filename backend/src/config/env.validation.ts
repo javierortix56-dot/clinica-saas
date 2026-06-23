@@ -117,6 +117,28 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   PRISMA_USE_DIRECT_URL?: string;
+
+  // --- Google Calendar ---
+  // Credenciales OAuth de la Google Cloud Console (tipo "Web application").
+  @IsOptional()
+  @IsString()
+  GOOGLE_CLIENT_ID?: string;
+
+  @IsOptional()
+  @IsString()
+  GOOGLE_CLIENT_SECRET?: string;
+
+  // URL de callback configurada en Google Cloud Console.
+  // Ejemplo: https://clinica-backend-production-4779.up.railway.app/auth/google/callback
+  @IsOptional()
+  @IsString()
+  GOOGLE_REDIRECT_URI?: string;
+
+  // URL del frontend para redirigir tras el callback OAuth.
+  // Ejemplo: https://clinica.vercel.app
+  @IsOptional()
+  @IsString()
+  FRONTEND_URL?: string;
 }
 
 export function validate(
