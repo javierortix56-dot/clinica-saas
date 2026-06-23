@@ -1,6 +1,6 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { google } from 'googleapis';
+import { calendar } from '@googleapis/calendar';
 import { OAuth2Client, Credentials } from 'google-auth-library';
 import { PrismaService } from '../database/prisma.service';
 import { VaultService } from './vault.service';
@@ -86,7 +86,7 @@ export class GoogleCalendarOAuthService {
     // Crear calendario dedicado para turnos si no existía antes.
     client.setCredentials(tokens);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const cal = google.calendar({ version: 'v3', auth: client as any });
+    const cal = calendar({ version: 'v3', auth: client as any });
 
     let targetCalendarId: string;
     try {

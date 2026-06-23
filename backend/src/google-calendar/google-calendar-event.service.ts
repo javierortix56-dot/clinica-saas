@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { google } from 'googleapis';
+import { calendar } from '@googleapis/calendar';
 import type { OAuth2Client } from 'google-auth-library';
 import { PrismaService } from '../database/prisma.service';
 import { GoogleCalendarOAuthService } from './google-calendar-oauth.service';
@@ -50,7 +50,7 @@ export class GoogleCalendarEventService {
     if (!authClient) return;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const cal = google.calendar({ version: 'v3', auth: authClient as any });
+    const cal = calendar({ version: 'v3', auth: authClient as any });
     const treatmentLabel =
       appt.treatments?.treatment_types?.name ??
       appt.treatment_phase_templates?.name ??
@@ -118,7 +118,7 @@ export class GoogleCalendarEventService {
     if (!authClient) return;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const cal = google.calendar({ version: 'v3', auth: authClient as any });
+    const cal = calendar({ version: 'v3', auth: authClient as any });
     try {
       await cal.events.delete({
         calendarId: link.target_calendar_id,
