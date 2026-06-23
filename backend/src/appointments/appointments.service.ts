@@ -8,6 +8,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { ActorSource, PrismaService } from '../database/prisma.service';
 import type { AuthUser } from '../auth/auth-user.interface';
+import { GoogleCalendarEventService } from '../google-calendar/google-calendar-event.service';
 
 export interface ConfirmAppointmentResult {
   id: string;
@@ -27,7 +28,10 @@ const SELECT = {
 export class AppointmentsService {
   private readonly logger = new Logger(AppointmentsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly gcal: GoogleCalendarEventService,
+  ) {}
 
   /**
    * Confirma un turno `proposed` -> `confirmed`. Idempotente: si ya está
@@ -104,6 +108,14 @@ export class AppointmentsService {
       where: { id: appointmentId, clinic_id: user.clinicId },
       select: SELECT,
     });
+
+    // Sincronizar con Google Calendar de forma asincrónica (no bloquea la respuesta).
+    void this.gcal.upsertEvent(appointmentId).catch((err: unknown) =>
+      this.logger.error(
+        `GCal upsert falló para turno ${appointmentId}: ${String(err)}`,
+      ),
+    );
+
     return this.toResult(after);
   }
 

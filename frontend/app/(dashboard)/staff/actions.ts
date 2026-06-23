@@ -38,7 +38,6 @@ export async function upsertStaff(
   let staffId: string;
 
   if (id) {
-    // Edición
     const { error } = await supabase
       .from("staff_members")
       .update({ full_name, role, email, is_active })
@@ -128,9 +127,7 @@ export async function upsertStaff(
           const { error: avErr } = await supabase
             .from("professional_availability")
             .insert(rows);
-
-          if (avErr)
-            return { error: `Error en disponibilidad: ${avErr.message}` };
+          if (avErr) return { error: `Error en disponibilidad: ${avErr.message}` };
         }
       }
     }
@@ -167,6 +164,56 @@ export async function reactivateStaff(
     .eq("id", memberId);
 
   if (error) return { error: `No se pudo reactivar: ${error.message}` };
+
+  revalidatePath("/staff");
+  return {};
+}
+
+export async function getGoogleCalendarConnectUrl(
+  professionalId: string
+): Promise<{ url?: string; error?: string }> {
+  const supabase = createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { error: "Sesión expirada." };
+
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (!apiUrl) return { error: "API no configurada." };
+
+  try {
+    const res = await fetch(
+      `${apiUrl}/google-calendar/connect/${professionalId}`,
+      { headers: { Authorization: `Bearer ${session.access_token}` } }
+    );
+    if (!res.ok) return { error: "No se pudo obtener la URL de conexión." };
+    const { url } = (await res.json()) as { url: string };
+    return { url };
+  } catch {
+    return { error: "Error de red al conectar Google Calendar." };
+  }
+}
+
+export async function disconnectGoogleCalendar(
+  professionalId: string
+): Promise<{ error?: string }> {
+  const supabase = createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { error: "Sesión expirada." };
+
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (!apiUrl) return { error: "API no configurada." };
+
+  try {
+    const res = await fetch(
+      `${apiUrl}/google-calendar/disconnect/${professionalId}`,
+      {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      }
+    );
+    if (!res.ok) return { error: "No se pudo desconectar Google Calendar." };
+  } catch {
+    return { error: "Error de red al desconectar Google Calendar." };
+  }
 
   revalidatePath("/staff");
   return {};

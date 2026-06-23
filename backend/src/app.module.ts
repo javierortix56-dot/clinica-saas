@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ConfigModule } from './config/config.module';
 import { DatabaseModule } from './database/database.module';
 import { QueueModule } from './queue/queue.module';
@@ -10,10 +11,12 @@ import { PatientsModule } from './patients/patients.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { WorkerModule } from './worker/worker.module';
 import { AppointmentsModule } from './appointments/appointments.module';
+import { GoogleCalendarModule } from './google-calendar/google-calendar.module';
 
 @Module({
   imports: [
     // Infraestructura transversal
+    ScheduleModule.forRoot(),
     ConfigModule,
     DatabaseModule,
     QueueModule,
@@ -25,6 +28,7 @@ import { AppointmentsModule } from './appointments/appointments.module';
     PatientsModule,
     CatalogModule,
     AppointmentsModule,
+    GoogleCalendarModule,
     // Worker (consumidor de la cola)
     WorkerModule,
   ],
