@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@google/genai": "^2.8.0",
+    "@googleapis/calendar": "^15.0.0",
     "@nestjs/bullmq": "^10.2.3",
     "@nestjs/common": "^10.4.0",
     "@nestjs/config": "^3.2.3",
@@ -28,7 +29,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "cron": "^4.4.0",
-    "googleapis": "^173.0.0",
+    "google-auth-library": "^10.7.0",
     "ioredis": "^5.10.1",
     "jose": "^6.2.3",
     "reflect-metadata": "^0.2.2",

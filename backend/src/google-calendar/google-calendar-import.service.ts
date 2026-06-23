@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { google } from 'googleapis';
+import { calendar } from '@googleapis/calendar';
 import { GaxiosError } from 'gaxios';
 import type { OAuth2Client } from 'google-auth-library';
 import { professional_calendar_links } from '@prisma/client';
@@ -62,7 +62,7 @@ export class GoogleCalendarImportService {
     if (!authClient) return;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const cal = google.calendar({ version: 'v3', auth: authClient as any });
+    const cal = calendar({ version: 'v3', auth: authClient as any });
 
     let syncToken = link.sync_token ?? undefined;
     let pageToken: string | undefined;
