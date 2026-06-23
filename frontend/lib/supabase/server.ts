@@ -605,17 +605,23 @@ export interface ProfessionalForScheduling {
 
 export async function getProfessionalsForScheduling(): Promise<ProfessionalForScheduling[]> {
   const supabase = createClient();
+  // Filtro a nivel de query con !inner: solo profesionales cuyo staff_member
+  // está activo y no borrado. Así un miembro desactivado o borrado desaparece
+  // del desplegable de asignar turno (antes el filtro era client-side y podía
+  // dejar pasar inactivos).
   const { data } = await supabase
     .from("professionals")
-    .select("id, staff_members ( full_name, is_active )")
-    .order("id");
+    .select("id, staff_members!inner ( full_name, is_active, deleted_at )")
+    .eq("staff_members.is_active", true)
+    .is("staff_members.deleted_at", null);
 
   const rows = (data ?? []) as unknown as {
     id: string;
-    staff_members: { full_name: string; is_active: boolean } | null;
+    staff_members: { full_name: string } | null;
   }[];
 
-  return rows
-    .filter((r) => r.staff_members?.is_active !== false)
-    .map((r) => ({ id: r.id, name: r.staff_members?.full_name ?? "Sin nombre" }));
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.staff_members?.full_name ?? "Sin nombre",
+  }));
 }

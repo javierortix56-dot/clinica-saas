@@ -16,6 +16,7 @@ import {
   upsertStaff,
   deactivateStaff,
   reactivateStaff,
+  deleteStaff,
   getGoogleCalendarConnectUrl,
   disconnectGoogleCalendar,
 } from "./actions";
@@ -254,6 +255,7 @@ export function StaffSheet({
   const [isPending, startTransition] = useTransition();
   const [isDeactivating, startDeactivating] = useTransition();
   const [isReactivating, startReactivating] = useTransition();
+  const [isDeleting, startDeleting] = useTransition();
   const [currentRole, setCurrentRole] = useState<string>(
     member?.role ?? "reception"
   );
@@ -315,6 +317,26 @@ export function StaffSheet({
         return;
       }
       toast.success("Miembro desactivado.");
+      router.refresh();
+      onOpenChange(false);
+    });
+  }
+
+  function handleDelete() {
+    if (!member) return;
+    const ok = window.confirm(
+      `¿Borrar a ${member.full_name}? El miembro desaparece del listado y del ` +
+        `desplegable de turnos. Los turnos ya cargados se conservan. Esta acción ` +
+        `no se puede deshacer desde la app.`
+    );
+    if (!ok) return;
+    startDeleting(async () => {
+      const result = await deleteStaff(member.id);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Miembro borrado.");
       router.refresh();
       onOpenChange(false);
     });
@@ -468,6 +490,19 @@ export function StaffSheet({
                 className="text-emerald-600 hover:border-emerald-200"
               >
                 {isReactivating ? "Reactivando…" : "Reactivar miembro"}
+              </Button>
+            )}
+            {mode === "edit" && member && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleDelete}
+                disabled={
+                  isPending || isDeactivating || isReactivating || isDeleting
+                }
+                className="mt-2 border-red-200 text-red-600 hover:border-red-300 hover:bg-red-50"
+              >
+                {isDeleting ? "Borrando…" : "Borrar miembro"}
               </Button>
             )}
           </div>
