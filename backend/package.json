@@ -1,5 +1,6 @@
 {
   "name": "clinica-backend",
+  "_nodePathFix": "see nixpacks.toml at repo root",
   "version": "0.1.0",
   "description": "Backend NestJS — Sistema Inteligente de Gestión Odontológica (Fase 8)",
   "private": true,
