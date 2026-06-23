@@ -133,6 +133,25 @@ export class GoogleCalendarImportService {
   }
 
   /**
+   * Reconcilia cancelaciones para un link puntual (disparado por webhook push).
+   * Construye su propio cliente de calendario y verifica los turnos del
+   * profesional contra Google. Público para que el watch service lo invoque
+   * en tiempo real cuando Google notifica un cambio.
+   */
+  async reconcileCancellationsForLink(
+    link: professional_calendar_links,
+  ): Promise<void> {
+    if (!link.target_calendar_id) return;
+
+    const authClient = await this.oauth.getAuthClient(link.professional_id);
+    if (!authClient) return;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cal = calendar({ version: 'v3', auth: authClient as any });
+    await this.syncCancelledAppointments(link, cal);
+  }
+
+  /**
    * Para cada turno confirmado con google_event_id, verifica si el evento
    * todavía existe en target_calendar_id. Si fue eliminado (404 o status
    * 'cancelled'), cancela el turno en la app y limpia el google_event_id.

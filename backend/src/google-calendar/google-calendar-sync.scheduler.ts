@@ -1,17 +1,25 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { GoogleCalendarImportService } from './google-calendar-import.service';
+import { GoogleCalendarWatchService } from './google-calendar-watch.service';
 
 /**
- * Scheduler que ejecuta la sincronización Google→App cada 15 minutos.
- * Lee eventos del calendario personal de cada profesional conectado e importa
- * los bloqueos como availability_exceptions.
+ * Scheduler de Google Calendar.
+ *
+ * - Poll cada 10 min (red de seguridad): importa bloqueos y reconcilia
+ *   cancelaciones por si se perdió alguna notificación push.
+ * - Renovación de watch channels cada hora: registra canales faltantes y
+ *   renueva los que están por expirar, para mantener vivas las notificaciones
+ *   en tiempo real Google → App.
  */
 @Injectable()
 export class GoogleCalendarSyncScheduler {
   private readonly logger = new Logger(GoogleCalendarSyncScheduler.name);
 
-  constructor(private readonly importer: GoogleCalendarImportService) {}
+  constructor(
+    private readonly importer: GoogleCalendarImportService,
+    private readonly watch: GoogleCalendarWatchService,
+  ) {}
 
   @Cron(CronExpression.EVERY_10_MINUTES)
   async syncGoogleToApp(): Promise<void> {
@@ -20,6 +28,16 @@ export class GoogleCalendarSyncScheduler {
       await this.importer.syncAll();
     } catch (err) {
       this.logger.error(`Error en sync Google Calendar: ${String(err)}`);
+    }
+  }
+
+  @Cron(CronExpression.EVERY_HOUR)
+  async renewWatchChannels(): Promise<void> {
+    this.logger.debug('Verificando watch channels de Google Calendar');
+    try {
+      await this.watch.ensureAllChannels();
+    } catch (err) {
+      this.logger.error(`Error renovando watch channels: ${String(err)}`);
     }
   }
 }

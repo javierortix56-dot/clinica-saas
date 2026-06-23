@@ -440,6 +440,10 @@ model professional_calendar_links {
   target_calendar_id String?
   sync_token         String?
   oauth_secret_ref   String?
+  watch_channel_id   String?
+  watch_resource_id  String?
+  watch_token        String?
+  watch_expiration   DateTime? @db.Timestamptz(6)
   is_active          Boolean   @default(true)
   last_synced_at     DateTime? @db.Timestamptz(6)
   created_at         DateTime  @default(now()) @db.Timestamptz(6)
@@ -450,4 +454,5 @@ model professional_calendar_links {
   professionals professionals @relation(fields: [professional_id], references: [id])
 
   @@index([clinic_id])
+  @@index([watch_channel_id])
 }
