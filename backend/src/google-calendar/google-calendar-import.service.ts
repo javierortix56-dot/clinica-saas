@@ -6,6 +6,8 @@ import { professional_calendar_links } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { GoogleCalendarOAuthService } from './google-calendar-oauth.service';
 
+type CalClient = ReturnType<typeof calendar>;
+
 /**
  * GoogleCalendarImportService — dirección Google Calendar → App.
  *
@@ -16,6 +18,10 @@ import { GoogleCalendarOAuthService } from './google-calendar-oauth.service';
  * Anti-loop: la escritura (App→Google) va al target_calendar_id; la lectura
  * (Google→App) viene del source_calendar_id. Son calendarios distintos, así
  * que los eventos importados no vuelven a disparar la lectura.
+ *
+ * Cancelación inversa: además de importar bloqueos, verifica que los eventos
+ * de turno en target_calendar_id sigan existiendo. Si el profesional eliminó
+ * un evento en Google Calendar, el turno correspondiente se cancela en la app.
  */
 @Injectable()
 export class GoogleCalendarImportService {
@@ -117,6 +123,70 @@ export class GoogleCalendarImportService {
         where: { id: link.id },
         data: { sync_token: nextSyncToken, last_synced_at: new Date() },
       });
+    }
+
+    // Cancelación inversa: verifica que los eventos de turno en target_calendar_id
+    // sigan existiendo. Si el profesional eliminó uno, cancela el turno en la app.
+    if (link.target_calendar_id) {
+      await this.syncCancelledAppointments(link, cal);
+    }
+  }
+
+  /**
+   * Para cada turno confirmado con google_event_id, verifica si el evento
+   * todavía existe en target_calendar_id. Si fue eliminado (404 o status
+   * 'cancelled'), cancela el turno en la app y limpia el google_event_id.
+   */
+  private async syncCancelledAppointments(
+    link: professional_calendar_links,
+    cal: CalClient,
+  ): Promise<void> {
+    const appts = await this.prisma.appointments.findMany({
+      where: {
+        professional_id: link.professional_id,
+        google_event_id: { not: null },
+        status: { in: ['proposed', 'confirmed', 'in_progress'] },
+        deleted_at: null,
+      },
+      select: { id: true, google_event_id: true },
+    });
+
+    for (const appt of appts) {
+      try {
+        const eventRes = await cal.events.get({
+          calendarId: link.target_calendar_id!,
+          eventId: appt.google_event_id!,
+        });
+        if (eventRes.data.status === 'cancelled') {
+          await this.cancelFromGCal(appt.id);
+        }
+      } catch (err) {
+        const status = (err as GaxiosError)?.response?.status;
+        if (status === 404 || status === 410) {
+          await this.cancelFromGCal(appt.id);
+        } else {
+          this.logger.warn(
+            `No se pudo verificar evento ${appt.google_event_id} en GCal: ${String(err)}`,
+          );
+        }
+      }
+    }
+  }
+
+  /** Cancela un turno que fue eliminado desde Google Calendar. */
+  private async cancelFromGCal(appointmentId: string): Promise<void> {
+    const count = await this.prisma.appointments.updateMany({
+      where: {
+        id: appointmentId,
+        status: { notIn: ['cancelled', 'completed'] },
+        deleted_at: null,
+      },
+      data: { status: 'cancelled', google_event_id: null },
+    });
+    if (count.count > 0) {
+      this.logger.log(
+        `Turno ${appointmentId} cancelado porque su evento fue eliminado de Google Calendar`,
+      );
     }
   }
 
