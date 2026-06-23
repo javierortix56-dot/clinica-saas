@@ -122,6 +122,61 @@ export class AppointmentsService {
   }
 
   /**
+   * Cancela un turno (recepción/admin). Idempotente: si ya está `cancelled`,
+   * devuelve el turno sin error. Tras cancelar, elimina el evento del Google
+   * Calendar del profesional de forma asincrónica (si estaba sincronizado).
+   */
+  async cancel(
+    appointmentId: string,
+    user: AuthUser,
+  ): Promise<ConfirmAppointmentResult> {
+    const appt = await this.prisma.appointments.findFirst({
+      where: { id: appointmentId, clinic_id: user.clinicId, deleted_at: null },
+      select: SELECT,
+    });
+    if (!appt) {
+      throw new NotFoundException('Turno no encontrado.');
+    }
+
+    // Idempotencia: ya cancelado -> no-op exitoso.
+    if (appt.status === 'cancelled') {
+      return this.toResult(appt);
+    }
+
+    try {
+      await this.prisma.runAsActor(
+        { actorId: user.userId, source: ActorSource.Staff },
+        (tx) =>
+          tx.appointments.updateMany({
+            where: {
+              id: appointmentId,
+              clinic_id: user.clinicId,
+              deleted_at: null,
+              status: { not: 'cancelled' },
+            },
+            data: { status: 'cancelled' },
+          }),
+      );
+    } catch (err) {
+      throw this.mapManualWriteError(err);
+    }
+
+    const after = await this.prisma.appointments.findFirstOrThrow({
+      where: { id: appointmentId, clinic_id: user.clinicId },
+      select: SELECT,
+    });
+
+    // Eliminar el evento de Google Calendar (no bloquea la respuesta).
+    void this.gcal.deleteEvent(appointmentId).catch((err: unknown) =>
+      this.logger.error(
+        `GCal delete falló para turno ${appointmentId}: ${String(err)}`,
+      ),
+    );
+
+    return this.toResult(after);
+  }
+
+  /**
    * Alta manual de turno por el staff (recepción/admin). Inserta directamente
    * como `confirmed` con origin='staff' (bypassa disponibilidad por migración
    * 0011; el anti-solape `appt_no_overlap` se mantiene). Tras el alta, sincroniza
