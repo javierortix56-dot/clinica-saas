@@ -4,21 +4,6 @@ import { revalidatePath } from "next/cache";
 
 import { createClient } from "@/lib/supabase/server";
 
-// Decodifica clinic_id del JWT (igual que requireAdmin en settings/actions.ts).
-async function getClinicId(): Promise<string | null> {
-  const supabase = createClient();
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) return null;
-  try {
-    const payload = JSON.parse(
-      Buffer.from(session.access_token.split(".")[1], "base64").toString("utf8")
-    ) as { clinic_id?: string };
-    return payload.clinic_id ?? null;
-  } catch {
-    return null;
-  }
-}
-
 // Cancela un turno confirmado. Solo escribe si el turno existe y no está
 // ya cancelado (la condición extra evita sobrescribir estados terminales).
 export async function cancelAppointment(
@@ -57,14 +42,16 @@ export async function updateAppointmentStatus(
   return {};
 }
 
-// Crea un turno manual (staff). El turno se inserta directamente como confirmed
-// (no pasa por la cola de aprobaciones).
+// Crea un turno manual (staff). El alta pasa SIEMPRE por el backend NestJS
+// (/appointments/manual) — nunca directo a Supabase — para respetar la regla de
+// que los writes de turnos van por el endpoint, y para que el backend sincronice
+// el turno con el Google Calendar del profesional (doble vía).
 export async function createManualAppointment(
   formData: FormData
 ): Promise<{ error?: string }> {
   const supabase = createClient();
-  const clinicId = await getClinicId();
-  if (!clinicId) return { error: "Sesión expirada." };
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { error: "Sesión expirada." };
 
   const patient_id = formData.get("patient_id") as string;
   const professional_id = formData.get("professional_id") as string;
@@ -76,28 +63,47 @@ export async function createManualAppointment(
     return { error: "Todos los campos son obligatorios." };
   }
 
-  // start_at/end_at son timestamptz. Si se arma el string sin offset, Postgres
-  // lo interpreta en la zona de la sesión (UTC en Supabase) y el turno queda
-  // corrido -3h respecto a la hora de la clínica → cae fuera de la grilla
-  // (08:00–19:30 ART) o se muestra a la hora equivocada. Por eso fijamos el
-  // offset de Buenos Aires (UTC-3 fijo; Argentina no observa horario de verano).
-  // La grilla del calendario ya hardcodea America/Argentina/Buenos_Aires.
-  const start_at = `${date}T${start_time}:00-03:00`;
-  const end_at = `${date}T${end_time}:00-03:00`;
+  // start_at/end_at en ISO 8601 con offset de Buenos Aires (UTC-3 fijo; Argentina
+  // no observa horario de verano). Sin offset, el instante quedaría ambiguo y el
+  // turno se correría respecto a la hora real de la clínica.
+  const startAt = `${date}T${start_time}:00-03:00`;
+  const endAt = `${date}T${end_time}:00-03:00`;
 
-  if (end_at <= start_at) return { error: "El horario de fin debe ser posterior al de inicio." };
+  if (endAt <= startAt) {
+    return { error: "El horario de fin debe ser posterior al de inicio." };
+  }
 
-  const { error } = await supabase.from("appointments").insert({
-    clinic_id: clinicId,
-    patient_id,
-    professional_id,
-    start_at,
-    end_at,
-    status: "confirmed",
-    origin: "staff",
-  });
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (!apiUrl) return { error: "API no configurada." };
 
-  if (error) return { error: `No se pudo crear el turno: ${error.message}` };
+  try {
+    const res = await fetch(`${apiUrl}/appointments/manual`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        patientId: patient_id,
+        professionalId: professional_id,
+        startAt,
+        endAt,
+      }),
+    });
+
+    if (!res.ok) {
+      // El backend devuelve { message } con el motivo (solape, etc.).
+      const body = (await res.json().catch(() => null)) as
+        | { message?: string | string[] }
+        | null;
+      const msg = Array.isArray(body?.message)
+        ? body?.message.join(" ")
+        : body?.message;
+      return { error: msg || "No se pudo crear el turno." };
+    }
+  } catch {
+    return { error: "Error de red al crear el turno." };
+  }
 
   revalidatePath("/calendar");
   return {};

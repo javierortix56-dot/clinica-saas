@@ -1,10 +1,12 @@
 import {
+  Body,
   Controller,
   HttpCode,
   Param,
   ParseUUIDPipe,
   Post,
   UseGuards,
+  ValidationPipe,
 } from '@nestjs/common';
 import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -15,6 +17,7 @@ import {
   AppointmentsService,
   ConfirmAppointmentResult,
 } from './appointments.service';
+import { CreateManualAppointmentDto } from './dto/create-manual-appointment.dto';
 
 /**
  * Endpoints de escritura de turnos para el staff. Protegidos por JWT de
@@ -37,5 +40,20 @@ export class AppointmentsController {
     @CurrentUser() user: AuthUser,
   ): Promise<ConfirmAppointmentResult> {
     return this.appointments.confirm(id, user);
+  }
+
+  /**
+   * Alta manual de turno (recepción/admin). Inserta como confirmado y sincroniza
+   * con Google Calendar. Reemplaza el INSERT directo a Supabase del frontend.
+   */
+  @Post('manual')
+  @HttpCode(201)
+  @Roles('admin', 'reception')
+  createManual(
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    dto: CreateManualAppointmentDto,
+    @CurrentUser() user: AuthUser,
+  ): Promise<ConfirmAppointmentResult> {
+    return this.appointments.createManual(dto, user);
   }
 }

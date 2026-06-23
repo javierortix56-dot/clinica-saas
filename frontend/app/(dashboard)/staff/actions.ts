@@ -149,7 +149,9 @@ export async function deactivateStaff(
 
   if (error) return { error: `No se pudo desactivar: ${error.message}` };
 
+  // También /calendar: el desplegable de asignar turno depende del estado activo.
   revalidatePath("/staff");
+  revalidatePath("/calendar");
   return {};
 }
 
@@ -166,6 +168,28 @@ export async function reactivateStaff(
   if (error) return { error: `No se pudo reactivar: ${error.message}` };
 
   revalidatePath("/staff");
+  revalidatePath("/calendar");
+  return {};
+}
+
+// Borra (soft-delete) un miembro: marca deleted_at. A diferencia de desactivar,
+// el miembro desaparece por completo del listado de personal y del desplegable
+// de turnos. Es soft-delete porque staff_members está referenciado por
+// professionals → appointments; un DELETE físico rompería el historial de turnos.
+export async function deleteStaff(
+  memberId: string
+): Promise<{ error?: string }> {
+  const supabase = createClient();
+
+  const { error } = await supabase
+    .from("staff_members")
+    .update({ is_active: false, deleted_at: new Date().toISOString() })
+    .eq("id", memberId);
+
+  if (error) return { error: `No se pudo borrar: ${error.message}` };
+
+  revalidatePath("/staff");
+  revalidatePath("/calendar");
   return {};
 }
 

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   InternalServerErrorException,
@@ -9,6 +10,7 @@ import { Prisma } from '@prisma/client';
 import { ActorSource, PrismaService } from '../database/prisma.service';
 import type { AuthUser } from '../auth/auth-user.interface';
 import { GoogleCalendarEventService } from '../google-calendar/google-calendar-event.service';
+import { CreateManualAppointmentDto } from './dto/create-manual-appointment.dto';
 
 export interface ConfirmAppointmentResult {
   id: string;
@@ -119,6 +121,86 @@ export class AppointmentsService {
     return this.toResult(after);
   }
 
+  /**
+   * Alta manual de turno por el staff (recepción/admin). Inserta directamente
+   * como `confirmed` con origin='staff' (bypassa disponibilidad por migración
+   * 0011; el anti-solape `appt_no_overlap` se mantiene). Tras el alta, sincroniza
+   * con Google Calendar de forma asincrónica.
+   *
+   * professional_id y patient_id se validan contra la clínica del JWT — el body
+   * nunca es fuente de verdad del tenant.
+   */
+  async createManual(
+    dto: CreateManualAppointmentDto,
+    user: AuthUser,
+  ): Promise<ConfirmAppointmentResult> {
+    const startAt = new Date(dto.startAt);
+    const endAt = new Date(dto.endAt);
+    if (endAt.getTime() <= startAt.getTime()) {
+      throw new BadRequestException(
+        'El horario de fin debe ser posterior al de inicio.',
+      );
+    }
+
+    // El profesional debe pertenecer a la clínica del usuario.
+    const prof = await this.prisma.professionals.findFirst({
+      where: { id: dto.professionalId, clinic_id: user.clinicId },
+      select: { id: true },
+    });
+    if (!prof) {
+      throw new NotFoundException('Profesional no encontrado en la clínica.');
+    }
+
+    // El paciente debe pertenecer a la clínica del usuario.
+    const patient = await this.prisma.patients.findFirst({
+      where: {
+        id: dto.patientId,
+        clinic_id: user.clinicId,
+        deleted_at: null,
+      },
+      select: { id: true },
+    });
+    if (!patient) {
+      throw new NotFoundException('Paciente no encontrado en la clínica.');
+    }
+
+    let appt: {
+      id: string;
+      status: string;
+      start_at: Date;
+      end_at: Date;
+    };
+    try {
+      appt = await this.prisma.runAsActor(
+        { actorId: user.userId, source: ActorSource.Staff },
+        (tx) =>
+          tx.appointments.create({
+            data: {
+              clinic_id: user.clinicId,
+              patient_id: dto.patientId,
+              professional_id: dto.professionalId,
+              start_at: startAt,
+              end_at: endAt,
+              status: 'confirmed',
+              origin: 'staff',
+            },
+            select: SELECT,
+          }),
+      );
+    } catch (err) {
+      throw this.mapManualWriteError(err);
+    }
+
+    // Sincronizar con Google Calendar de forma asincrónica (no bloquea la respuesta).
+    void this.gcal.upsertEvent(appt.id).catch((err: unknown) =>
+      this.logger.error(
+        `GCal upsert falló para turno ${appt.id}: ${String(err)}`,
+      ),
+    );
+
+    return this.toResult(appt);
+  }
+
   private toResult(appt: {
     id: string;
     status: string;
@@ -149,6 +231,33 @@ export class AppointmentsService {
     }
     this.logger.error(
       `[confirm] Error de BD no mapeado (code=${code ?? 'n/a'}): ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+    return new InternalServerErrorException(
+      'Ocurrió un problema procesando la solicitud.',
+    );
+  }
+
+  /**
+   * Mapea errores de BD al alta manual. 23P01 = solape (el profesional ya tiene
+   * un turno en ese rango). 23514 = check (orden de horario u otra regla). El
+   * resto cae a 500 con detalle solo en el log.
+   */
+  private mapManualWriteError(err: unknown): Error {
+    const code = this.pgCode(err);
+    if (code === '23P01') {
+      return new ConflictException(
+        'El profesional ya tiene un turno que se solapa con ese horario.',
+      );
+    }
+    if (code === '23514') {
+      return new BadRequestException(
+        'El turno no cumple las reglas de agenda.',
+      );
+    }
+    this.logger.error(
+      `[createManual] Error de BD no mapeado (code=${code ?? 'n/a'}): ${
         err instanceof Error ? err.message : String(err)
       }`,
     );
