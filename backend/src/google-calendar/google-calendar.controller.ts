@@ -18,6 +18,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthUser } from '../auth/auth-user.interface';
 import { GoogleCalendarOAuthService } from './google-calendar-oauth.service';
 import { GoogleCalendarImportService } from './google-calendar-import.service';
+import { GoogleCalendarWatchService } from './google-calendar-watch.service';
 
 /**
  * Endpoints de Google Calendar.
@@ -32,6 +33,7 @@ export class GoogleCalendarController {
   constructor(
     private readonly oauth: GoogleCalendarOAuthService,
     private readonly importer: GoogleCalendarImportService,
+    private readonly watch: GoogleCalendarWatchService,
     private readonly config: ConfigService,
   ) {}
 
@@ -64,7 +66,11 @@ export class GoogleCalendarController {
       return { url: `${frontendUrl}/staff?gcal_error=1` };
     }
     try {
-      await this.oauth.handleCallback(code, state);
+      const professionalId = await this.oauth.handleCallback(code, state);
+      // Registrar el canal de notificaciones push (tiempo real). Best-effort:
+      // si falla (p.ej. dominio sin verificar) no bloquea la conexión; el poll
+      // y el cron de renovación lo reintentan después.
+      await this.watch.ensureChannel(professionalId).catch(() => undefined);
       return { url: `${frontendUrl}/staff?gcal_connected=1` };
     } catch (err) {
       return { url: `${frontendUrl}/staff?gcal_error=1` };
@@ -80,6 +86,8 @@ export class GoogleCalendarController {
     @Param('professionalId', ParseUUIDPipe) professionalId: string,
     @CurrentUser() user: AuthUser,
   ): Promise<{ ok: boolean }> {
+    // Detener el canal push ANTES de borrar los tokens (stop necesita auth).
+    await this.watch.stopChannel(professionalId).catch(() => undefined);
     await this.oauth.disconnect(professionalId, user.clinicId);
     return { ok: true };
   }

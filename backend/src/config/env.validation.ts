@@ -139,6 +139,19 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   FRONTEND_URL?: string;
+
+  // URL pública del webhook de notificaciones push de Google Calendar. Opcional:
+  // si no se setea, se deriva del origin de GOOGLE_REDIRECT_URI.
+  // Ejemplo: https://clinica-backend-production-4779.up.railway.app/google-calendar/webhook
+  @IsOptional()
+  @IsString()
+  GOOGLE_WEBHOOK_URL?: string;
+
+  // Nombre del archivo de verificación de dominio de Google (Search Console,
+  // método "HTML file"). Ejemplo: google1a2b3c4d5e6f.html
+  @IsOptional()
+  @IsString()
+  GOOGLE_SITE_VERIFICATION?: string;
 }
 
 export function validate(

@@ -61,7 +61,7 @@ export class GoogleCalendarOAuthService {
    * dedicado "Turnos - [nombre]" en Google, guarda tokens en Vault y registra
    * el link en professional_calendar_links.
    */
-  async handleCallback(code: string, rawState: string): Promise<void> {
+  async handleCallback(code: string, rawState: string): Promise<string> {
     let professionalId: string;
     let clinicId: string;
     try {
@@ -154,6 +154,8 @@ export class GoogleCalendarOAuthService {
     this.logger.log(
       `Google Calendar conectado para professional ${professionalId}`,
     );
+
+    return professionalId;
   }
 
   /**

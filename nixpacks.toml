@@ -1,5 +1,15 @@
 [phases.install]
 cmds = ['npm ci']
 
+# Genera el cliente Prisma con el schema del backend. Imprescindible: el cliente
+# tipado + el query engine deben incluir los campos nuevos (google_event_id,
+# watch_*). Se corre desde el workspace backend para que encuentre
+# backend/prisma/schema.prisma y genere en @prisma/client (hoisteado al root).
+[phases.build]
+cmds = ['npm run prisma:generate --workspace=clinica-backend']
+
+# NODE_PATH=/app/node_modules => Node resuelve cualquier require() contra el
+# node_modules del root como fallback (class-validator, etc.), evitando los
+# problemas de hoisting de los workspaces.
 [start]
 cmd = 'NODE_PATH=/app/node_modules npm run start --workspace=clinica-backend'
