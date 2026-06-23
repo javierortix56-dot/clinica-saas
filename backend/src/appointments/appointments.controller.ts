@@ -43,6 +43,20 @@ export class AppointmentsController {
   }
 
   /**
+   * Cancela un turno. Solo admin y reception. Idempotente. Elimina el evento
+   * espejo del Google Calendar del profesional si estaba sincronizado.
+   */
+  @Post(':id/cancel')
+  @HttpCode(200)
+  @Roles('admin', 'reception')
+  cancel(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthUser,
+  ): Promise<ConfirmAppointmentResult> {
+    return this.appointments.cancel(id, user);
+  }
+
+  /**
    * Alta manual de turno (recepción/admin). Inserta como confirmado y sincroniza
    * con Google Calendar. Reemplaza el INSERT directo a Supabase del frontend.
    */

@@ -4,21 +4,38 @@ import { revalidatePath } from "next/cache";
 
 import { createClient } from "@/lib/supabase/server";
 
-// Cancela un turno confirmado. Solo escribe si el turno existe y no está
-// ya cancelado (la condición extra evita sobrescribir estados terminales).
+// Cancela un turno. Pasa por el backend NestJS (/appointments/:id/cancel) para
+// que además elimine el evento espejo del Google Calendar del profesional. Es
+// idempotente: cancelar un turno ya cancelado no es error.
 export async function cancelAppointment(
   appointmentId: string
 ): Promise<{ error?: string }> {
   const supabase = createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { error: "Sesión expirada." };
 
-  const { error } = await supabase
-    .from("appointments")
-    .update({ status: "cancelled" })
-    .eq("id", appointmentId)
-    .not("status", "eq", "cancelled");
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (!apiUrl) return { error: "API no configurada." };
 
-  if (error) {
-    return { error: `No se pudo cancelar el turno: ${error.message}` };
+  try {
+    const res = await fetch(
+      `${apiUrl}/appointments/${appointmentId}/cancel`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      }
+    );
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as
+        | { message?: string | string[] }
+        | null;
+      const msg = Array.isArray(body?.message)
+        ? body?.message.join(" ")
+        : body?.message;
+      return { error: msg || "No se pudo cancelar el turno." };
+    }
+  } catch {
+    return { error: "Error de red al cancelar el turno." };
   }
 
   revalidatePath("/calendar");
