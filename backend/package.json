@@ -27,6 +27,7 @@
     "bullmq": "^5.78.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
+    "cron": "^4.4.0",
     "googleapis": "^173.0.0",
     "ioredis": "^5.10.1",
     "jose": "^6.2.3",
