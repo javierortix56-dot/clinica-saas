@@ -5,10 +5,21 @@ import { randomUUID } from "crypto";
 
 import { createClient } from "@/lib/supabase/server";
 
-// Crea o actualiza un staff member + su fila en professionals (si es doctor)
-// + sus franjas de disponibilidad semanal.
-// clinic_id nunca viene del form: se resuelve desde el JWT del usuario logueado
-// a través de la sesión de Supabase (RLS lo garantiza).
+// Lee clinic_id del JWT (igual que en calendar/actions.ts y settings/actions.ts).
+async function getClinicId(): Promise<string | null> {
+  const supabase = createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return null;
+  try {
+    const payload = JSON.parse(
+      Buffer.from(session.access_token.split(".")[1], "base64").toString("utf8")
+    ) as { clinic_id?: string };
+    return payload.clinic_id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function upsertStaff(
   formData: FormData
 ): Promise<{ error?: string }> {
@@ -24,7 +35,8 @@ export async function upsertStaff(
     return { error: "Nombre y rol son obligatorios." };
   }
 
-  // ── Staff member ──────────────────────────────────────────────────────────
+  let staffId: string;
+
   if (id) {
     // Edición
     const { error } = await supabase
@@ -32,37 +44,44 @@ export async function upsertStaff(
       .update({ full_name, role, email, is_active })
       .eq("id", id);
     if (error) return { error: `Error al guardar: ${error.message}` };
+    staffId = id;
   } else {
-    // Creación — auth_user_id es NOT NULL en la BD; se usa un UUID placeholder
-    // que el admin puede vincular a una cuenta real posteriormente.
-    const { error } = await supabase.from("staff_members").insert({
-      full_name,
-      role,
-      email,
-      is_active: true,
-      auth_user_id: randomUUID(),
-    });
+    // Creación — clinic_id viene del JWT, nunca del form.
+    const clinicId = await getClinicId();
+    if (!clinicId) return { error: "Sesión expirada." };
+
+    const { data, error } = await supabase
+      .from("staff_members")
+      .insert({
+        full_name,
+        role,
+        email,
+        is_active: true,
+        clinic_id: clinicId,
+        auth_user_id: randomUUID(),
+      })
+      .select("id")
+      .single();
     if (error) return { error: `Error al crear miembro: ${error.message}` };
+    staffId = (data as { id: string }).id;
   }
 
-  // ── Professionals + disponibilidad (solo para doctores) ───────────────────
-  if (role === "doctor" && id) {
+  // ── Professionals + disponibilidad (para doctores — tanto en creación como edición) ─
+  if (role === "doctor") {
     const license_number =
       (formData.get("license_number") as string | null)?.trim() || null;
 
-    // Aseguramos que existe la fila en professionals (necesitamos clinic_id)
     const { data: sm } = await supabase
       .from("staff_members")
       .select("id, clinic_id")
-      .eq("id", id)
+      .eq("id", staffId)
       .single();
 
     if (sm) {
-      // Upsert en professionals con clinic_id + license_number
       const { data: prof, error: profErr } = await supabase
         .from("professionals")
         .upsert(
-          { staff_member_id: id, clinic_id: sm.clinic_id, license_number },
+          { staff_member_id: staffId, clinic_id: sm.clinic_id, license_number },
           { onConflict: "staff_member_id" }
         )
         .select("id")
@@ -70,8 +89,9 @@ export async function upsertStaff(
 
       if (profErr) return { error: `Error en profesional: ${profErr.message}` };
 
-      if (prof) {
-        // Rebuilding availability: delete existing + insert new
+      // Disponibilidad: solo se actualiza si hay días seleccionados (edición).
+      // En creación, el form no muestra el editor de disponibilidad todavía.
+      if (prof && id) {
         const selectedDays = (formData.getAll("days") as string[]).map(Number);
 
         await supabase
@@ -102,7 +122,6 @@ export async function upsertStaff(
   return {};
 }
 
-// Soft-delete: marca el miembro como inactivo sin borrar la fila.
 export async function deactivateStaff(
   memberId: string
 ): Promise<{ error?: string }> {
@@ -119,7 +138,6 @@ export async function deactivateStaff(
   return {};
 }
 
-// Reactiva un miembro previamente desactivado.
 export async function reactivateStaff(
   memberId: string
 ): Promise<{ error?: string }> {

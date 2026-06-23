@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
+import { createClient } from "@/lib/supabase/client";
 import type { StaffMember } from "@/lib/supabase/server";
 import {
   Table,
@@ -35,8 +37,23 @@ type SheetState =
   | { open: true; mode: "create"; member: null };
 
 export function StaffTable({ members }: { members: StaffMember[] }) {
+  const router = useRouter();
   const [sheet, setSheet] = useState<SheetState>({ open: false });
   const [search, setSearch] = useState("");
+  const channelRef = useRef<ReturnType<ReturnType<typeof createClient>["channel"]> | null>(null);
+
+  // Realtime: refrescar cuando cambia staff_members en Supabase.
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel("staff-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "staff_members" }, () => {
+        router.refresh();
+      })
+      .subscribe();
+    channelRef.current = channel;
+    return () => { supabase.removeChannel(channel); };
+  }, [router]);
 
   function openEdit(member: StaffMember) {
     setSheet({ open: true, mode: "edit", member });
