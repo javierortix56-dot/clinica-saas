@@ -12,13 +12,13 @@ export default async function ApprovalsPage() {
   const appointments = await getProposedAppointments();
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Aprobaciones pendientes
+    <div className="mx-auto max-w-[980px]">
+      <div className="mb-[22px]">
+        <h1 className="text-[27px] font-extrabold tracking-[-.02em]">
+          Aprobaciones
         </h1>
-        <p className="text-sm text-muted-foreground">
-          Turnos propuestos por el asistente esperando confirmación.
+        <p className="mt-[9px] text-[14px] font-medium text-muted-foreground">
+          Solicitudes de turno pendientes de confirmación.
         </p>
       </div>
 
