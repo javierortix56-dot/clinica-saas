@@ -419,6 +419,17 @@ export async function getAppointmentsByPatient(
 
 // ─── Historia clínica ──────────────────────────────────────────────────────────
 
+// Adjunto de una nota clínica, ya resuelto con su signed URL (bucket privado).
+export interface ClinicalAttachment {
+  id: string;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  is_image: boolean;
+  // URL firmada temporal para mostrar/descargar. null si no se pudo firmar.
+  signed_url: string | null;
+}
+
 export interface ClinicalNote {
   id: string;
   note_type: string;
@@ -426,6 +437,7 @@ export interface ClinicalNote {
   created_at: string;
   author_name: string | null;
   treatment_name: string | null;
+  attachments: ClinicalAttachment[];
 }
 
 interface ClinicalNoteRow {
@@ -435,7 +447,19 @@ interface ClinicalNoteRow {
   created_at: string;
   professionals: { staff_members: { full_name: string } | null } | null;
   treatments: { treatment_types: { name: string } | null } | null;
+  clinical_note_attachments:
+    | {
+        id: string;
+        file_name: string;
+        mime_type: string;
+        size_bytes: number;
+        storage_path: string;
+      }[]
+    | null;
 }
+
+const ATTACHMENTS_BUCKET = "clinical-attachments";
+const SIGNED_URL_TTL_SECONDS = 60 * 60; // 1h: alcanza para renderizar la página.
 
 export async function getClinicalNotes(patientId: string): Promise<ClinicalNote[]> {
   const supabase = createClient();
@@ -444,19 +468,47 @@ export async function getClinicalNotes(patientId: string): Promise<ClinicalNote[
     .select(
       `id, note_type, body, created_at,
        professionals ( staff_members ( full_name ) ),
-       treatments ( treatment_types ( name ) )`
+       treatments ( treatment_types ( name ) ),
+       clinical_note_attachments ( id, file_name, mime_type, size_bytes, storage_path )`
     )
     .eq("patient_id", patientId)
     .is("deleted_at", null)
+    .is("clinical_note_attachments.deleted_at", null)
     .order("created_at", { ascending: false });
   if (error) throw new Error(`No se pudo cargar la historia clínica: ${error.message}`);
-  return ((data ?? []) as unknown as ClinicalNoteRow[]).map((row) => ({
+
+  const rows = (data ?? []) as unknown as ClinicalNoteRow[];
+
+  // Firmamos en lote todas las rutas de adjuntos (bucket privado): una sola
+  // llamada a Storage en vez de una por archivo.
+  const allPaths = rows.flatMap((r) =>
+    (r.clinical_note_attachments ?? []).map((a) => a.storage_path)
+  );
+  const signedByPath = new Map<string, string>();
+  if (allPaths.length > 0) {
+    const { data: signed } = await supabase.storage
+      .from(ATTACHMENTS_BUCKET)
+      .createSignedUrls(allPaths, SIGNED_URL_TTL_SECONDS);
+    for (const s of signed ?? []) {
+      if (s.signedUrl && s.path) signedByPath.set(s.path, s.signedUrl);
+    }
+  }
+
+  return rows.map((row) => ({
     id: row.id,
     note_type: row.note_type,
     body: row.body,
     created_at: row.created_at,
     author_name: row.professionals?.staff_members?.full_name ?? null,
     treatment_name: row.treatments?.treatment_types?.name ?? null,
+    attachments: (row.clinical_note_attachments ?? []).map((a) => ({
+      id: a.id,
+      file_name: a.file_name,
+      mime_type: a.mime_type,
+      size_bytes: a.size_bytes,
+      is_image: a.mime_type.startsWith("image/"),
+      signed_url: signedByPath.get(a.storage_path) ?? null,
+    })),
   }));
 }
 

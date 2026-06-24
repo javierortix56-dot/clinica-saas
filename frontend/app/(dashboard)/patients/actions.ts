@@ -56,12 +56,33 @@ export async function upsertPatient(
 
 // ─── Notas clínicas ────────────────────────────────────────────────────────────
 
-// Crea una nota clínica para un paciente.
+const ATTACHMENTS_BUCKET = "clinical-attachments";
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB por archivo.
+const ALLOWED_ATTACHMENT_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "application/pdf",
+]);
+
+// Deja el nombre de archivo apto para una ruta de Storage (sin espacios ni
+// caracteres raros), preservando la extensión.
+function sanitizeFileName(name: string): string {
+  return name
+    .normalize("NFKD")
+    .replace(/[^\w.\-]+/g, "_")
+    .replace(/_+/g, "_")
+    .slice(-120); // acota largo, conserva la extensión final
+}
+
+// Crea una nota clínica para un paciente, con adjuntos opcionales (imágenes/PDF).
 // author_id se resuelve siempre server-side desde el JWT — nunca desde el cliente.
-// RLS refuerza que solo admin/doctor pueden escribir en clinical_notes.
+// RLS refuerza que solo admin/doctor pueden escribir en clinical_notes y subir
+// al bucket privado (las policies del bucket exigen el prefijo clinic_id).
 export async function createClinicalNote(
   formData: FormData
-): Promise<{ error?: string }> {
+): Promise<{ error?: string; warning?: string }> {
   const supabase = createClient();
 
   const {
@@ -89,16 +110,186 @@ export async function createClinicalNote(
     return { error: "Tipo y contenido son obligatorios." };
   }
 
-  const { error } = await supabase.from("clinical_notes").insert({
-    patient_id,
-    author_id: prof.id,
-    note_type,
-    body,
-    treatment_id: treatment_id || null,
-  });
+  // Validamos los adjuntos ANTES de insertar la nota: si alguno es inválido,
+  // no dejamos una nota a medias.
+  const files = formData
+    .getAll("attachments")
+    .filter((f): f is File => f instanceof File && f.size > 0);
 
-  if (error) return { error: `No se pudo guardar la nota: ${error.message}` };
+  for (const file of files) {
+    if (!ALLOWED_ATTACHMENT_TYPES.has(file.type)) {
+      return {
+        error: `Tipo de archivo no permitido (${file.name}). Solo imágenes (JPG, PNG, WEBP, GIF) o PDF.`,
+      };
+    }
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      return { error: `"${file.name}" supera el máximo de 10 MB.` };
+    }
+  }
+
+  // clinic_id resuelto server-side desde el JWT — nunca del cliente.
+  const clinicId = await getClinicId();
+  if (files.length > 0 && !clinicId) {
+    return { error: "No se pudo determinar la clínica para subir archivos." };
+  }
+
+  const { data: note, error } = await supabase
+    .from("clinical_notes")
+    .insert({
+      patient_id,
+      author_id: prof.id,
+      note_type,
+      body,
+      treatment_id: treatment_id || null,
+    })
+    .select("id")
+    .single();
+
+  if (error || !note) {
+    return { error: `No se pudo guardar la nota: ${error?.message ?? "desconocido"}` };
+  }
+
+  // Subida de adjuntos al bucket privado + registro de metadatos.
+  const failed: string[] = [];
+  for (const file of files) {
+    const path = `${clinicId}/${note.id}/${crypto.randomUUID()}-${sanitizeFileName(file.name)}`;
+    const buffer = Buffer.from(await file.arrayBuffer());
+
+    const { error: upErr } = await supabase.storage
+      .from(ATTACHMENTS_BUCKET)
+      .upload(path, buffer, { contentType: file.type, upsert: false });
+
+    if (upErr) {
+      failed.push(file.name);
+      continue;
+    }
+
+    const { error: metaErr } = await supabase
+      .from("clinical_note_attachments")
+      .insert({
+        clinic_id: clinicId,
+        clinical_note_id: note.id,
+        storage_path: path,
+        file_name: file.name,
+        mime_type: file.type,
+        size_bytes: file.size,
+        uploaded_by: prof.id,
+      });
+
+    if (metaErr) {
+      // El binario quedó subido pero sin metadato: lo borramos para no dejar
+      // huérfanos, y lo reportamos como fallido.
+      await supabase.storage.from(ATTACHMENTS_BUCKET).remove([path]);
+      failed.push(file.name);
+    }
+  }
 
   revalidatePath(`/patients/${patient_id}`);
+  if (failed.length > 0) {
+    return {
+      warning: `La nota se guardó, pero no se pudieron adjuntar: ${failed.join(", ")}.`,
+    };
+  }
   return {};
+}
+
+// ─── Resumen de historia clínica con IA ─────────────────────────────────────────
+
+// Genera un resumen clínico del paciente con Gemini. Lee las notas vía RLS (la
+// sesión del médico ya tiene acceso admin/doctor); la API key vive solo en el
+// entorno server (nunca llega al cliente). El backend/bot NO interviene: su rol
+// clinic_bot tiene prohibido el acceso a notas clínicas (borde duro §6).
+export async function summarizePatientHistory(
+  patientId: string
+): Promise<{ summary?: string; error?: string }> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return { error: "Falta configurar GEMINI_API_KEY en el entorno." };
+  }
+
+  const supabase = createClient();
+  const { data: notes, error } = await supabase
+    .from("clinical_notes")
+    .select(
+      `note_type, body, created_at,
+       treatments ( treatment_types ( name ) )`
+    )
+    .eq("patient_id", patientId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: true });
+
+  if (error) return { error: `No se pudo leer la historia clínica: ${error.message}` };
+  if (!notes || notes.length === 0) {
+    return { error: "No hay notas clínicas para resumir." };
+  }
+
+  const dateFmt = new Intl.DateTimeFormat("es-AR", {
+    dateStyle: "medium",
+    timeZone: "America/Argentina/Buenos_Aires",
+  });
+
+  const historial = (notes as unknown as ClinicalNoteForSummary[])
+    .map((n) => {
+      const fecha = dateFmt.format(new Date(n.created_at));
+      const trat = n.treatments?.treatment_types?.name;
+      const tratStr = trat ? ` [${trat}]` : "";
+      return `- ${fecha} · ${n.note_type}${tratStr}: ${n.body}`;
+    })
+    .join("\n");
+
+  const prompt = [
+    "Sos un asistente clínico. A partir del historial de notas clínicas de un",
+    "paciente (ordenadas de más antigua a más reciente), redactá un resumen breve",
+    "para que el profesional se ponga al día antes de la consulta.",
+    "",
+    "Reglas:",
+    "- Máximo 6 viñetas, en español.",
+    "- Destacá diagnósticos, evolución, tratamientos en curso y pendientes.",
+    "- Si detectás alertas (alergias, condiciones de riesgo), ponelas PRIMERO.",
+    "- No inventes datos que no estén en las notas.",
+    "",
+    "Historial:",
+    historial,
+  ].join("\n");
+
+  try {
+    const resp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+        }),
+      }
+    );
+
+    if (!resp.ok) {
+      return { error: `El servicio de IA respondió ${resp.status}.` };
+    }
+
+    const data = (await resp.json()) as GeminiResponse;
+    const summary = data.candidates?.[0]?.content?.parts
+      ?.map((p) => p.text ?? "")
+      .join("")
+      .trim();
+
+    if (!summary) return { error: "La IA no devolvió un resumen." };
+    return { summary };
+  } catch (err) {
+    return { error: `No se pudo contactar al servicio de IA: ${String(err)}` };
+  }
+}
+
+interface ClinicalNoteForSummary {
+  note_type: string;
+  body: string;
+  created_at: string;
+  treatments: { treatment_types: { name: string } | null } | null;
+}
+
+interface GeminiResponse {
+  candidates?: {
+    content?: { parts?: { text?: string }[] };
+  }[];
 }

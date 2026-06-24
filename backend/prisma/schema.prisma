@@ -368,6 +368,11 @@ model clinical_notes {
   @@index([clinic_id, patient_id])
 }
 
+// NOTA: `clinical_note_attachments` (migración 0015) NO se modela acá a propósito.
+// Es una tabla del dominio del frontend (Supabase Storage + RLS con la sesión del
+// médico); el backend/bot tiene `revoke all` sobre ella (borde duro §6, igual que
+// clinical_notes), así que no debe existir en el cliente Prisma del bot.
+
 // -----------------------------------------------------------------------------
 // ESTADO CONVERSACIONAL DEL BOT (0003)
 // -----------------------------------------------------------------------------
