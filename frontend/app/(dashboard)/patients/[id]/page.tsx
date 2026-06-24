@@ -6,6 +6,8 @@ import {
   getAppointmentsByPatient,
   getClinicalNotes,
   getPatientTreatments,
+  getPatientClinicalProfile,
+  getProfessionalNoteConfig,
   getSessionAuth,
 } from "@/lib/supabase/server";
 import { PatientTabs } from "../PatientTabs";
@@ -23,12 +25,22 @@ export default async function PatientDetailPage({
 }: {
   params: { id: string };
 }) {
-  const [{ role }, patient, appointments, notes, treatments] = await Promise.all([
+  const [
+    { role },
+    patient,
+    appointments,
+    notes,
+    treatments,
+    clinicalProfile,
+    noteConfig,
+  ] = await Promise.all([
     getSessionAuth(),
     getPatientById(params.id),
     getAppointmentsByPatient(params.id),
     getClinicalNotes(params.id),
     getPatientTreatments(params.id),
+    getPatientClinicalProfile(params.id),
+    getProfessionalNoteConfig(),
   ]);
 
   if (!patient) {
@@ -82,6 +94,8 @@ export default async function PatientDetailPage({
         notes={notes}
         treatments={treatments}
         role={role}
+        clinicalProfile={clinicalProfile}
+        noteConfig={noteConfig ?? {}}
       />
     </div>
   );

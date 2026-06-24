@@ -110,6 +110,25 @@ export async function createClinicalNote(
     return { error: "Tipo y contenido son obligatorios." };
   }
 
+  // ── Campos estructurados (motivo / signos vitales / diagnóstico / indicaciones) ─
+  // El formulario solo envía los campos que el profesional tiene activos; acá
+  // tomamos lo que venga y descartamos vacíos para no guardar ruido.
+  const structured: Record<string, unknown> = {};
+  const motivo = (formData.get("motivo") as string | null)?.trim();
+  const diagnostico = (formData.get("diagnostico") as string | null)?.trim();
+  const indicaciones = (formData.get("indicaciones") as string | null)?.trim();
+  if (motivo) structured.motivo = motivo;
+  if (diagnostico) structured.diagnostico = diagnostico;
+  if (indicaciones) structured.indicaciones = indicaciones;
+
+  const VITAL_KEYS = ["ta", "fc", "fr", "temp", "peso", "talla", "sato2"];
+  const vitals: Record<string, string> = {};
+  for (const k of VITAL_KEYS) {
+    const v = (formData.get(`vital_${k}`) as string | null)?.trim();
+    if (v) vitals[k] = v;
+  }
+  if (Object.keys(vitals).length > 0) structured.vitals = vitals;
+
   // Validamos los adjuntos ANTES de insertar la nota: si alguno es inválido,
   // no dejamos una nota a medias.
   const files = formData
@@ -144,6 +163,7 @@ export async function createClinicalNote(
       note_type,
       body,
       treatment_id: treatment_id || null,
+      structured_data: structured,
     })
     .select("id")
     .single();
@@ -196,6 +216,82 @@ export async function createClinicalNote(
   return {};
 }
 
+// ─── Perfil clínico del paciente (alergias + antecedentes) ──────────────────────
+
+// Guarda alergias/antecedentes a nivel paciente. RLS exige admin/doctor; el
+// clinic_id sale del JWT (nunca del cliente). Upsert por patient_id.
+export async function updatePatientClinicalProfile(
+  formData: FormData
+): Promise<{ error?: string }> {
+  const supabase = createClient();
+  const patient_id = formData.get("patient_id") as string;
+  if (!patient_id) return { error: "Falta el paciente." };
+
+  const allergies = (formData.get("allergies") as string | null)?.trim() || null;
+  const medical_history =
+    (formData.get("medical_history") as string | null)?.trim() || null;
+
+  // professional_id del autor (para updated_by) y clinic_id del JWT.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Sesión expirada." };
+  const { data: prof } = await supabase
+    .from("professionals")
+    .select("id, staff_members!inner(auth_user_id)")
+    .eq("staff_members.auth_user_id", user.id)
+    .single();
+
+  const clinicId = await getClinicId();
+  if (!clinicId) return { error: "No se pudo determinar la clínica." };
+
+  const { error } = await supabase
+    .from("patient_clinical_profile")
+    .upsert(
+      {
+        patient_id,
+        clinic_id: clinicId,
+        allergies,
+        medical_history,
+        updated_by: (prof as { id?: string } | null)?.id ?? null,
+      },
+      { onConflict: "patient_id" }
+    );
+
+  if (error) return { error: `No se pudo guardar: ${error.message}` };
+  revalidatePath(`/patients/${patient_id}`);
+  return {};
+}
+
+// ─── Configuración de campos clínicos del profesional ───────────────────────────
+
+// Guarda qué campos clínicos ve el profesional logueado en su formulario de nota.
+// Es por profesional (resuelto del JWT) — cada especialidad arma su propio set.
+export async function updateNoteFieldConfig(
+  config: Record<string, boolean>
+): Promise<{ error?: string }> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Sesión expirada." };
+
+  const { data: prof } = await supabase
+    .from("professionals")
+    .select("id, staff_members!inner(auth_user_id)")
+    .eq("staff_members.auth_user_id", user.id)
+    .single();
+  if (!prof) return { error: "Solo profesionales pueden configurar campos." };
+
+  const { error } = await supabase
+    .from("professionals")
+    .update({ note_field_config: config })
+    .eq("id", (prof as { id: string }).id);
+
+  if (error) return { error: `No se pudo guardar la configuración: ${error.message}` };
+  return {};
+}
+
 // ─── Resumen de historia clínica con IA ─────────────────────────────────────────
 
 // Genera un resumen clínico del paciente con Gemini. Lee las notas vía RLS (la
@@ -211,15 +307,24 @@ export async function summarizePatientHistory(
   }
 
   const supabase = createClient();
-  const { data: notes, error } = await supabase
-    .from("clinical_notes")
-    .select(
-      `note_type, body, created_at,
-       treatments ( treatment_types ( name ) )`
-    )
-    .eq("patient_id", patientId)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: true });
+
+  // Perfil clínico (alergias/antecedentes) + notas, en paralelo.
+  const [{ data: profile }, { data: notes, error }] = await Promise.all([
+    supabase
+      .from("patient_clinical_profile")
+      .select("allergies, medical_history")
+      .eq("patient_id", patientId)
+      .maybeSingle(),
+    supabase
+      .from("clinical_notes")
+      .select(
+        `note_type, body, created_at, structured_data,
+         treatments ( treatment_types ( name ) )`
+      )
+      .eq("patient_id", patientId)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: true }),
+  ]);
 
   if (error) return { error: `No se pudo leer la historia clínica: ${error.message}` };
   if (!notes || notes.length === 0) {
@@ -231,14 +336,45 @@ export async function summarizePatientHistory(
     timeZone: "America/Argentina/Buenos_Aires",
   });
 
+  const VITAL_LABELS: Record<string, string> = {
+    ta: "TA", fc: "FC", fr: "FR", temp: "Temp", peso: "Peso", talla: "Talla", sato2: "SatO2",
+  };
+
   const historial = (notes as unknown as ClinicalNoteForSummary[])
     .map((n) => {
       const fecha = dateFmt.format(new Date(n.created_at));
       const trat = n.treatments?.treatment_types?.name;
       const tratStr = trat ? ` [${trat}]` : "";
-      return `- ${fecha} · ${n.note_type}${tratStr}: ${n.body}`;
+      const sd = n.structured_data ?? {};
+      const extra: string[] = [];
+      if (sd.motivo) extra.push(`Motivo: ${sd.motivo}`);
+      if (sd.vitals && Object.keys(sd.vitals).length > 0) {
+        const v = Object.entries(sd.vitals)
+          .map(([k, val]) => `${VITAL_LABELS[k] ?? k} ${val}`)
+          .join(", ");
+        extra.push(`Vitales: ${v}`);
+      }
+      if (sd.diagnostico) extra.push(`Dx: ${sd.diagnostico}`);
+      if (sd.indicaciones) extra.push(`Plan: ${sd.indicaciones}`);
+      const extraStr = extra.length > 0 ? ` (${extra.join(" · ")})` : "";
+      return `- ${fecha} · ${n.note_type}${tratStr}: ${n.body}${extraStr}`;
     })
     .join("\n");
+
+  const prof = profile as
+    | { allergies: string | null; medical_history: string | null }
+    | null;
+  const perfilStr =
+    prof && (prof.allergies || prof.medical_history)
+      ? [
+          "Perfil del paciente:",
+          prof.allergies ? `- Alergias: ${prof.allergies}` : "",
+          prof.medical_history ? `- Antecedentes: ${prof.medical_history}` : "",
+          "",
+        ]
+          .filter(Boolean)
+          .join("\n")
+      : "";
 
   const prompt = [
     "Sos un asistente clínico. A partir del historial de notas clínicas de un",
@@ -251,6 +387,7 @@ export async function summarizePatientHistory(
     "- Si detectás alertas (alergias, condiciones de riesgo), ponelas PRIMERO.",
     "- No inventes datos que no estén en las notas.",
     "",
+    perfilStr,
     "Historial:",
     historial,
   ].join("\n");
@@ -288,6 +425,12 @@ interface ClinicalNoteForSummary {
   note_type: string;
   body: string;
   created_at: string;
+  structured_data: {
+    motivo?: string;
+    vitals?: Record<string, string>;
+    diagnostico?: string;
+    indicaciones?: string;
+  } | null;
   treatments: { treatment_types: { name: string } | null } | null;
 }
 
