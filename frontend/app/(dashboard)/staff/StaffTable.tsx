@@ -151,9 +151,16 @@ export function StaffTable({ members }: { members: StaffMember[] }) {
                     )}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="secondary">
-                      {ROLE_LABELS[m.role] ?? m.role}
-                    </Badge>
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="secondary">
+                        {ROLE_LABELS[m.role] ?? m.role}
+                      </Badge>
+                      {m.is_owner && (
+                        <Badge className="bg-amber-500 text-white hover:bg-amber-500">
+                          Dueño
+                        </Badge>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
                     {m.is_active ? (

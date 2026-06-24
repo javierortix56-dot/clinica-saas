@@ -6,22 +6,59 @@ import { randomUUID, randomBytes } from "crypto";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-// Lee clinic_id + user_role del JWT (resueltos server-side, nunca del form).
+// Lee clinic_id + user_role + is_owner del JWT (resueltos server-side, nunca del form).
 async function getSessionClaims(): Promise<{
   clinicId: string | null;
   role: string | null;
+  isOwner: boolean;
 }> {
   const supabase = createClient();
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session) return { clinicId: null, role: null };
+  if (!session) return { clinicId: null, role: null, isOwner: false };
   try {
     const payload = JSON.parse(
       Buffer.from(session.access_token.split(".")[1], "base64").toString("utf8")
-    ) as { clinic_id?: string; user_role?: string };
-    return { clinicId: payload.clinic_id ?? null, role: payload.user_role ?? null };
+    ) as { clinic_id?: string; user_role?: string; is_owner?: boolean };
+    return {
+      clinicId: payload.clinic_id ?? null,
+      role: payload.user_role ?? null,
+      isOwner: payload.is_owner === true,
+    };
   } catch {
-    return { clinicId: null, role: null };
+    return { clinicId: null, role: null, isOwner: false };
   }
+}
+
+// Toda la gestión de equipo es exclusiva del dueño (is_owner).
+async function requireOwner(): Promise<{ clinicId: string } | { error: string }> {
+  const { clinicId, isOwner } = await getSessionClaims();
+  if (!isOwner) {
+    return { error: "Solo el dueño de la clínica puede gestionar el equipo." };
+  }
+  if (!clinicId) return { error: "Sesión expirada." };
+  return { clinicId };
+}
+
+// True si `memberId` es dueño y es el ÚNICO dueño activo de su clínica.
+// Sirve para evitar dejar la clínica sin ningún dueño (lockout).
+async function isLastOwner(
+  supabase: ReturnType<typeof createClient>,
+  memberId: string
+): Promise<boolean> {
+  const { data: m } = await supabase
+    .from("staff_members")
+    .select("is_owner, clinic_id")
+    .eq("id", memberId)
+    .single();
+  const member = m as { is_owner?: boolean; clinic_id?: string } | null;
+  if (!member?.is_owner || !member.clinic_id) return false;
+  const { count } = await supabase
+    .from("staff_members")
+    .select("id", { count: "exact", head: true })
+    .eq("clinic_id", member.clinic_id)
+    .eq("is_owner", true)
+    .is("deleted_at", null);
+  return (count ?? 0) <= 1;
 }
 
 // Contraseña temporal fuerte (url-safe, ~12 caracteres).
@@ -99,8 +136,12 @@ export async function upsertStaff(
     return { error: "Nombre y rol son obligatorios." };
   }
 
-  const { clinicId, role: callerRole } = await getSessionClaims();
-  if (!clinicId) return { error: "Sesión expirada." };
+  const owner = await requireOwner();
+  if ("error" in owner) return { error: owner.error };
+  const { clinicId } = owner;
+
+  // Flag de dueño (la página ya es owner-only; acá lo reforzamos).
+  const makeOwner = formData.get("is_owner") === "true";
 
   let staffId: string;
   let credentials: { email: string; password: string } | undefined;
@@ -109,23 +150,34 @@ export async function upsertStaff(
     // ── Edición ──
     const { data: current } = await supabase
       .from("staff_members")
-      .select("auth_user_id, email")
+      .select("auth_user_id, email, is_owner")
       .eq("id", id)
       .single();
 
+    // Seguridad anti-lockout: no permitir quitar el último dueño de la clínica.
+    const wasOwner = (current as { is_owner?: boolean } | null)?.is_owner === true;
+    if (wasOwner && !makeOwner) {
+      const { count } = await supabase
+        .from("staff_members")
+        .select("id", { count: "exact", head: true })
+        .eq("clinic_id", clinicId)
+        .eq("is_owner", true)
+        .is("deleted_at", null);
+      if ((count ?? 0) <= 1) {
+        return { error: "No podés quitar el último dueño de la clínica." };
+      }
+    }
+
     const { error } = await supabase
       .from("staff_members")
-      .update({ full_name, role, email, is_active })
+      .update({ full_name, role, email, is_active, is_owner: makeOwner })
       .eq("id", id);
     if (error) return { error: `Error al guardar: ${error.message}` };
     staffId = id;
 
-    // Setear/resetear contraseña de acceso (requiere email + ser admin).
+    // Setear/resetear contraseña de acceso (requiere email).
     if (password) {
       if (!email) return { error: "Para crear el acceso, cargá un email." };
-      if (callerRole !== "admin") {
-        return { error: "Solo un admin puede gestionar accesos." };
-      }
       const admin = createAdminClient();
       const currentAuthId = (current as { auth_user_id?: string } | null)
         ?.auth_user_id;
@@ -165,10 +217,6 @@ export async function upsertStaff(
   } else {
     // ── Creación ──
     if (email) {
-      // Crear un login real requiere ser admin (evita usuarios de auth huérfanos).
-      if (callerRole !== "admin") {
-        return { error: "Solo un admin puede crear accesos con email." };
-      }
       const prov = await provisionAuthUser(email, password);
       if ("error" in prov) {
         return { error: `No se pudo crear el acceso: ${prov.error}` };
@@ -182,6 +230,7 @@ export async function upsertStaff(
           role,
           email,
           is_active: true,
+          is_owner: makeOwner,
           clinic_id: clinicId,
           auth_user_id: prov.authUserId,
         })
@@ -204,6 +253,7 @@ export async function upsertStaff(
           role,
           email,
           is_active: true,
+          is_owner: makeOwner,
           clinic_id: clinicId,
           auth_user_id: randomUUID(),
         })
@@ -290,6 +340,11 @@ export async function deactivateStaff(
   memberId: string
 ): Promise<{ error?: string }> {
   const supabase = createClient();
+  const owner = await requireOwner();
+  if ("error" in owner) return { error: owner.error };
+  if (await isLastOwner(supabase, memberId)) {
+    return { error: "No podés desactivar al último dueño de la clínica." };
+  }
 
   const { error } = await supabase
     .from("staff_members")
@@ -308,6 +363,8 @@ export async function reactivateStaff(
   memberId: string
 ): Promise<{ error?: string }> {
   const supabase = createClient();
+  const owner = await requireOwner();
+  if ("error" in owner) return { error: owner.error };
 
   const { error } = await supabase
     .from("staff_members")
@@ -329,6 +386,11 @@ export async function deleteStaff(
   memberId: string
 ): Promise<{ error?: string }> {
   const supabase = createClient();
+  const owner = await requireOwner();
+  if ("error" in owner) return { error: owner.error };
+  if (await isLastOwner(supabase, memberId)) {
+    return { error: "No podés borrar al último dueño de la clínica." };
+  }
 
   const { error } = await supabase
     .from("staff_members")
@@ -346,6 +408,8 @@ export async function getGoogleCalendarConnectUrl(
   professionalId: string
 ): Promise<{ url?: string; error?: string }> {
   const supabase = createClient();
+  const owner = await requireOwner();
+  if ("error" in owner) return { error: owner.error };
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return { error: "Sesión expirada." };
 
@@ -369,6 +433,8 @@ export async function disconnectGoogleCalendar(
   professionalId: string
 ): Promise<{ error?: string }> {
   const supabase = createClient();
+  const owner = await requireOwner();
+  if ("error" in owner) return { error: owner.error };
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return { error: "Sesión expirada." };
 

@@ -33,7 +33,7 @@ export default async function DashboardLayout({
 
   // Ambas lecturas dependen solo de `user`; corren en paralelo para no encadenar
   // round-trips en cada navegación.
-  const [{ role }, { data: sm }] = await Promise.all([
+  const [{ role, isOwner }, { data: sm }] = await Promise.all([
     getSessionAuth(),
     supabase
       .from("staff_members")
@@ -70,13 +70,16 @@ export default async function DashboardLayout({
           >
             Pacientes
           </Link>
-          <Link
-            href="/staff"
-            className="text-sm text-muted-foreground hover:text-foreground"
-          >
-            Equipo
-          </Link>
-          {role === "admin" && (
+          {/* Equipo y Ajustes: exclusivos del dueño de la clínica */}
+          {isOwner && (
+            <Link
+              href="/staff"
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              Equipo
+            </Link>
+          )}
+          {isOwner && (
             <Link
               href="/settings"
               className="text-sm text-muted-foreground hover:text-foreground"

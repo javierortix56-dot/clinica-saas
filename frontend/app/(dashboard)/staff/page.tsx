@@ -1,14 +1,15 @@
 import { redirect } from "next/navigation";
 
-import { getSessionAuth, isDoctorRole, getStaffMembers } from "@/lib/supabase/server";
+import { getSessionAuth, getStaffMembers } from "@/lib/supabase/server";
 import { StaffTable } from "./StaffTable";
 
 export const dynamic = "force-dynamic";
 
 export default async function StaffPage() {
-  const { role } = await getSessionAuth();
-  if (isDoctorRole(role)) {
-    redirect("/calendar");
+  // Gestión de equipo: exclusiva del dueño de la clínica.
+  const { isOwner } = await getSessionAuth();
+  if (!isOwner) {
+    redirect("/approvals");
   }
 
   const members = await getStaffMembers();

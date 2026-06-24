@@ -7,8 +7,9 @@ import { SettingsClient } from "./SettingsClient";
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
-  const { role } = await getSessionAuth();
-  if (role !== "admin") {
+  // Configuraciones: exclusivas del dueño de la clínica.
+  const { isOwner } = await getSessionAuth();
+  if (!isOwner) {
     redirect("/approvals");
   }
 

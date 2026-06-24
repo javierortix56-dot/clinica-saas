@@ -489,6 +489,24 @@ export function StaffSheet({
             </select>
           </div>
 
+          {/* Dueño de la clínica */}
+          <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <input
+              type="checkbox"
+              name="is_owner"
+              id="is_owner"
+              value="true"
+              defaultChecked={member?.is_owner ?? false}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300"
+            />
+            <label htmlFor="is_owner" className="text-sm text-slate-700">
+              Dueño de la clínica
+              <span className="block text-xs text-slate-500">
+                Único que puede gestionar equipo, configuraciones e integraciones.
+              </span>
+            </label>
+          </div>
+
           {/* is_active (solo en edición) */}
           {mode === "edit" && (
             <div className="flex items-center gap-2">

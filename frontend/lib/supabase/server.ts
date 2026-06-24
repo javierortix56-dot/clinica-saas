@@ -31,26 +31,28 @@ export function createClient() {
 export async function getSessionAuth(): Promise<{
   hasSession: boolean;
   role: string | null;
+  isOwner: boolean;
 }> {
   const supabase = createClient();
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  if (!session) return { hasSession: false, role: null };
+  if (!session) return { hasSession: false, role: null, isOwner: false };
 
   let role: string | null = null;
+  let isOwner = false;
   try {
     const payload = session.access_token.split(".")[1];
-    role =
-      (
-        JSON.parse(Buffer.from(payload, "base64").toString("utf8")) as {
-          user_role?: string;
-        }
-      ).user_role ?? null;
+    const claims = JSON.parse(
+      Buffer.from(payload, "base64").toString("utf8")
+    ) as { user_role?: string; is_owner?: boolean };
+    role = claims.user_role ?? null;
+    isOwner = claims.is_owner === true;
   } catch {
     role = null;
+    isOwner = false;
   }
-  return { hasSession: true, role };
+  return { hasSession: true, role, isOwner };
 }
 
 // True si el rol corresponde a un profesional (doctor / professional).
@@ -293,6 +295,7 @@ export interface StaffMember {
   role: "admin" | "doctor" | "reception";
   email: string | null;
   is_active: boolean;
+  is_owner: boolean;
   professional_id: string | null;
   license_number: string | null;
   // weekday 1=Lun … 6=Sáb; time como "HH:MM:SS"
@@ -306,6 +309,7 @@ interface StaffRow {
   role: StaffMember["role"];
   email: string | null;
   is_active: boolean;
+  is_owner: boolean;
   professionals: {
     id: string;
     license_number: string | null;
@@ -327,7 +331,7 @@ export async function getStaffMembers(): Promise<StaffMember[]> {
     .from("staff_members")
     .select(
       `
-        id, full_name, role, email, is_active,
+        id, full_name, role, email, is_active, is_owner,
         professionals (
           id, license_number,
           professional_availability ( weekday, start_time, end_time ),
@@ -348,6 +352,7 @@ export async function getStaffMembers(): Promise<StaffMember[]> {
     role: row.role,
     email: row.email,
     is_active: row.is_active,
+    is_owner: row.is_owner,
     professional_id: row.professionals?.id ?? null,
     license_number: row.professionals?.license_number ?? null,
     availability: (row.professionals?.professional_availability ?? []).sort(

@@ -4,28 +4,28 @@ import { revalidatePath } from "next/cache";
 
 import { createClient } from "@/lib/supabase/server";
 
-// Decodifica el JWT de sesión y devuelve user_role y clinic_id.
-// Ambos son claims top-level inyectados por el Custom Access Token Hook (migración 0007).
-// NO leer desde user.app_metadata — ese campo viene de raw_app_meta_data en la BD
-// y no incluye los claims custom del hook.
-async function requireAdmin(): Promise<
+// Las configuraciones de la clínica son exclusivas del dueño (is_owner).
+// Decodifica el JWT de sesión y exige el claim is_owner (inyectado por el Custom
+// Access Token Hook, migración 0016). NO leer de user.app_metadata — ese campo no
+// incluye los claims custom del hook.
+async function requireOwner(): Promise<
   { error: string } | { supabase: ReturnType<typeof createClient>; clinicId: string }
 > {
   const supabase = createClient();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return { error: "Sesión expirada." };
 
-  let role: string | null = null;
+  let isOwner = false;
   let clinicId: string | null = null;
   try {
     const payload = JSON.parse(
       Buffer.from(session.access_token.split(".")[1], "base64").toString("utf8")
-    ) as { user_role?: string; clinic_id?: string };
-    role = payload.user_role ?? null;
+    ) as { is_owner?: boolean; clinic_id?: string };
+    isOwner = payload.is_owner === true;
     clinicId = payload.clinic_id ?? null;
   } catch {}
 
-  if (role !== "admin") return { error: "Solo administradores pueden realizar esta acción." };
+  if (!isOwner) return { error: "Solo el dueño de la clínica puede realizar esta acción." };
   if (!clinicId) return { error: "No se pudo determinar la clínica del usuario." };
 
   return { supabase, clinicId };
@@ -34,7 +34,7 @@ async function requireAdmin(): Promise<
 export async function updateClinicSettings(
   formData: FormData
 ): Promise<{ error?: string }> {
-  const result = await requireAdmin();
+  const result = await requireOwner();
   if ("error" in result) return { error: result.error };
   const { supabase, clinicId } = result;
 
@@ -66,7 +66,7 @@ export async function updateClinicSettings(
 export async function upsertTreatmentType(
   formData: FormData
 ): Promise<{ error?: string }> {
-  const result = await requireAdmin();
+  const result = await requireOwner();
   if ("error" in result) return { error: result.error };
   const { supabase, clinicId } = result;
 
@@ -147,7 +147,7 @@ export async function upsertTreatmentType(
 export async function deleteTreatmentType(
   id: string
 ): Promise<{ error?: string }> {
-  const result = await requireAdmin();
+  const result = await requireOwner();
   if ("error" in result) return { error: result.error };
   const { supabase } = result;
 
