@@ -3,7 +3,16 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Sparkles, Settings, Plus, Pencil, Search } from "lucide-react";
+import {
+  Sparkles,
+  Settings,
+  Plus,
+  Pencil,
+  Search,
+  Upload,
+  Camera,
+  CalendarPlus,
+} from "lucide-react";
 
 import type {
   PatientAppointment,
@@ -241,6 +250,76 @@ function DictationButton({
   );
 }
 
+// Subir un archivo de audio ya grabado (p. ej. una nota de voz reenviada por
+// WhatsApp) y transcribirlo con la misma IA que el dictado en vivo. Acepta los
+// formatos comunes de notas de voz (ogg/opus, m4a, mp3…).
+function AudioUploadButton({
+  fields,
+  onResult,
+}: {
+  fields: string[];
+  onResult: (d: DictationResult) => void;
+}) {
+  const [processing, setProcessing] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // permite volver a elegir el mismo archivo
+    if (!file) return;
+    setProcessing(true);
+    try {
+      const audioBase64 = await blobToBase64(file);
+      // Las notas de voz de WhatsApp suelen llegar como ogg/opus; si el browser
+      // no reporta el tipo, asumimos audio/ogg. Sin el parámetro ;codecs=…
+      const baseMime = (file.type || "audio/ogg").split(";")[0];
+      const result = await transcribeNoteDictation({
+        audioBase64,
+        mimeType: baseMime,
+        fields,
+      });
+      if (result.error) {
+        toast.error(result.error);
+      } else if (result.data) {
+        onResult(result.data);
+        toast.success("Audio transcripto. Revisá y completá la nota.");
+      }
+    } catch {
+      toast.error("No se pudo procesar el audio.");
+    } finally {
+      setProcessing(false);
+    }
+  }
+
+  return (
+    <>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="audio/*"
+        className="hidden"
+        onChange={handleFile}
+      />
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        disabled={processing}
+        onClick={() => inputRef.current?.click()}
+      >
+        {processing ? (
+          "Transcribiendo…"
+        ) : (
+          <span className="flex items-center gap-[6px]">
+            <Upload className="h-[14px] w-[14px]" strokeWidth={1.9} />
+            Subir audio
+          </span>
+        )}
+      </Button>
+    </>
+  );
+}
+
 function NoteForm({
   patientId,
   treatments,
@@ -260,6 +339,8 @@ function NoteForm({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const cameraRef = useRef<HTMLInputElement | null>(null);
+  const [cameraName, setCameraName] = useState<string | null>(null);
 
   const sd = note?.structured_data ?? {};
   const [noteType, setNoteType] = useState(note?.note_type ?? "consulta");
@@ -298,10 +379,15 @@ function NoteForm({
     isSpecialtyFieldEnabled(config, f.key)
   );
 
-  // Dictado solo incluye campos note-scope (excluye diagnostico, va por IA separada).
-  const dictationFields = FIELD_DEFS.filter(
-    (f) => f.scope === "note" && f.key !== "diagnostico" && show(f.key)
-  ).map((f) => f.key);
+  // Dictado: campos note-scope habilitados (excluye diagnostico, va por IA
+  // separada) + los campos de especialidad activos (como `esp:<key>`). La IA
+  // solo completa los que detecte en el audio.
+  const dictationFields = [
+    ...FIELD_DEFS.filter(
+      (f) => f.scope === "note" && f.key !== "diagnostico" && show(f.key)
+    ).map((f) => f.key as string),
+    ...activeSpecialtyFields.map((f) => `esp:${f.key}`),
+  ];
 
   function applyDictation(d: DictationResult) {
     setBody((prev) => (prev.trim() ? `${prev.trim()}\n${d.body}` : d.body));
@@ -310,6 +396,8 @@ function NoteForm({
       setEnfermedadActual((prev) => (prev.trim() ? prev : d.enfermedad_actual!));
     if (d.indicaciones)
       setIndicaciones((prev) => (prev.trim() ? prev : d.indicaciones!));
+    if (d.fecha_control)
+      setFechaControl((prev) => (prev.trim() ? prev : d.fecha_control!));
     if (d.vitals) {
       setVitals((prev) => {
         const next = { ...prev };
@@ -324,6 +412,15 @@ function NoteForm({
         const next = { ...prev };
         for (const [k, val] of Object.entries(d.examen_fisico!)) {
           if (val && !next[k]?.trim()) next[k] = val;
+        }
+        return next;
+      });
+    }
+    if (d.especializados) {
+      setEspecializados((prev) => {
+        const next = { ...prev };
+        for (const [k, val] of Object.entries(d.especializados!)) {
+          if (val && k in next && !next[k]?.trim()) next[k] = val;
         }
         return next;
       });
@@ -376,15 +473,18 @@ function NoteForm({
       <input type="hidden" name="patient_id" value={patientId} />
       {mode === "edit" && note && <input type="hidden" name="id" value={note.id} />}
 
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-medium text-slate-700">
           {mode === "edit" ? "Editar nota" : "Nueva nota"}
         </p>
-        <DictationButton fields={dictationFields} onResult={applyDictation} />
+        <div className="flex flex-wrap items-center gap-2">
+          <DictationButton fields={dictationFields} onResult={applyDictation} />
+          <AudioUploadButton fields={dictationFields} onResult={applyDictation} />
+        </div>
       </div>
 
       {/* Tipo + Tratamiento */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <label className={fieldLabel}>Tipo</label>
           <select
@@ -615,6 +715,20 @@ function NoteForm({
             onChange={(e) => setFechaControl(e.target.value)}
             className={fieldInput}
           />
+          {fechaControl && (
+            <button
+              type="button"
+              onClick={() =>
+                router.push(
+                  `/calendar?nuevo=1&paciente=${patientId}&fecha=${fechaControl}`
+                )
+              }
+              className="mt-1 inline-flex items-center gap-[6px] rounded-[9px] border border-primary/25 bg-primary/[.07] px-[12px] py-[7px] text-[12.5px] font-bold text-primary transition hover:bg-primary/[.12]"
+            >
+              <CalendarPlus className="h-[15px] w-[15px]" strokeWidth={2} />
+              Generar turno para esta fecha
+            </button>
+          )}
         </div>
       )}
 
@@ -630,6 +744,34 @@ function NoteForm({
           accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
           className="w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm file:mr-3 file:rounded file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-medium hover:file:bg-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-400"
         />
+
+        {/* Captura desde la cámara (móvil). Comparte el name "attachments", así
+            se envía junto con el resto en el mismo submit. */}
+        <input
+          ref={cameraRef}
+          type="file"
+          name="attachments"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(e) => setCameraName(e.target.files?.[0]?.name ?? null)}
+        />
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => cameraRef.current?.click()}
+            className="inline-flex items-center gap-[6px] rounded-[9px] border border-slate-200 bg-white px-[12px] py-[7px] text-[12.5px] font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            <Camera className="h-[15px] w-[15px]" strokeWidth={1.9} />
+            Tomar foto
+          </button>
+          {cameraName && (
+            <span className="truncate text-[12px] font-medium text-emerald-600">
+              ✓ {cameraName}
+            </span>
+          )}
+        </div>
+
         <p className="text-xs text-slate-400">
           {mode === "edit"
             ? "Se agregan a los adjuntos existentes. Máx. 10 MB por archivo."
@@ -1258,7 +1400,7 @@ export function PatientTabs({
             </div>
           ) : (
             <div className="overflow-hidden rounded-card border border-border bg-white shadow-card-soft">
-              <div className="grid grid-cols-[1.4fr_1.2fr_1.6fr_1fr] border-b border-[#eef2f7] bg-[#fbfcfe] px-[22px] py-[13px] text-[11.5px] font-semibold uppercase tracking-[.05em] text-muted-foreground">
+              <div className="hidden grid-cols-[1.4fr_1.2fr_1.6fr_1fr] border-b border-[#eef2f7] bg-[#fbfcfe] px-[22px] py-[13px] text-[11.5px] font-semibold uppercase tracking-[.05em] text-muted-foreground sm:grid">
                 <div>Fecha / hora</div>
                 <div>Profesional</div>
                 <div>Tratamiento / Fase</div>
@@ -1267,10 +1409,15 @@ export function PatientTabs({
               {appointments.map((appt) => (
                 <div
                   key={appt.id}
-                  className="grid grid-cols-[1.4fr_1.2fr_1.6fr_1fr] items-center border-b border-slate-100 px-[22px] py-[15px] last:border-0"
+                  className="flex flex-col gap-2 border-b border-slate-100 px-4 py-[14px] last:border-0 sm:grid sm:grid-cols-[1.4fr_1.2fr_1.6fr_1fr] sm:items-center sm:gap-0 sm:px-[22px] sm:py-[15px]"
                 >
-                  <div className="text-[14px] font-bold text-foreground">
-                    {dateTimeFormatter.format(new Date(appt.start_at))}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[14px] font-bold text-foreground">
+                      {dateTimeFormatter.format(new Date(appt.start_at))}
+                    </div>
+                    <div className="sm:hidden">
+                      <ApptStatusBadge status={appt.status} />
+                    </div>
                   </div>
                   <div className="text-[13.5px] font-medium text-slate-600">
                     {appt.professional_name ?? "—"}
@@ -1278,7 +1425,7 @@ export function PatientTabs({
                   <div className="text-[13.5px] font-medium text-slate-600">
                     {appt.treatment_label ?? "—"}
                   </div>
-                  <div>
+                  <div className="hidden sm:block">
                     <ApptStatusBadge status={appt.status} />
                   </div>
                 </div>

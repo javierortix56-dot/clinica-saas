@@ -444,6 +444,8 @@ export interface DictationResult {
   vitals?: Record<string, string>;
   examen_fisico?: Record<string, string>;
   indicaciones?: string;
+  fecha_control?: string;
+  especializados?: Record<string, string>;
 }
 
 // Recibe el audio dictado por el profesional (base64) y lo convierte en una nota
@@ -477,6 +479,29 @@ export async function transcribeNoteDictation(input: {
   const enabled = new Set(input.fields ?? []);
   const wants = (k: string) => enabled.size === 0 || enabled.has(k);
 
+  // Fecha de hoy (zona de la clínica) para resolver expresiones relativas
+  // del dictado ("en 15 días", "el lunes que viene") al campo fecha_control.
+  const TZ = "America/Argentina/Buenos_Aires";
+  const now = new Date();
+  const todayISO = new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(now);
+  const todayHuman = new Intl.DateTimeFormat("es-AR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: TZ,
+  }).format(now);
+
+  // Campos de especialidad habilitados para este profesional. El cliente los
+  // manda como `esp:<key>`; el modelo solo debe completar los que se mencionen.
+  const espWanted = SPECIALTY_FIELD_DEFS.filter((f) => enabled.has(`esp:${f.key}`));
+  const espLines = espWanted
+    .map(
+      (f) =>
+        `    - ${f.key}: ${f.label}${f.placeholder ? ` (ej. ${f.placeholder})` : ""}.`
+    )
+    .join("\n");
+
   // La impresión diagnóstica NUNCA se dicta: va por sugerencia IA separada
   // que el médico confirma obligatoriamente. No se incluye en este prompt.
   const camposPedidos = [
@@ -496,6 +521,12 @@ export async function transcribeNoteDictation(input: {
     wants("indicaciones")
       ? "- indicaciones: indicaciones, plan o tratamiento indicado, si se menciona."
       : "",
+    wants("fecha_control")
+      ? `- fecha_control: fecha del próximo control en formato YYYY-MM-DD. Hoy es ${todayHuman} (${todayISO}); resolvé expresiones relativas ("en 15 días", "la semana que viene") respecto de esa fecha. Omití la clave si no se menciona ninguna fecha de control.`
+      : "",
+    espWanted.length > 0
+      ? `- especializados: objeto con los campos de especialidad mencionados (incluí SOLO los que aparezcan en el dictado):\n${espLines}`
+      : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -508,6 +539,7 @@ export async function transcribeNoteDictation(input: {
     "",
     "Reglas:",
     "- No inventes datos: si algo no se menciona, omití la clave.",
+    "- Completá un campo SOLO si el dictado contiene información que le corresponde.",
     "- Corregí muletillas y errores obvios de dictado, sin alterar el contenido clínico.",
     "- Respondé ÚNICAMENTE el JSON, sin texto adicional ni markdown.",
   ].join("\n");

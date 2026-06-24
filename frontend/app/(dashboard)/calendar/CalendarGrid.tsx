@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 
 import type { WeeklyAppointment, ProfessionalForScheduling } from "@/lib/supabase/server";
@@ -57,8 +57,25 @@ export function CalendarGrid({
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newApptOpen, setNewApptOpen] = useState(false);
+  const [prefill, setPrefill] = useState<{ patientId?: string; date?: string }>({});
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const weekDays = weekDayStrs.map(parseISODate);
+
+  // Apertura desde "Generar turno" en la historia clínica:
+  // /calendar?nuevo=1&paciente=<id>&fecha=<YYYY-MM-DD>. Precarga el alta manual.
+  useEffect(() => {
+    if (!canCreateAppointment) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("nuevo") === "1") {
+      setPrefill({
+        patientId: params.get("paciente") ?? undefined,
+        date: params.get("fecha") ?? undefined,
+      });
+      setNewApptOpen(true);
+      // Limpia la query para no reabrir el alta al refrescar.
+      window.history.replaceState(null, "", "/calendar");
+    }
+  }, [canCreateAppointment]);
 
   // Profesionales presentes esta semana (para los chips de filtro y la leyenda).
   const profNames = useMemo(() => {
@@ -288,6 +305,8 @@ export function CalendarGrid({
         onOpenChange={setNewApptOpen}
         patients={patients}
         professionals={professionals}
+        initialPatientId={prefill.patientId}
+        initialDate={prefill.date}
       />
     </>
   );
