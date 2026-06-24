@@ -52,19 +52,21 @@ export default async function DashboardLayout({
   const displayName = sm?.full_name ?? user.email ?? "Usuario";
   const roleLabel = role ? ROLE_LABEL[role] ?? "Usuario" : "Usuario";
 
+  const navProps = {
+    displayName,
+    roleLabel,
+    isOwner,
+    approvalsCount: approvalsCount ?? 0,
+    signOutAction: signOut,
+  };
+
   return (
     <div className="flex min-h-screen bg-background">
-      <Sidebar
-        displayName={displayName}
-        roleLabel={roleLabel}
-        isOwner={isOwner}
-        approvalsCount={approvalsCount ?? 0}
-        signOutAction={signOut}
-      />
+      <Sidebar {...navProps} />
 
       <div className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
-        <Topbar />
-        <div className="flex-1 overflow-y-auto px-7 py-7">
+        <Topbar {...navProps} />
+        <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-7 sm:py-7">
           <div className="animate-fade-up">{children}</div>
         </div>
       </div>

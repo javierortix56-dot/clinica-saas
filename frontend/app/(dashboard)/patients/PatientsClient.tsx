@@ -83,7 +83,7 @@ export function PatientsClient({ patients }: { patients: Patient[] }) {
         </div>
       ) : (
         <div className="overflow-hidden rounded-card border border-border bg-white shadow-card">
-          <div className="grid grid-cols-[2.2fr_1.6fr_1.2fr_1.1fr] border-b border-border bg-[#fbfcfe] px-[22px] py-[13px] text-[11.5px] font-semibold uppercase tracking-[.05em] text-muted-foreground">
+          <div className="hidden grid-cols-[2.2fr_1.6fr_1.2fr_1.1fr] border-b border-border bg-[#fbfcfe] px-[22px] py-[13px] text-[11.5px] font-semibold uppercase tracking-[.05em] text-muted-foreground sm:grid">
             <div>Nombre</div>
             <div>Teléfono</div>
             <div>DNI / ID</div>
@@ -93,7 +93,7 @@ export function PatientsClient({ patients }: { patients: Patient[] }) {
             <button
               key={p.id}
               onClick={() => router.push(`/patients/${p.id}`)}
-              className="grid w-full grid-cols-[2.2fr_1.6fr_1.2fr_1.1fr] items-center border-b border-slate-100 px-[22px] py-[13px] text-left transition-colors last:border-0 hover:bg-slate-50"
+              className="flex w-full flex-col gap-[10px] border-b border-slate-100 px-4 py-[14px] text-left transition-colors last:border-0 hover:bg-slate-50 sm:grid sm:grid-cols-[2.2fr_1.6fr_1.2fr_1.1fr] sm:items-center sm:gap-0 sm:px-[22px] sm:py-[13px]"
             >
               <div className="flex min-w-0 items-center gap-3">
                 <span
@@ -107,19 +107,29 @@ export function PatientsClient({ patients }: { patients: Patient[] }) {
                 <span className="truncate text-[14px] font-bold text-foreground">
                   {p.full_name}
                 </span>
+                <ChevronRight
+                  className="ml-auto h-4 w-4 shrink-0 text-slate-300 sm:hidden"
+                  strokeWidth={2}
+                />
               </div>
-              <div className="font-mono text-[13.5px] text-slate-600">
+              <div className="font-mono text-[13px] text-slate-600 sm:text-[13.5px]">
+                <span className="mr-[6px] font-sans text-[11px] font-semibold uppercase tracking-[.04em] text-slate-400 sm:hidden">
+                  Tel
+                </span>
                 {p.phone ?? "—"}
               </div>
-              <div className="font-mono text-[13.5px] text-slate-600">
+              <div className="font-mono text-[13px] text-slate-600 sm:text-[13.5px]">
+                <span className="mr-[6px] font-sans text-[11px] font-semibold uppercase tracking-[.04em] text-slate-400 sm:hidden">
+                  DNI
+                </span>
                 {p.national_id}
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-[13.5px] font-medium text-muted-foreground">
+                <span className="text-[13px] font-medium text-muted-foreground sm:text-[13.5px]">
                   {dateFormatter.format(new Date(p.created_at))}
                 </span>
                 <ChevronRight
-                  className="h-4 w-4 text-slate-300"
+                  className="hidden h-4 w-4 text-slate-300 sm:block"
                   strokeWidth={2}
                 />
               </div>
