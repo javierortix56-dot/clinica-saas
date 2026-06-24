@@ -36,8 +36,12 @@ import {
   FIELD_DEFS,
   VITAL_DEFS,
   EXAM_FISICO_SISTEMAS,
+  SPECIALTY_FIELD_DEFS,
+  SPECIALTY_PRESETS,
   isFieldEnabled,
   isSistemaEnabled,
+  isSpecialtyFieldEnabled,
+  buildConfigFromPreset,
   type FieldKey,
   type NoteFieldConfig,
 } from "./clinical-fields";
@@ -283,8 +287,19 @@ function NoteForm({
     for (const s of EXAM_FISICO_SISTEMAS) init[s.key] = ef[s.key] ?? "";
     return init;
   });
+  const [especializados, setEspecializados] = useState<Record<string, string>>(() => {
+    const esp = sd.especializados ?? {};
+    const init: Record<string, string> = {};
+    for (const f of SPECIALTY_FIELD_DEFS) init[f.key] = esp[f.key] ?? "";
+    return init;
+  });
 
   const show = (k: FieldKey) => isFieldEnabled(config, k);
+
+  // Campos especializados activos para esta especialidad (en orden del catálogo).
+  const activeSpecialtyFields = SPECIALTY_FIELD_DEFS.filter((f) =>
+    isSpecialtyFieldEnabled(config, f.key)
+  );
 
   // Dictado solo incluye campos note-scope (excluye diagnostico, va por IA separada).
   const dictationFields = FIELD_DEFS.filter(
@@ -487,7 +502,31 @@ function NoteForm({
         </div>
       )}
 
-      {/* 5. Nota libre */}
+      {/* 5. Campos de especialidad (texto libre) */}
+      {activeSpecialtyFields.length > 0 && (
+        <div className="space-y-2 rounded border border-slate-200 bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Campos de especialidad
+          </p>
+          {activeSpecialtyFields.map((f) => (
+            <div key={f.key} className="space-y-0.5">
+              <label className="text-[11px] font-medium text-slate-500">{f.label}</label>
+              <textarea
+                name={`esp_${f.key}`}
+                rows={1}
+                value={especializados[f.key] ?? ""}
+                onChange={(e) =>
+                  setEspecializados((prev) => ({ ...prev, [f.key]: e.target.value }))
+                }
+                placeholder={f.placeholder}
+                className={fieldInput}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 6. Nota libre */}
       <div className="space-y-1">
         <label className={fieldLabel}>Nota</label>
         <textarea
@@ -637,17 +676,45 @@ function NoteFieldConfigPanel({
     return init;
   });
 
+  const [especializados, setEspecializados] = useState<Record<string, boolean>>(() => {
+    const init: Record<string, boolean> = {};
+    for (const f of SPECIALTY_FIELD_DEFS) init[f.key] = isSpecialtyFieldEnabled(config, f.key);
+    return init;
+  });
+
+  const [especialidad, setEspecialidad] = useState<string>(config.especialidad ?? "");
+
   function toggle(key: FieldKey) {
     setLocal((prev) => ({ ...prev, [key]: !prev[key] }));
   }
-
   function toggleSistema(key: string) {
     setSistemas((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+  function toggleEsp(key: string) {
+    setEspecializados((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  // Aplica un preset: setea todos los toggles. El profesional puede ajustar luego.
+  function applyPreset(presetId: string) {
+    setEspecialidad(presetId);
+    const preset = SPECIALTY_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+    const cfg = buildConfigFromPreset(preset);
+    const nextLocal = {} as Record<FieldKey, boolean>;
+    for (const f of FIELD_DEFS) nextLocal[f.key] = cfg[f.key] !== false;
+    setLocal(nextLocal);
+    setSistemas({ ...(cfg.examen_fisico_sistemas ?? {}) });
+    setEspecializados({ ...(cfg.especializados ?? {}) });
   }
 
   function handleSave() {
     startTransition(async () => {
-      const fullConfig = { ...local, examen_fisico_sistemas: sistemas };
+      const fullConfig = {
+        ...local,
+        examen_fisico_sistemas: sistemas,
+        especializados,
+        especialidad,
+      };
       const result = await updateNoteFieldConfig(fullConfig);
       if (result.error) {
         toast.error(result.error);
@@ -659,15 +726,43 @@ function NoteFieldConfigPanel({
     });
   }
 
+  // Campos especializados a mostrar como checkboxes: los del preset activo +
+  // cualquiera ya activado. Evita listar los ~85 campos del catálogo completo.
+  const activePresetFields = especialidad
+    ? SPECIALTY_PRESETS.find((p) => p.id === especialidad)?.specialtyFields ?? []
+    : [];
+  const visibleEspKeys = new Set<string>(activePresetFields);
+  for (const [k, on] of Object.entries(especializados)) if (on) visibleEspKeys.add(k);
+  const visibleEspFields = SPECIALTY_FIELD_DEFS.filter((f) => visibleEspKeys.has(f.key));
+
   return (
     <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
       <div>
         <p className="text-sm font-medium text-slate-700">Configurar campos clínicos</p>
         <p className="text-xs text-slate-400">
-          Activá solo los campos que usás en tu especialidad. Aplica a tus notas.
+          Elegí tu especialidad para cargar un paquete de campos, luego ajustá a gusto.
+          Aplica a tus notas.
         </p>
       </div>
+
+      {/* Selector de especialidad (paquete) */}
       <div className="space-y-1">
+        <label className="text-xs font-medium text-slate-600">Especialidad</label>
+        <select
+          value={especialidad}
+          onChange={(e) => applyPreset(e.target.value)}
+          className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+        >
+          <option value="">— Personalizado —</option>
+          {SPECIALTY_PRESETS.map((p) => (
+            <option key={p.id} value={p.id}>{p.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Campos base */}
+      <div className="space-y-1">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Campos base</p>
         {FIELD_DEFS.map((f) => (
           <div key={f.key}>
             <label className="flex cursor-pointer items-start gap-2 rounded border border-slate-100 p-2 hover:bg-slate-50">
@@ -682,17 +777,13 @@ function NoteFieldConfigPanel({
                 <span className="block text-xs text-slate-400">{f.hint}</span>
               </span>
             </label>
-            {/* Sub-panel de sistemas solo cuando examen_fisico está activo */}
             {f.key === "examen_fisico" && local["examen_fisico"] && (
               <div className="ml-6 mt-1 grid grid-cols-2 gap-1 rounded border border-slate-100 bg-slate-50 p-2">
                 <p className="col-span-2 text-xs font-medium text-slate-500 mb-1">
                   Aparatos / sistemas a mostrar:
                 </p>
                 {EXAM_FISICO_SISTEMAS.map((s) => (
-                  <label
-                    key={s.key}
-                    className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-600"
-                  >
+                  <label key={s.key} className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-600">
                     <input
                       type="checkbox"
                       checked={sistemas[s.key] ?? true}
@@ -707,6 +798,32 @@ function NoteFieldConfigPanel({
           </div>
         ))}
       </div>
+
+      {/* Campos especializados */}
+      {visibleEspFields.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Campos de especialidad
+          </p>
+          <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+            {visibleEspFields.map((f) => (
+              <label
+                key={f.key}
+                className="flex cursor-pointer items-center gap-2 rounded border border-slate-100 p-2 text-sm hover:bg-slate-50"
+              >
+                <input
+                  type="checkbox"
+                  checked={especializados[f.key] ?? false}
+                  onChange={() => toggleEsp(f.key)}
+                  className="h-4 w-4"
+                />
+                <span className="text-slate-700">{f.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="flex gap-2">
         <Button size="sm" onClick={handleSave} disabled={isPending}>
           {isPending ? "Guardando…" : "Guardar"}
@@ -844,10 +961,12 @@ function StructuredDataView({ data }: { data: NoteStructuredData }) {
   const vitals = data.vitals ?? {};
   const vitalEntries = VITAL_DEFS.filter((v) => vitals[v.key]);
   const examEntries = Object.entries(data.examen_fisico ?? {}).filter(([, v]) => v);
+  const espData = data.especializados ?? {};
+  const espEntries = SPECIALTY_FIELD_DEFS.filter((f) => espData[f.key]);
   const hasAny =
     data.motivo || data.enfermedad_actual || data.diagnostico ||
     data.indicaciones || data.fecha_control ||
-    vitalEntries.length > 0 || examEntries.length > 0;
+    vitalEntries.length > 0 || examEntries.length > 0 || espEntries.length > 0;
   if (!hasAny) return null;
 
   return (
@@ -889,6 +1008,16 @@ function StructuredDataView({ data }: { data: NoteStructuredData }) {
               </p>
             );
           })}
+        </div>
+      )}
+      {espEntries.length > 0 && (
+        <div className="space-y-0.5">
+          {espEntries.map((f) => (
+            <p key={f.key} className="text-slate-700">
+              <span className="font-medium text-slate-500">{f.label}: </span>
+              <span className="whitespace-pre-wrap">{espData[f.key]}</span>
+            </p>
+          ))}
         </div>
       )}
       {data.diagnostico && (
