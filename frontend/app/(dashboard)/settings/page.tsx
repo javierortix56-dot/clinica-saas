@@ -19,10 +19,10 @@ export default async function SettingsPage() {
   ]);
 
   return (
-    <div className="flex flex-col gap-10">
+    <div className="mx-auto flex max-w-[1100px] flex-col gap-10">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Ajustes</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <h1 className="text-[27px] font-extrabold tracking-[-.02em]">Ajustes</h1>
+        <p className="mt-[9px] text-[14px] font-medium text-muted-foreground">
           Configuración de la clínica y parámetros clínicos.
         </p>
       </div>

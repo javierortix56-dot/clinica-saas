@@ -15,10 +15,10 @@ export default async function StaffPage() {
   const members = await getStaffMembers();
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="mx-auto flex max-w-[1100px] flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Equipo</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-[27px] font-extrabold tracking-[-.02em]">Equipo</h1>
+        <p className="mt-[9px] text-[14px] font-medium text-muted-foreground">
           Miembros del staff y horarios de disponibilidad.
         </p>
       </div>
