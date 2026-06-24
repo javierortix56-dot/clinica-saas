@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -24,9 +24,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   createClinicalNote,
+  updateClinicalNote,
   summarizePatientHistory,
   updatePatientClinicalProfile,
   updateNoteFieldConfig,
+  transcribeNoteDictation,
+  type DictationResult,
 } from "./actions";
 import {
   FIELD_DEFS,
@@ -117,25 +120,193 @@ const fieldLabel = "text-xs font-medium text-slate-600";
 const fieldInput =
   "w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400";
 
+// Convierte un Blob de audio a base64 (sin el prefijo data:).
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result as string;
+      resolve(result.split(",")[1] ?? "");
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+// Botón de dictado: graba audio del micrófono, lo manda a la IA y entrega una
+// nota estructurada para precargar el formulario (el profesional revisa antes
+// de guardar). Soporta navegadores con MediaRecorder + getUserMedia.
+function DictationButton({
+  fields,
+  onResult,
+}: {
+  fields: string[];
+  onResult: (d: DictationResult) => void;
+}) {
+  const [state, setState] = useState<"idle" | "recording" | "processing">("idle");
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+
+  const supported =
+    typeof navigator !== "undefined" &&
+    !!navigator.mediaDevices?.getUserMedia &&
+    typeof window !== "undefined" &&
+    typeof window.MediaRecorder !== "undefined";
+
+  if (!supported) return null;
+
+  async function start() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const prefs = [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/mp4",
+        "audio/ogg;codecs=opus",
+      ];
+      const mimeType = prefs.find((t) => MediaRecorder.isTypeSupported(t)) || "";
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      chunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        setState("processing");
+        try {
+          const blob = new Blob(chunksRef.current, {
+            type: recorder.mimeType || "audio/webm",
+          });
+          const audioBase64 = await blobToBase64(blob);
+          // Gemini espera el mime base, sin el parámetro ;codecs=…
+          const baseMime = (recorder.mimeType || "audio/webm").split(";")[0];
+          const result = await transcribeNoteDictation({
+            audioBase64,
+            mimeType: baseMime,
+            fields,
+          });
+          if (result.error) {
+            toast.error(result.error);
+          } else if (result.data) {
+            onResult(result.data);
+            toast.success("Dictado transcripto. Revisá y completá la nota.");
+          }
+        } catch {
+          toast.error("No se pudo procesar el audio.");
+        } finally {
+          setState("idle");
+        }
+      };
+      recorder.start();
+      recorderRef.current = recorder;
+      setState("recording");
+    } catch {
+      toast.error("No se pudo acceder al micrófono. Revisá los permisos.");
+      setState("idle");
+    }
+  }
+
+  function stop() {
+    recorderRef.current?.stop();
+  }
+
+  if (state === "processing") {
+    return (
+      <Button type="button" size="sm" variant="outline" disabled>
+        Transcribiendo…
+      </Button>
+    );
+  }
+  if (state === "recording") {
+    return (
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        onClick={stop}
+        className="border-red-300 text-red-600 hover:bg-red-50"
+      >
+        ⏹ Detener (grabando…)
+      </Button>
+    );
+  }
+  return (
+    <Button type="button" size="sm" variant="outline" onClick={start}>
+      🎤 Dictar
+    </Button>
+  );
+}
+
 function NoteForm({
   patientId,
   treatments,
   config,
+  mode,
+  note,
   onClose,
 }: {
   patientId: string;
   treatments: PatientTreatment[];
   config: NoteFieldConfig;
+  mode: "create" | "edit";
+  note?: ClinicalNote;
   onClose: () => void;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
+  // Campos controlados: el dictado por voz los precarga programáticamente.
+  const [noteType, setNoteType] = useState(note?.note_type ?? "consulta");
+  const [treatmentId, setTreatmentId] = useState(note?.treatment_id ?? "");
+  const [body, setBody] = useState(note?.body ?? "");
+  const [motivo, setMotivo] = useState(note?.structured_data.motivo ?? "");
+  const [diagnostico, setDiagnostico] = useState(
+    note?.structured_data.diagnostico ?? ""
+  );
+  const [indicaciones, setIndicaciones] = useState(
+    note?.structured_data.indicaciones ?? ""
+  );
+  const [vitals, setVitals] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    const v = note?.structured_data.vitals ?? {};
+    for (const d of VITAL_DEFS) init[d.key] = v[d.key] ?? "";
+    return init;
+  });
+
+  const show = (k: FieldKey) => isFieldEnabled(config, k);
+
+  // Campos estructurados activos (para enfocar el dictado en lo relevante).
+  const dictationFields = FIELD_DEFS.filter(
+    (f) => f.scope === "note" && show(f.key)
+  ).map((f) => f.key);
+
+  // Aplica el resultado del dictado: el cuerpo se agrega; los campos vacíos se
+  // completan (no se pisa lo que el profesional ya escribió a mano).
+  function applyDictation(d: DictationResult) {
+    setBody((prev) => (prev.trim() ? `${prev.trim()}\n${d.body}` : d.body));
+    if (d.motivo) setMotivo((prev) => (prev.trim() ? prev : d.motivo!));
+    if (d.diagnostico) setDiagnostico((prev) => (prev.trim() ? prev : d.diagnostico!));
+    if (d.indicaciones)
+      setIndicaciones((prev) => (prev.trim() ? prev : d.indicaciones!));
+    if (d.vitals) {
+      setVitals((prev) => {
+        const next = { ...prev };
+        for (const [k, val] of Object.entries(d.vitals!)) {
+          if (val && !next[k]?.trim()) next[k] = val;
+        }
+        return next;
+      });
+    }
+  }
+
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     startTransition(async () => {
-      const result = await createClinicalNote(formData);
+      const result =
+        mode === "edit"
+          ? await updateClinicalNote(formData)
+          : await createClinicalNote(formData);
       if (result.error) {
         toast.error(result.error);
         return;
@@ -143,14 +314,12 @@ function NoteForm({
       if (result.warning) {
         toast.warning(result.warning);
       } else {
-        toast.success("Nota guardada.");
+        toast.success(mode === "edit" ? "Nota actualizada." : "Nota guardada.");
       }
       router.refresh();
       onClose();
     });
   }
-
-  const show = (k: FieldKey) => isFieldEnabled(config, k);
 
   return (
     <form
@@ -158,6 +327,16 @@ function NoteForm({
       className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4"
     >
       <input type="hidden" name="patient_id" value={patientId} />
+      {mode === "edit" && note && (
+        <input type="hidden" name="id" value={note.id} />
+      )}
+
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-medium text-slate-700">
+          {mode === "edit" ? "Editar nota" : "Nueva nota"}
+        </p>
+        <DictationButton fields={dictationFields} onResult={applyDictation} />
+      </div>
 
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
@@ -165,6 +344,8 @@ function NoteForm({
           <select
             name="note_type"
             required
+            value={noteType}
+            onChange={(e) => setNoteType(e.target.value)}
             className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
           >
             {NOTE_TYPES.map((t) => (
@@ -180,6 +361,8 @@ function NoteForm({
             </label>
             <select
               name="treatment_id"
+              value={treatmentId}
+              onChange={(e) => setTreatmentId(e.target.value)}
               className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
             >
               <option value="">— Sin tratamiento —</option>
@@ -197,6 +380,8 @@ function NoteForm({
           <input
             type="text"
             name="motivo"
+            value={motivo}
+            onChange={(e) => setMotivo(e.target.value)}
             placeholder="Ej: dolor en molar inferior derecho"
             className={fieldInput}
           />
@@ -215,6 +400,10 @@ function NoteForm({
                 <input
                   type="text"
                   name={`vital_${v.key}`}
+                  value={vitals[v.key] ?? ""}
+                  onChange={(e) =>
+                    setVitals((prev) => ({ ...prev, [v.key]: e.target.value }))
+                  }
                   placeholder={v.placeholder}
                   className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
                 />
@@ -230,7 +419,9 @@ function NoteForm({
           name="body"
           required
           rows={4}
-          placeholder="Escribí la nota clínica aquí…"
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          placeholder="Escribí la nota clínica aquí… o usá 🎤 Dictar"
           className={fieldInput}
         />
       </div>
@@ -238,7 +429,13 @@ function NoteForm({
       {show("diagnostico") && (
         <div className="space-y-1">
           <label className={fieldLabel}>Diagnóstico</label>
-          <textarea name="diagnostico" rows={2} className={fieldInput} />
+          <textarea
+            name="diagnostico"
+            rows={2}
+            value={diagnostico}
+            onChange={(e) => setDiagnostico(e.target.value)}
+            className={fieldInput}
+          />
         </div>
       )}
 
@@ -248,6 +445,8 @@ function NoteForm({
           <textarea
             name="indicaciones"
             rows={2}
+            value={indicaciones}
+            onChange={(e) => setIndicaciones(e.target.value)}
             placeholder="Tratamiento, medicación, próximos pasos…"
             className={fieldInput}
           />
@@ -266,13 +465,19 @@ function NoteForm({
           className="w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm file:mr-3 file:rounded file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-medium hover:file:bg-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-400"
         />
         <p className="text-xs text-slate-400">
-          Radiografías, fotos clínicas o estudios. Máx. 10 MB por archivo.
+          {mode === "edit"
+            ? "Se agregan a los adjuntos existentes. Máx. 10 MB por archivo."
+            : "Radiografías, fotos clínicas o estudios. Máx. 10 MB por archivo."}
         </p>
       </div>
 
       <div className="flex gap-2">
         <Button type="submit" size="sm" disabled={isPending}>
-          {isPending ? "Guardando…" : "Guardar nota"}
+          {isPending
+            ? "Guardando…"
+            : mode === "edit"
+              ? "Guardar cambios"
+              : "Guardar nota"}
         </Button>
         <Button type="button" size="sm" variant="outline" onClick={onClose}>
           Cancelar
@@ -691,6 +896,7 @@ export function PatientTabs({
   const [tab, setTab] = useState<"turnos" | "historia">("turnos");
   const [showForm, setShowForm] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteSearch, setNoteSearch] = useState("");
   const [lightbox, setLightbox] = useState<{ url: string; alt: string } | null>(null);
 
@@ -820,6 +1026,7 @@ export function PatientTabs({
               patientId={patientId}
               treatments={treatments}
               config={noteConfig}
+              mode="create"
               onClose={() => setShowForm(false)}
             />
           )}
@@ -843,35 +1050,59 @@ export function PatientTabs({
               {filteredNotes.length === 0 && noteSearch ? (
                 <p className="text-sm text-slate-400">Sin resultados para "{noteSearch}".</p>
               ) : (
-                filteredNotes.map((note) => (
-                <div
-                  key={note.id}
-                  className="rounded-lg border border-slate-200 bg-white p-4 space-y-2"
-                >
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-center gap-2">
-                      <Badge variant={NOTE_TYPE_VARIANTS[note.note_type] ?? "outline"}>
-                        {NOTE_TYPE_LABELS[note.note_type] ?? note.note_type}
-                      </Badge>
-                      {note.treatment_name && (
-                        <span className="text-xs text-slate-400">
-                          · {note.treatment_name}
-                        </span>
-                      )}
+                filteredNotes.map((note) =>
+                  editingNoteId === note.id ? (
+                    <NoteForm
+                      key={note.id}
+                      patientId={patientId}
+                      treatments={treatments}
+                      config={noteConfig}
+                      mode="edit"
+                      note={note}
+                      onClose={() => setEditingNoteId(null)}
+                    />
+                  ) : (
+                    <div
+                      key={note.id}
+                      className="rounded-lg border border-slate-200 bg-white p-4 space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          <Badge variant={NOTE_TYPE_VARIANTS[note.note_type] ?? "outline"}>
+                            {NOTE_TYPE_LABELS[note.note_type] ?? note.note_type}
+                          </Badge>
+                          {note.treatment_name && (
+                            <span className="text-xs text-slate-400">
+                              · {note.treatment_name}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-slate-400">
+                            {dateFormatter.format(new Date(note.created_at))}
+                            {note.author_name && ` · ${note.author_name}`}
+                          </span>
+                          {note.editable && (
+                            <button
+                              type="button"
+                              onClick={() => setEditingNoteId(note.id)}
+                              className="text-xs font-medium text-slate-500 hover:text-slate-900"
+                              title="Editable hasta 24h después de creada"
+                            >
+                              ✎ Editar
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-sm text-slate-700 whitespace-pre-wrap">{note.body}</p>
+                      <StructuredDataView data={note.structured_data} />
+                      <AttachmentGallery
+                        attachments={note.attachments}
+                        onOpenImage={openImage}
+                      />
                     </div>
-                    <div className="text-xs text-slate-400">
-                      {dateFormatter.format(new Date(note.created_at))}
-                      {note.author_name && ` · ${note.author_name}`}
-                    </div>
-                  </div>
-                  <p className="text-sm text-slate-700 whitespace-pre-wrap">{note.body}</p>
-                  <StructuredDataView data={note.structured_data} />
-                  <AttachmentGallery
-                    attachments={note.attachments}
-                    onOpenImage={openImage}
-                  />
-                </div>
-              ))
+                  )
+                )
               )}
             </div>
           )}

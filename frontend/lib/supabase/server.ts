@@ -448,9 +448,12 @@ export interface ClinicalNote {
   body: string;
   created_at: string;
   author_name: string | null;
+  treatment_id: string | null;
   treatment_name: string | null;
   structured_data: NoteStructuredData;
   attachments: ClinicalAttachment[];
+  // True si el usuario actual es el autor y la nota tiene < 24h (puede editarla).
+  editable: boolean;
 }
 
 interface ClinicalNoteRow {
@@ -458,6 +461,8 @@ interface ClinicalNoteRow {
   note_type: string;
   body: string;
   created_at: string;
+  author_id: string | null;
+  treatment_id: string | null;
   structured_data: NoteStructuredData | null;
   professionals: { staff_members: { full_name: string } | null } | null;
   treatments: { treatment_types: { name: string } | null } | null;
@@ -475,12 +480,29 @@ interface ClinicalNoteRow {
 const ATTACHMENTS_BUCKET = "clinical-attachments";
 const SIGNED_URL_TTL_SECONDS = 60 * 60; // 1h: alcanza para renderizar la página.
 
+const NOTE_EDIT_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h: ventana de edición.
+
 export async function getClinicalNotes(patientId: string): Promise<ClinicalNote[]> {
   const supabase = createClient();
+
+  // Profesional actual (para decidir qué notas puede editar): resuelto del JWT.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  let currentProfId: string | null = null;
+  if (user) {
+    const { data: prof } = await supabase
+      .from("professionals")
+      .select("id, staff_members!inner(auth_user_id)")
+      .eq("staff_members.auth_user_id", user.id)
+      .maybeSingle();
+    currentProfId = (prof as { id?: string } | null)?.id ?? null;
+  }
+
   const { data, error } = await supabase
     .from("clinical_notes")
     .select(
-      `id, note_type, body, created_at, structured_data,
+      `id, note_type, body, created_at, author_id, treatment_id, structured_data,
        professionals ( staff_members ( full_name ) ),
        treatments ( treatment_types ( name ) ),
        clinical_note_attachments ( id, file_name, mime_type, size_bytes, storage_path )`
@@ -492,6 +514,7 @@ export async function getClinicalNotes(patientId: string): Promise<ClinicalNote[
   if (error) throw new Error(`No se pudo cargar la historia clínica: ${error.message}`);
 
   const rows = (data ?? []) as unknown as ClinicalNoteRow[];
+  const now = Date.now();
 
   // Firmamos en lote todas las rutas de adjuntos (bucket privado): una sola
   // llamada a Storage en vez de una por archivo.
@@ -514,8 +537,13 @@ export async function getClinicalNotes(patientId: string): Promise<ClinicalNote[
     body: row.body,
     created_at: row.created_at,
     author_name: row.professionals?.staff_members?.full_name ?? null,
+    treatment_id: row.treatment_id ?? null,
     treatment_name: row.treatments?.treatment_types?.name ?? null,
     structured_data: row.structured_data ?? {},
+    editable:
+      !!currentProfId &&
+      row.author_id === currentProfId &&
+      now - new Date(row.created_at).getTime() < NOTE_EDIT_WINDOW_MS,
     attachments: (row.clinical_note_attachments ?? []).map((a) => ({
       id: a.id,
       file_name: a.file_name,
