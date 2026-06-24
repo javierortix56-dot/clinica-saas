@@ -128,14 +128,17 @@ export async function createClinicalNote(
   }
 
   // clinic_id resuelto server-side desde el JWT — nunca del cliente.
+  // Es NOT NULL y la policy RLS exige clinic_id = auth_clinic_id(): sin él,
+  // el insert viola la row-level security policy de clinical_notes.
   const clinicId = await getClinicId();
-  if (files.length > 0 && !clinicId) {
-    return { error: "No se pudo determinar la clínica para subir archivos." };
+  if (!clinicId) {
+    return { error: "No se pudo determinar la clínica de la sesión." };
   }
 
   const { data: note, error } = await supabase
     .from("clinical_notes")
     .insert({
+      clinic_id: clinicId,
       patient_id,
       author_id: prof.id,
       note_type,
