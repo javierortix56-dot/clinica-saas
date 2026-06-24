@@ -3,33 +3,66 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { Calendar, Clock, Check, X, CheckCircle2 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
 import type { ProposedAppointment } from "@/lib/supabase/server";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Button } from "@/components/ui/button";
 import { confirmAppointment, rejectAppointment } from "./actions";
 
 const dateFormatter = new Intl.DateTimeFormat("es-AR", {
   dateStyle: "medium",
+  timeZone: "America/Argentina/Buenos_Aires",
+});
+const timeFormatter = new Intl.DateTimeFormat("es-AR", {
   timeStyle: "short",
   timeZone: "America/Argentina/Buenos_Aires",
 });
 
-function formatDateTime(iso: string): string {
-  return dateFormatter.format(new Date(iso));
+const AVATAR_COLORS = [
+  "#2563eb",
+  "#0d9488",
+  "#7c3aed",
+  "#db2777",
+  "#ea580c",
+  "#0891b2",
+  "#4f46e5",
+  "#16a34a",
+];
+
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-// ─── Fila con botón de confirmación ─────────────────────────────────────────
+// Mapea el origen interno a una etiqueta de vía legible para el chip.
+function viaLabel(origin: string | null | undefined): string {
+  switch (origin) {
+    case "portal":
+      return "Portal web";
+    case "whatsapp":
+      return "WhatsApp";
+    case "phone":
+      return "Teléfono";
+    case "assistant":
+      return "Asistente";
+    case "manual":
+      return "Carga manual";
+    default:
+      return "Solicitud";
+  }
+}
 
-function ConfirmRow({ appt }: { appt: ProposedAppointment }) {
+// ─── Card de solicitud con acciones ─────────────────────────────────────────
+
+function ApprovalCard({
+  appt,
+  colorIndex,
+}: {
+  appt: ProposedAppointment;
+  colorIndex: number;
+}) {
   const router = useRouter();
   const [isConfirming, startConfirm] = useTransition();
   const [isRejecting, startReject] = useTransition();
@@ -37,8 +70,11 @@ function ConfirmRow({ appt }: { appt: ProposedAppointment }) {
   function handleConfirm() {
     startConfirm(async () => {
       const result = await confirmAppointment(appt.id);
-      if (result.error) { toast.error(result.error); return; }
-      toast.success("Turno confirmado.");
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Turno aprobado.");
       router.refresh();
     });
   }
@@ -46,51 +82,73 @@ function ConfirmRow({ appt }: { appt: ProposedAppointment }) {
   function handleReject() {
     startReject(async () => {
       const result = await rejectAppointment(appt.id);
-      if (result.error) { toast.error(result.error); return; }
-      toast.success("Turno rechazado.");
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Solicitud rechazada.");
       router.refresh();
     });
   }
 
   const busy = isConfirming || isRejecting;
+  const name = appt.patient?.full_name ?? "—";
+  const start = new Date(appt.start_at);
 
   return (
-    <TableRow>
-      <TableCell className="font-medium">
-        {appt.patient?.full_name ?? "—"}
-      </TableCell>
-      <TableCell className="text-sm text-muted-foreground">
-        {appt.patient_national_id ?? "—"}
-      </TableCell>
-      <TableCell className="text-sm text-muted-foreground">
-        {appt.patient?.phone ?? "—"}
-      </TableCell>
-      <TableCell>{appt.professional?.full_name ?? "—"}</TableCell>
-      <TableCell>
-        {appt.phase_name ?? appt.treatment_type ?? "—"}
-      </TableCell>
-      <TableCell>{formatDateTime(appt.start_at)}</TableCell>
-      <TableCell className="text-right">
-        <div className="flex items-center justify-end gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleReject}
-            disabled={busy}
-            className="text-red-600 hover:border-red-200 hover:text-red-700"
-          >
-            {isRejecting ? "Rechazando…" : "Rechazar"}
-          </Button>
-          <Button size="sm" onClick={handleConfirm} disabled={busy}>
-            {isConfirming ? "Confirmando…" : "Confirmar"}
-          </Button>
+    <div className="flex items-center gap-[18px] rounded-card border border-border bg-white px-5 py-4 shadow-card-soft">
+      <span
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[14px] font-bold text-white"
+        style={{ background: AVATAR_COLORS[colorIndex % AVATAR_COLORS.length] }}
+      >
+        {initialsOf(name)}
+      </span>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-[10px]">
+          <span className="text-[15px] font-bold text-foreground">{name}</span>
+          <span className="font-mono text-[12px] text-slate-400">
+            {appt.patient_national_id ?? "—"}
+          </span>
         </div>
-      </TableCell>
-    </TableRow>
+        <div className="mt-2 flex flex-wrap items-center gap-[7px] text-[13px] font-medium text-muted-foreground">
+          <Calendar className="h-[14px] w-[14px] text-slate-400" strokeWidth={1.9} />
+          {dateFormatter.format(start)} · {timeFormatter.format(start)}
+          <span className="h-1 w-1 rounded-full bg-slate-300" />
+          {appt.phase_name ?? appt.treatment_type ?? "Consulta"}
+          <span className="h-1 w-1 rounded-full bg-slate-300" />
+          {appt.professional?.full_name ?? "—"}
+        </div>
+      </div>
+
+      <span className="inline-flex items-center gap-[6px] rounded-full border border-border bg-slate-50 px-[11px] py-[5px] text-[12px] font-semibold text-muted-foreground">
+        <Clock className="h-3 w-3" strokeWidth={2} />
+        {viaLabel(appt.origin)}
+      </span>
+
+      <div className="flex gap-[9px]">
+        <button
+          onClick={handleReject}
+          disabled={busy}
+          className="flex items-center gap-[6px] rounded-[10px] border border-border bg-white px-[14px] py-[9px] text-[13px] font-bold text-[#be123c] transition hover:border-[#fecdd3] hover:bg-[#fff1f2] disabled:opacity-50"
+        >
+          <X className="h-[14px] w-[14px]" strokeWidth={2.2} />
+          {isRejecting ? "…" : "Rechazar"}
+        </button>
+        <button
+          onClick={handleConfirm}
+          disabled={busy}
+          className="flex items-center gap-[6px] rounded-[10px] bg-[#059669] px-4 py-[9px] text-[13px] font-bold text-white shadow-[0_4px_12px_rgba(5,150,105,.25)] transition hover:brightness-[1.06] disabled:opacity-50"
+        >
+          <Check className="h-[14px] w-[14px]" strokeWidth={2.4} />
+          {isConfirming ? "…" : "Aprobar"}
+        </button>
+      </div>
+    </div>
   );
 }
 
-// ─── Tabla con Realtime ───────────────────────────────────────────────────────
+// ─── Lista con Realtime ───────────────────────────────────────────────────────
 
 export function ApprovalsTable({
   initialAppointments,
@@ -133,7 +191,9 @@ export function ApprovalsTable({
       .subscribe();
 
     channelRef.current = channel;
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [router]);
 
   useEffect(() => {
@@ -147,28 +207,35 @@ export function ApprovalsTable({
 
   if (initialAppointments.length === 0) {
     return (
-      <p className="rounded-lg border bg-card p-6 text-sm text-muted-foreground">
-        No hay turnos pendientes de aprobación.
-        {hasNew && (
-          <span className="ml-2 text-xs text-slate-500">Actualizando…</span>
-        )}
-      </p>
+      <div className="rounded-card border border-border bg-white px-6 py-14 text-center shadow-card-soft">
+        <div className="mx-auto mb-4 flex h-[54px] w-[54px] items-center justify-center rounded-2xl bg-emerald-50">
+          <CheckCircle2 className="h-7 w-7 text-emerald-600" strokeWidth={2} />
+        </div>
+        <div className="text-[17px] font-bold text-foreground">Todo al día</div>
+        <div className="mt-2 text-[14px] font-medium text-slate-400">
+          No hay solicitudes pendientes de aprobación.
+        </div>
+      </div>
     );
   }
 
   return (
-    <div className="space-y-2">
+    <div className="flex flex-col gap-3">
       {hasNew && (
-        <p className="text-xs text-slate-500">Actualizando bandeja…</p>
+        <p className="text-xs font-medium text-slate-500">
+          Actualizando bandeja…
+        </p>
       )}
 
       {professionals.length > 1 && (
         <div className="flex items-center gap-2">
-          <label className="text-sm text-slate-600">Profesional:</label>
+          <label className="text-[13px] font-medium text-muted-foreground">
+            Profesional:
+          </label>
           <select
             value={filterProfId}
             onChange={(e) => setFilterProfId(e.target.value)}
-            className="rounded border border-slate-200 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-slate-400"
+            className="rounded-[10px] border border-border bg-white px-3 py-[7px] text-[13px] font-medium outline-none focus:border-primary"
           >
             <option value="all">Todos</option>
             {professionals.map(([id, name]) => (
@@ -180,34 +247,15 @@ export function ApprovalsTable({
         </div>
       )}
 
-      <div className="rounded-lg border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Paciente</TableHead>
-              <TableHead>DNI</TableHead>
-              <TableHead>Teléfono</TableHead>
-              <TableHead>Profesional</TableHead>
-              <TableHead>Fase / Tratamiento</TableHead>
-              <TableHead>Fecha/hora</TableHead>
-              <TableHead className="text-right">Acción</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-6">
-                  Sin turnos para este profesional.
-                </TableCell>
-              </TableRow>
-            ) : (
-              filtered.map((appt) => (
-                <ConfirmRow key={appt.id} appt={appt} />
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      {filtered.length === 0 ? (
+        <div className="rounded-card border border-border bg-white p-6 text-center text-[14px] font-medium text-muted-foreground shadow-card-soft">
+          Sin solicitudes para este profesional.
+        </div>
+      ) : (
+        filtered.map((appt, i) => (
+          <ApprovalCard key={appt.id} appt={appt} colorIndex={i} />
+        ))
+      )}
     </div>
   );
 }

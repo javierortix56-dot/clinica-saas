@@ -4,26 +4,35 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Superficie de la app — fondo gris-azulado y blanco para cards/modales */
+    --background: 213 38% 97%;        /* #f6f8fb */
+    --foreground: 222 47% 11%;        /* #0f172a */
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    --popover-foreground: 222 47% 11%;
+
+    /* Acento principal configurable — azul #2563eb */
+    --primary: 221 83% 53%;           /* #2563eb */
+    --primary-foreground: 0 0% 100%;
+
     --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary-foreground: 222 47% 11%;
     --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted-foreground: 215 16% 47%;  /* #64748b */
     --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 347 77% 50%;       /* #be123c */
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 213 38% 94%;            /* #e9eef5 */
+    --input: 213 38% 94%;
+    --ring: 221 83% 53%;
+    --radius: 0.625rem;               /* 10px — botones / inputs */
+
+    /* Tokens del shell oscuro y estados de turno (uso directo vía tailwind) */
+    --sidebar: 218 47% 10%;           /* #0e1726 */
+    --sidebar-hover: 218 42% 16%;     /* #16223a */
   }
 
   .dark {
@@ -55,5 +64,26 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: "ss01";
+  }
+}
+
+@layer utilities {
+  /* Animación de entrada de pantallas y modales (handoff de diseño) */
+  @keyframes fadeUp {
+    from {
+      opacity: 0;
+      transform: translateY(7px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .animate-fade-up {
+    animation: fadeUp 0.3s ease both;
+  }
+  .animate-fade-up-fast {
+    animation: fadeUp 0.18s ease both;
   }
 }
