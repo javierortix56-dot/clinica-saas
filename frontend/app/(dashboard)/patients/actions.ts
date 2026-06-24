@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { createClient } from "@/lib/supabase/server";
+import { SPECIALTY_FIELD_DEFS } from "./clinical-fields";
 
 // ─── Pacientes CRUD ────────────────────────────────────────────────────────────
 
@@ -113,6 +114,14 @@ function parseStructuredData(formData: FormData): Record<string, unknown> {
     if (v) examFisico[k] = v;
   }
   if (Object.keys(examFisico).length > 0) structured.examen_fisico = examFisico;
+
+  // Campos especializados: el form los envía con prefijo `esp_<key>`.
+  const especializados: Record<string, string> = {};
+  for (const f of SPECIALTY_FIELD_DEFS) {
+    const v = (formData.get(`esp_${f.key}`) as string | null)?.trim();
+    if (v) especializados[f.key] = v;
+  }
+  if (Object.keys(especializados).length > 0) structured.especializados = especializados;
 
   return structured;
 }
@@ -402,7 +411,7 @@ export async function updatePatientClinicalProfile(
 // Guarda qué campos clínicos ve el profesional logueado en su formulario de nota.
 // Es por profesional (resuelto del JWT) — cada especialidad arma su propio set.
 export async function updateNoteFieldConfig(
-  config: Record<string, boolean | Record<string, boolean>>
+  config: Record<string, boolean | string | Record<string, boolean>>
 ): Promise<{ error?: string }> {
   const supabase = createClient();
   const {
@@ -622,6 +631,15 @@ export async function summarizePatientHistory(
           .join(", ");
         extra.push(`Vitales: ${v}`);
       }
+      if (sd.enfermedad_actual) extra.push(`Enf. actual: ${sd.enfermedad_actual}`);
+      if (sd.examen_fisico && Object.keys(sd.examen_fisico).length > 0) {
+        const ef = Object.entries(sd.examen_fisico).map(([k, v]) => `${k}: ${v}`).join(", ");
+        extra.push(`EF: ${ef}`);
+      }
+      if (sd.especializados && Object.keys(sd.especializados).length > 0) {
+        const esp = Object.entries(sd.especializados).map(([k, v]) => `${k}: ${v}`).join(", ");
+        extra.push(esp);
+      }
       if (sd.diagnostico) extra.push(`Dx: ${sd.diagnostico}`);
       if (sd.indicaciones) extra.push(`Plan: ${sd.indicaciones}`);
       const extraStr = extra.length > 0 ? ` (${extra.join(" · ")})` : "";
@@ -783,7 +801,10 @@ interface ClinicalNoteForSummary {
   created_at: string;
   structured_data: {
     motivo?: string;
+    enfermedad_actual?: string;
     vitals?: Record<string, string>;
+    examen_fisico?: Record<string, string>;
+    especializados?: Record<string, string>;
     diagnostico?: string;
     indicaciones?: string;
   } | null;

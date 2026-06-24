@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { Appointment, Patient } from "@clinica/shared";
+import type { NoteFieldConfig } from "@/app/(dashboard)/patients/clinical-fields";
 
 // Cliente Supabase para Server Components y Route Handlers.
 // Persiste la sesión vía cookies (requerido por @supabase/ssr en Next.js App Router).
@@ -440,6 +441,7 @@ export interface NoteStructuredData {
   enfermedad_actual?: string;
   vitals?: Record<string, string>;
   examen_fisico?: Record<string, string>;
+  especializados?: Record<string, string>;
   diagnostico?: string;
   indicaciones?: string;
   fecha_control?: string;
@@ -582,11 +584,8 @@ export async function getPatientClinicalProfile(
 
 // Config de campos clínicos del profesional logueado (qué campos ve en la nota).
 // Se resuelve desde el JWT (auth_user_id) -> professionals.note_field_config.
-// {} = todos activos. null si el usuario no es profesional (no crea notas).
-export async function getProfessionalNoteConfig(): Promise<Record<
-  string,
-  boolean
-> | null> {
+// {} = defaults. null si el usuario no es profesional (no crea notas).
+export async function getProfessionalNoteConfig(): Promise<NoteFieldConfig | null> {
   const supabase = createClient();
   const {
     data: { user },
@@ -599,7 +598,7 @@ export async function getProfessionalNoteConfig(): Promise<Record<
     .eq("staff_members.auth_user_id", user.id)
     .maybeSingle();
 
-  const cfg = (data as { note_field_config?: Record<string, boolean> } | null)
+  const cfg = (data as { note_field_config?: NoteFieldConfig } | null)
     ?.note_field_config;
   return cfg ?? {};
 }
