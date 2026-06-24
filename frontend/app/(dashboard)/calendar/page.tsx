@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CheckCircle2, Clock, Activity, ChevronLeft, ChevronRight } from "lucide-react";
 
 import {
   getWeeklyAppointments,
@@ -70,74 +71,103 @@ export default async function CalendarPage({
     timeZone: "America/Argentina/Buenos_Aires",
   })}`;
 
-  const navLinkBase =
-    "rounded border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50";
+  const iconBtn =
+    "flex cursor-pointer items-center px-3 py-[9px] text-slate-600 transition hover:bg-slate-50";
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto max-w-[1240px]">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-[22px] flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">Calendario</h1>
-          <p className="text-sm text-slate-500">{weekLabel}</p>
+          <h1 className="text-[27px] font-extrabold tracking-[-.02em]">
+            Calendario
+          </h1>
+          <p className="mt-[9px] text-[14px] font-medium text-muted-foreground">
+            {weekLabel}
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          <Link href={`/calendar?week=${prevWeek}`} className={navLinkBase}>
-            ← Anterior
-          </Link>
           {!isCurrentWeek && (
-            <Link href="/calendar" className={navLinkBase}>
+            <Link
+              href="/calendar"
+              className="rounded-[10px] border border-border bg-white px-[14px] py-[9px] text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
               Hoy
             </Link>
           )}
-          <Link href={`/calendar?week=${nextWeek}`} className={navLinkBase}>
-            Siguiente →
-          </Link>
+          <div className="flex overflow-hidden rounded-[10px] border border-border bg-white">
+            <Link
+              href={`/calendar?week=${prevWeek}`}
+              className={`${iconBtn} border-r border-border`}
+              aria-label="Semana anterior"
+            >
+              <ChevronLeft className="h-4 w-4" strokeWidth={2} />
+            </Link>
+            <Link
+              href={`/calendar?week=${nextWeek}`}
+              className={iconBtn}
+              aria-label="Semana siguiente"
+            >
+              <ChevronRight className="h-4 w-4" strokeWidth={2} />
+            </Link>
+          </div>
         </div>
       </div>
 
       {/* Resumen del día actual */}
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+      <div className="mb-5 grid gap-4 sm:grid-cols-3">
+        <div className="rounded-card border border-border bg-white px-5 py-[18px] shadow-card-soft">
+          <div className="flex items-center gap-[9px] text-[11px] font-semibold uppercase tracking-[.06em] text-muted-foreground">
+            <span className="flex h-[26px] w-[26px] items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <CheckCircle2 className="h-[14px] w-[14px]" strokeWidth={2} />
+            </span>
             Turnos hoy
-          </p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">
+          </div>
+          <div className="my-[14px] text-[34px] font-extrabold leading-none tracking-[-.02em]">
             {summary.todayCount}
-          </p>
-          <p className="text-xs text-slate-500">confirmados</p>
+          </div>
+          <div className="text-[13px] font-medium text-slate-400">
+            confirmados
+          </div>
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+        <div className="rounded-card border border-border bg-white px-5 py-[18px] shadow-card-soft">
+          <div className="flex items-center gap-[9px] text-[11px] font-semibold uppercase tracking-[.06em] text-muted-foreground">
+            <span className="flex h-[26px] w-[26px] items-center justify-center rounded-lg bg-orange-50 text-orange-600">
+              <Clock className="h-[14px] w-[14px]" strokeWidth={2} />
+            </span>
             Próximo turno
-          </p>
+          </div>
           {summary.next ? (
-            <div className="mt-1 space-y-0.5">
-              <p className="truncate text-sm font-semibold text-slate-900">
+            <>
+              <div className="my-[14px] truncate text-[19px] font-extrabold leading-tight">
                 {summary.next.patient_name}
-              </p>
-              <p className="truncate text-xs text-slate-500">
+              </div>
+              <div className="text-[13px] font-medium text-slate-400">
+                {formatTime(summary.next.start_at)} ·{" "}
                 {summary.next.treatment_label ?? "—"}
-              </p>
-              <p className="text-xs text-slate-400">
-                {formatTime(summary.next.start_at)} –{" "}
-                {formatTime(summary.next.end_at)}
-              </p>
-            </div>
+              </div>
+            </>
           ) : (
-            <p className="mt-1 text-sm text-slate-400">Sin turnos pendientes</p>
+            <div className="my-[14px] text-[15px] font-medium text-slate-400">
+              Sin turnos pendientes
+            </div>
           )}
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+        <div className="rounded-card border border-border bg-white px-5 py-[18px] shadow-card-soft">
+          <div className="flex items-center gap-[9px] text-[11px] font-semibold uppercase tracking-[.06em] text-muted-foreground">
+            <span className="flex h-[26px] w-[26px] items-center justify-center rounded-lg bg-cyan-50 text-cyan-600">
+              <Activity className="h-[14px] w-[14px]" strokeWidth={2} />
+            </span>
             Restantes hoy
-          </p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">
+          </div>
+          <div className="my-[14px] text-[34px] font-extrabold leading-none tracking-[-.02em]">
             {summary.remaining.length}
-          </p>
-          <p className="text-xs text-slate-500">por atender</p>
+          </div>
+          <div className="text-[13px] font-medium text-slate-400">
+            por atender
+          </div>
         </div>
       </div>
 

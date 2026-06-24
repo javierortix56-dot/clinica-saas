@@ -48,7 +48,7 @@ const config: Config = {
           "cancelado-dot": "#f43f5e",
         },
         primary: {
-          DEFAULT: "hsl(var(--primary))",
+          DEFAULT: "hsl(var(--primary) / <alpha-value>)",
           foreground: "hsl(var(--primary-foreground))",
         },
         secondary: {
