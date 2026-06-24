@@ -262,6 +262,11 @@ export function StaffSheet({
   const [blocks, setBlocks] = useState<Block[]>(() =>
     member ? blocksFromAvailability(member.availability) : []
   );
+  // Credenciales recién creadas a mostrar una sola vez (no auto-cierra el sheet).
+  const [createdCreds, setCreatedCreds] = useState<{
+    email: string;
+    password: string;
+  } | null>(null);
 
   // Reset al cambiar de miembro sin cerrar el sheet.
   const [lastMemberId, setLastMemberId] = useState(member?.id);
@@ -269,6 +274,14 @@ export function StaffSheet({
     setLastMemberId(member?.id);
     setCurrentRole(member?.role ?? "reception");
     setBlocks(member ? blocksFromAvailability(member.availability) : []);
+    setCreatedCreds(null);
+  }
+
+  // Al cerrar el sheet, limpiamos las credenciales mostradas.
+  const [lastOpen, setLastOpen] = useState(open);
+  if (open !== lastOpen) {
+    setLastOpen(open);
+    if (!open) setCreatedCreds(null);
   }
 
   const roleForForm = mode === "edit" ? (member?.role ?? "reception") : "reception";
@@ -294,17 +307,24 @@ export function StaffSheet({
       formData.set(`block_end_${i}`, b.end);
     });
 
+    setCreatedCreds(null);
     startTransition(async () => {
       const result = await upsertStaff(formData);
       if (result.error) {
         toast.error(result.error);
         return;
       }
-      toast.success(
-        mode === "create" ? "Miembro creado correctamente." : "Cambios guardados."
-      );
       router.refresh();
-      onOpenChange(false);
+      if (result.credentials) {
+        // Mostramos las credenciales y dejamos el sheet abierto para copiarlas.
+        setCreatedCreds(result.credentials);
+        toast.success("Acceso creado. Copiá las credenciales antes de cerrar.");
+      } else {
+        toast.success(
+          mode === "create" ? "Miembro creado correctamente." : "Cambios guardados."
+        );
+        onOpenChange(false);
+      }
     });
   }
 
@@ -363,6 +383,42 @@ export function StaffSheet({
             <input type="hidden" name="id" value={member.id} />
           )}
 
+          {/* Credenciales recién creadas (mostrar una sola vez) */}
+          {createdCreds && (
+            <div className="space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+              <p className="text-sm font-medium text-emerald-900">
+                ✅ Acceso creado
+              </p>
+              <p className="text-xs text-emerald-800">
+                Guardá estas credenciales: la contraseña no se vuelve a mostrar.
+              </p>
+              <div className="rounded bg-white p-2 text-sm">
+                <div>
+                  <span className="text-slate-400">Email:</span>{" "}
+                  {createdCreds.email}
+                </div>
+                <div>
+                  <span className="text-slate-400">Contraseña:</span>{" "}
+                  <span className="font-mono">{createdCreds.password}</span>
+                </div>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  navigator.clipboard
+                    ?.writeText(
+                      `Email: ${createdCreds.email}\nContraseña: ${createdCreds.password}`
+                    )
+                    .then(() => toast.success("Credenciales copiadas."));
+                }}
+              >
+                Copiar credenciales
+              </Button>
+            </div>
+          )}
+
           {/* Nombre */}
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-slate-700">
@@ -389,6 +445,31 @@ export function StaffSheet({
               placeholder="juan@clinica.com"
               className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400"
             />
+          </div>
+
+          {/* Contraseña de acceso */}
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-slate-700">
+              Contraseña de acceso{" "}
+              <span className="text-slate-400">(opcional)</span>
+            </label>
+            <input
+              name="password"
+              type="text"
+              autoComplete="new-password"
+              placeholder={
+                mode === "create"
+                  ? "Dejar vacío para autogenerar"
+                  : "Dejar vacío para no cambiarla"
+              }
+              className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400"
+            />
+            <p className="text-xs text-slate-400">
+              Si cargás un email, se crea el usuario para iniciar sesión.{" "}
+              {mode === "create"
+                ? "Si dejás la contraseña vacía, se genera una automáticamente."
+                : "Cargá una contraseña solo si querés crearla o cambiarla."}
+            </p>
           </div>
 
           {/* Rol */}

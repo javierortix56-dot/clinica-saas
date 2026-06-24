@@ -1,68 +1,217 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { randomUUID } from "crypto";
+import { randomUUID, randomBytes } from "crypto";
 
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
-// Lee clinic_id del JWT (igual que en calendar/actions.ts y settings/actions.ts).
-async function getClinicId(): Promise<string | null> {
+// Lee clinic_id + user_role del JWT (resueltos server-side, nunca del form).
+async function getSessionClaims(): Promise<{
+  clinicId: string | null;
+  role: string | null;
+}> {
   const supabase = createClient();
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session) return null;
+  if (!session) return { clinicId: null, role: null };
   try {
     const payload = JSON.parse(
       Buffer.from(session.access_token.split(".")[1], "base64").toString("utf8")
-    ) as { clinic_id?: string };
-    return payload.clinic_id ?? null;
+    ) as { clinic_id?: string; user_role?: string };
+    return { clinicId: payload.clinic_id ?? null, role: payload.user_role ?? null };
   } catch {
-    return null;
+    return { clinicId: null, role: null };
   }
+}
+
+// Contraseña temporal fuerte (url-safe, ~12 caracteres).
+function generatePassword(): string {
+  return randomBytes(9).toString("base64url");
+}
+
+// Crea el usuario de auth para un staff con login (o recupera/actualiza el que ya
+// exista para ese email). Service role server-side — la key nunca llega al cliente.
+// Devuelve el id de auth, la contraseña efectiva, y si se creó un usuario nuevo
+// (para poder hacer rollback si falla la inserción del staff).
+async function provisionAuthUser(
+  email: string,
+  password: string | null
+): Promise<
+  | { authUserId: string; password: string; createdNew: boolean }
+  | { error: string }
+> {
+  const admin = createAdminClient();
+  const hasPwd = !!password && password.length >= 6;
+  const pwd = hasPwd ? (password as string) : generatePassword();
+
+  const { data, error } = await admin.auth.admin.createUser({
+    email,
+    password: pwd,
+    email_confirm: true,
+  });
+
+  if (!error && data?.user) {
+    return { authUserId: data.user.id, password: pwd, createdNew: true };
+  }
+
+  // El email ya tiene cuenta: la buscamos y, si nos dieron contraseña, la reseteamos.
+  const { data: list } = await admin.auth.admin.listUsers({
+    page: 1,
+    perPage: 1000,
+  });
+  const existing = list?.users.find(
+    (u) => u.email?.toLowerCase() === email.toLowerCase()
+  );
+  if (existing) {
+    if (hasPwd) {
+      await admin.auth.admin.updateUserById(existing.id, {
+        password: pwd,
+        email_confirm: true,
+      });
+      return { authUserId: existing.id, password: pwd, createdNew: false };
+    }
+    // Sin contraseña nueva: linkeamos al usuario existente sin tocar su clave.
+    return { authUserId: existing.id, password: "", createdNew: false };
+  }
+
+  return { error: error?.message ?? "No se pudo crear el usuario de acceso." };
+}
+
+export interface UpsertStaffResult {
+  error?: string;
+  // Si se creó/actualizó un acceso, las credenciales para mostrar una sola vez.
+  credentials?: { email: string; password: string };
 }
 
 export async function upsertStaff(
   formData: FormData
-): Promise<{ error?: string }> {
+): Promise<UpsertStaffResult> {
   const supabase = createClient();
 
   const id = (formData.get("id") as string | null) || null;
   const full_name = (formData.get("full_name") as string)?.trim();
   const role = formData.get("role") as "admin" | "doctor" | "reception";
   const email = (formData.get("email") as string | null)?.trim() || null;
+  const password = (formData.get("password") as string | null)?.trim() || null;
   const is_active = formData.get("is_active") === "true";
 
   if (!full_name || !role) {
     return { error: "Nombre y rol son obligatorios." };
   }
 
+  const { clinicId, role: callerRole } = await getSessionClaims();
+  if (!clinicId) return { error: "Sesión expirada." };
+
   let staffId: string;
+  let credentials: { email: string; password: string } | undefined;
 
   if (id) {
+    // ── Edición ──
+    const { data: current } = await supabase
+      .from("staff_members")
+      .select("auth_user_id, email")
+      .eq("id", id)
+      .single();
+
     const { error } = await supabase
       .from("staff_members")
       .update({ full_name, role, email, is_active })
       .eq("id", id);
     if (error) return { error: `Error al guardar: ${error.message}` };
     staffId = id;
-  } else {
-    // Creación — clinic_id viene del JWT, nunca del form.
-    const clinicId = await getClinicId();
-    if (!clinicId) return { error: "Sesión expirada." };
 
-    const { data, error } = await supabase
-      .from("staff_members")
-      .insert({
-        full_name,
-        role,
-        email,
-        is_active: true,
-        clinic_id: clinicId,
-        auth_user_id: randomUUID(),
-      })
-      .select("id")
-      .single();
-    if (error) return { error: `Error al crear miembro: ${error.message}` };
-    staffId = (data as { id: string }).id;
+    // Setear/resetear contraseña de acceso (requiere email + ser admin).
+    if (password) {
+      if (!email) return { error: "Para crear el acceso, cargá un email." };
+      if (callerRole !== "admin") {
+        return { error: "Solo un admin puede gestionar accesos." };
+      }
+      const admin = createAdminClient();
+      const currentAuthId = (current as { auth_user_id?: string } | null)
+        ?.auth_user_id;
+
+      // ¿El auth_user_id actual corresponde a un usuario de auth real?
+      let realAuthId: string | null = null;
+      if (currentAuthId) {
+        const { data: got } = await admin.auth.admin.getUserById(currentAuthId);
+        if (got?.user) realAuthId = got.user.id;
+      }
+
+      if (realAuthId) {
+        const { error: upErr } = await admin.auth.admin.updateUserById(
+          realAuthId,
+          { email, password, email_confirm: true }
+        );
+        if (upErr) {
+          return { error: `No se pudo actualizar el acceso: ${upErr.message}` };
+        }
+        credentials = { email, password };
+      } else {
+        // Staff creado sin login real (auth_user_id placeholder): lo creamos y vinculamos.
+        const prov = await provisionAuthUser(email, password);
+        if ("error" in prov) {
+          return { error: `No se pudo crear el acceso: ${prov.error}` };
+        }
+        const { error: linkErr } = await supabase
+          .from("staff_members")
+          .update({ auth_user_id: prov.authUserId })
+          .eq("id", id);
+        if (linkErr) {
+          return { error: `No se pudo vincular el acceso: ${linkErr.message}` };
+        }
+        credentials = { email, password: prov.password };
+      }
+    }
+  } else {
+    // ── Creación ──
+    if (email) {
+      // Crear un login real requiere ser admin (evita usuarios de auth huérfanos).
+      if (callerRole !== "admin") {
+        return { error: "Solo un admin puede crear accesos con email." };
+      }
+      const prov = await provisionAuthUser(email, password);
+      if ("error" in prov) {
+        return { error: `No se pudo crear el acceso: ${prov.error}` };
+      }
+      if (prov.password) credentials = { email, password: prov.password };
+
+      const { data, error } = await supabase
+        .from("staff_members")
+        .insert({
+          full_name,
+          role,
+          email,
+          is_active: true,
+          clinic_id: clinicId,
+          auth_user_id: prov.authUserId,
+        })
+        .select("id")
+        .single();
+      if (error) {
+        // Rollback del usuario de auth si lo acabamos de crear (evita huérfanos).
+        if (prov.createdNew) {
+          await createAdminClient().auth.admin.deleteUser(prov.authUserId);
+        }
+        return { error: `Error al crear miembro: ${error.message}` };
+      }
+      staffId = (data as { id: string }).id;
+    } else {
+      // Staff sin login (no inicia sesión): auth_user_id placeholder.
+      const { data, error } = await supabase
+        .from("staff_members")
+        .insert({
+          full_name,
+          role,
+          email,
+          is_active: true,
+          clinic_id: clinicId,
+          auth_user_id: randomUUID(),
+        })
+        .select("id")
+        .single();
+      if (error) return { error: `Error al crear miembro: ${error.message}` };
+      staffId = (data as { id: string }).id;
+    }
   }
 
   // ── Professionals + disponibilidad (para doctores — tanto en creación como edición) ─
@@ -134,7 +283,7 @@ export async function upsertStaff(
   }
 
   revalidatePath("/staff");
-  return {};
+  return { credentials };
 }
 
 export async function deactivateStaff(
