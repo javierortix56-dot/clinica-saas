@@ -48,7 +48,13 @@ create trigger trg_audit_cna after insert or update or delete
 -- -----------------------------------------------------------------------------
 -- 3. Borde duro §6 — el bot jamás toca adjuntos clínicos
 -- -----------------------------------------------------------------------------
-revoke all on clinical_note_attachments from clinic_bot;
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'clinic_bot') then
+    revoke all on clinical_note_attachments from clinic_bot;
+  end if;
+end
+$$;
 
 -- -----------------------------------------------------------------------------
 -- 4. Bucket privado de Storage + policies por clínica
