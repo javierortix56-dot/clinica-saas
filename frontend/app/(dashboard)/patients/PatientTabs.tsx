@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { Sparkles, Settings, Plus, Pencil, Search } from "lucide-react";
 
 import type {
   PatientAppointment,
@@ -12,15 +13,6 @@ import type {
   PatientClinicalProfile,
   NoteStructuredData,
 } from "@/lib/supabase/server";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   createClinicalNote,
@@ -61,31 +53,36 @@ const dateFormatter = new Intl.DateTimeFormat("es-AR", {
 
 // ─── Badge helpers ────────────────────────────────────────────────────────────
 
-const APPT_STATUS_LABELS: Record<string, string> = {
-  proposed: "Propuesto", confirmed: "Confirmado", in_progress: "En curso",
-  completed: "Completado", cancelled: "Cancelado", no_show: "Ausente",
+const APPT_STATUS_CHIP: Record<
+  string,
+  { label: string; bg: string; fg: string; border: string; dot: string }
+> = {
+  proposed: { label: "Propuesto", bg: "#fffbeb", fg: "#b45309", border: "#fde68a", dot: "#f59e0b" },
+  confirmed: { label: "Confirmado", bg: "#ecfdf5", fg: "#047857", border: "#a7f3d0", dot: "#10b981" },
+  in_progress: { label: "En curso", bg: "#eff6ff", fg: "#1d4ed8", border: "#bfdbfe", dot: "#3b82f6" },
+  completed: { label: "Completado", bg: "#eff6ff", fg: "#1d4ed8", border: "#bfdbfe", dot: "#3b82f6" },
+  cancelled: { label: "Cancelado", bg: "#fff1f2", fg: "#be123c", border: "#fecdd3", dot: "#f43f5e" },
+  no_show: { label: "Ausente", bg: "#fff1f2", fg: "#be123c", border: "#fecdd3", dot: "#f43f5e" },
 };
 
 function ApptStatusBadge({ status }: { status: string }) {
-  const variants: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
-    confirmed: "outline", completed: "secondary", proposed: "outline",
-    in_progress: "default", cancelled: "outline", no_show: "destructive",
+  const c = APPT_STATUS_CHIP[status] ?? {
+    label: status, bg: "#f1f5f9", fg: "#64748b", border: "#e2e8f0", dot: "#94a3b8",
   };
   return (
-    <Badge variant={variants[status] ?? "outline"} className={status === "cancelled" ? "text-slate-400" : ""}>
-      {APPT_STATUS_LABELS[status] ?? status}
-    </Badge>
+    <span
+      className="inline-flex items-center gap-[6px] rounded-full border px-[10px] py-[4px] text-[11.5px] font-semibold"
+      style={{ background: c.bg, color: c.fg, borderColor: c.border }}
+    >
+      <span className="h-[5px] w-[5px] rounded-full" style={{ background: c.dot }} />
+      {c.label}
+    </span>
   );
 }
 
 const NOTE_TYPE_LABELS: Record<string, string> = {
   consulta: "Consulta", evolución: "Evolución",
   diagnóstico: "Diagnóstico", observación: "Observación",
-};
-
-const NOTE_TYPE_VARIANTS: Record<string, "default" | "secondary" | "outline"> = {
-  consulta: "outline", evolución: "secondary",
-  diagnóstico: "default", observación: "outline",
 };
 
 // ─── Tab button ───────────────────────────────────────────────────────────────
@@ -103,10 +100,10 @@ function TabButton({
     <button
       type="button"
       onClick={onClick}
-      className={`border-b-2 px-4 pb-2 text-sm font-medium transition-colors ${
+      className={`-mb-px border-b-2 px-4 pb-[10px] text-[14px] font-semibold transition-colors ${
         active
-          ? "border-slate-900 text-slate-900"
-          : "border-transparent text-slate-500 hover:text-slate-700"
+          ? "border-primary text-foreground"
+          : "border-transparent text-muted-foreground hover:text-slate-700"
       }`}
     >
       {children}
@@ -1151,22 +1148,32 @@ function AiSummaryPanel({ patientId }: { patientId: string }) {
   }
 
   return (
-    <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 p-3">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-medium text-indigo-900">
-          🤖 Resumen clínico con IA
-        </span>
-        <Button
-          size="sm"
-          variant="outline"
+    <div className="rounded-[14px] border border-primary/20 bg-gradient-to-r from-primary/[.07] to-white px-[18px] py-[15px]">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] bg-primary">
+            <Sparkles className="h-[18px] w-[18px] text-white" strokeWidth={1.9} />
+          </div>
+          <div>
+            <div className="text-[14px] font-bold text-foreground">
+              Resumen clínico con IA
+            </div>
+            <div className="mt-1 text-[12.5px] font-medium leading-[1.3] text-muted-foreground">
+              Sintetizá la historia completa del paciente en segundos.
+            </div>
+          </div>
+        </div>
+        <button
+          type="button"
           onClick={handleSummarize}
           disabled={loading}
+          className="shrink-0 whitespace-nowrap rounded-[10px] border border-primary/20 bg-white px-[14px] py-2 text-[12.5px] font-bold text-primary transition hover:bg-primary/[.07] disabled:opacity-50"
         >
           {loading ? "Generando…" : summary ? "Regenerar" : "Generar resumen"}
-        </Button>
+        </button>
       </div>
       {summary && (
-        <div className="mt-3 whitespace-pre-wrap text-sm text-slate-700">
+        <div className="mt-3 whitespace-pre-wrap border-t border-primary/10 pt-3 text-[13.5px] leading-relaxed text-slate-700">
           {summary}
         </div>
       )}
@@ -1246,39 +1253,36 @@ export function PatientTabs({
       {tab === "turnos" && (
         <>
           {appointments.length === 0 ? (
-            <p className="rounded-lg border bg-card p-6 text-sm text-muted-foreground">
+            <div className="rounded-card border border-border bg-white p-6 text-sm font-medium text-muted-foreground shadow-card-soft">
               Este paciente no tiene turnos registrados.
-            </p>
+            </div>
           ) : (
-            <div className="rounded-lg border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Fecha / hora</TableHead>
-                    <TableHead>Profesional</TableHead>
-                    <TableHead>Tratamiento / Fase</TableHead>
-                    <TableHead>Estado</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {appointments.map((appt) => (
-                    <TableRow key={appt.id}>
-                      <TableCell className="text-sm">
-                        {dateTimeFormatter.format(new Date(appt.start_at))}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {appt.professional_name ?? "—"}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {appt.treatment_label ?? "—"}
-                      </TableCell>
-                      <TableCell>
-                        <ApptStatusBadge status={appt.status} />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+            <div className="overflow-hidden rounded-card border border-border bg-white shadow-card-soft">
+              <div className="grid grid-cols-[1.4fr_1.2fr_1.6fr_1fr] border-b border-[#eef2f7] bg-[#fbfcfe] px-[22px] py-[13px] text-[11.5px] font-semibold uppercase tracking-[.05em] text-muted-foreground">
+                <div>Fecha / hora</div>
+                <div>Profesional</div>
+                <div>Tratamiento / Fase</div>
+                <div>Estado</div>
+              </div>
+              {appointments.map((appt) => (
+                <div
+                  key={appt.id}
+                  className="grid grid-cols-[1.4fr_1.2fr_1.6fr_1fr] items-center border-b border-slate-100 px-[22px] py-[15px] last:border-0"
+                >
+                  <div className="text-[14px] font-bold text-foreground">
+                    {dateTimeFormatter.format(new Date(appt.start_at))}
+                  </div>
+                  <div className="text-[13.5px] font-medium text-slate-600">
+                    {appt.professional_name ?? "—"}
+                  </div>
+                  <div className="text-[13.5px] font-medium text-slate-600">
+                    {appt.treatment_label ?? "—"}
+                  </div>
+                  <div>
+                    <ApptStatusBadge status={appt.status} />
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </>
@@ -1288,22 +1292,28 @@ export function PatientTabs({
       {tab === "historia" && (
         <div className="flex flex-col gap-4">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-[13.5px] font-medium text-muted-foreground">
               Notas clínicas del paciente ordenadas por fecha.
             </p>
             {canCreateNote && (
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
+              <div className="flex gap-[9px]">
+                <button
+                  type="button"
                   onClick={() => setShowConfig((v) => !v)}
+                  className="flex items-center gap-[6px] rounded-[10px] border border-border bg-white px-[13px] py-2 text-[12.5px] font-semibold text-slate-700 transition hover:bg-slate-50"
                 >
-                  ⚙ Campos
-                </Button>
+                  <Settings className="h-[14px] w-[14px]" strokeWidth={1.9} />
+                  Campos
+                </button>
                 {!showForm && (
-                  <Button size="sm" onClick={() => setShowForm(true)}>
-                    + Nueva nota
-                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => setShowForm(true)}
+                    className="flex items-center gap-[6px] rounded-[10px] bg-primary px-[13px] py-2 text-[12.5px] font-bold text-white shadow-[0_4px_12px_rgba(37,99,235,.3)] transition hover:brightness-[1.07]"
+                  >
+                    <Plus className="h-[14px] w-[14px]" strokeWidth={2.4} />
+                    Nueva nota
+                  </button>
                 )}
               </div>
             )}
@@ -1342,19 +1352,22 @@ export function PatientTabs({
           )}
 
           {notes.length > 0 && (
-            <input
-              type="search"
-              placeholder="Buscar en notas…"
-              value={noteSearch}
-              onChange={(e) => setNoteSearch(e.target.value)}
-              className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400"
-            />
+            <div className="flex items-center gap-[10px] rounded-[11px] border border-border bg-white px-[14px] py-[11px]">
+              <Search className="h-4 w-4 text-slate-400" strokeWidth={1.9} />
+              <input
+                type="search"
+                placeholder="Buscar en notas…"
+                value={noteSearch}
+                onChange={(e) => setNoteSearch(e.target.value)}
+                className="flex-1 bg-transparent text-[13.5px] font-medium text-foreground outline-none placeholder:text-slate-400"
+              />
+            </div>
           )}
 
           {notes.length === 0 && !showForm ? (
-            <p className="rounded-lg border bg-card p-6 text-sm text-muted-foreground">
+            <div className="rounded-card border border-border bg-white p-6 text-sm font-medium text-muted-foreground shadow-card-soft">
               No hay notas clínicas para este paciente.
-            </p>
+            </div>
           ) : (
             <div className="space-y-3">
               {filteredNotes.length === 0 && noteSearch ? (
@@ -1375,21 +1388,21 @@ export function PatientTabs({
                   ) : (
                     <div
                       key={note.id}
-                      className="rounded-lg border border-slate-200 bg-white p-4 space-y-2"
+                      className="space-y-3 rounded-card border border-border bg-white p-5 shadow-card-soft"
                     >
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
-                          <Badge variant={NOTE_TYPE_VARIANTS[note.note_type] ?? "outline"}>
+                          <span className="inline-flex items-center rounded-full border border-border bg-slate-100 px-[11px] py-1 text-[12px] font-semibold text-slate-600">
                             {NOTE_TYPE_LABELS[note.note_type] ?? note.note_type}
-                          </Badge>
+                          </span>
                           {note.treatment_name && (
-                            <span className="text-xs text-slate-400">
+                            <span className="text-[12px] font-medium text-slate-400">
                               · {note.treatment_name}
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-slate-400">
+                        <div className="flex items-center gap-3">
+                          <span className="text-[12.5px] font-medium text-slate-400">
                             {dateFormatter.format(new Date(note.created_at))}
                             {note.author_name && ` · ${note.author_name}`}
                           </span>
@@ -1397,15 +1410,18 @@ export function PatientTabs({
                             <button
                               type="button"
                               onClick={() => setEditingNoteId(note.id)}
-                              className="text-xs font-medium text-slate-500 hover:text-slate-900"
+                              className="flex items-center gap-[5px] text-[12.5px] font-semibold text-muted-foreground transition-colors hover:text-primary"
                               title="Editable hasta 24h después de creada"
                             >
-                              ✎ Editar
+                              <Pencil className="h-[13px] w-[13px]" strokeWidth={1.9} />
+                              Editar
                             </button>
                           )}
                         </div>
                       </div>
-                      <p className="text-sm text-slate-700 whitespace-pre-wrap">{note.body}</p>
+                      <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-slate-700">
+                        {note.body}
+                      </p>
                       <StructuredDataView data={note.structured_data} />
                       <AttachmentGallery
                         attachments={note.attachments}
