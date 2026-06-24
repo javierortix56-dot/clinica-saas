@@ -8,6 +8,11 @@ const nextConfig = {
       dynamic: 0,
       static: 180,
     },
+    // El dictado por voz manda el audio (base64) a un Server Action; el límite
+    // por defecto (1MB) se queda corto para grabaciones de varios minutos.
+    serverActions: {
+      bodySizeLimit: "12mb",
+    },
   },
 };
 
