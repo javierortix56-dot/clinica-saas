@@ -115,11 +115,14 @@ function parseStructuredData(formData: FormData): Record<string, unknown> {
   }
   if (Object.keys(examFisico).length > 0) structured.examen_fisico = examFisico;
 
-  // Campos especializados: el form los envía con prefijo `esp_<key>`.
+  // Campos especializados: el form los envía con prefijo `esp_<key>`. Se recorren
+  // genéricamente para soportar tanto el catálogo base como los campos propios de
+  // la clínica (clinic_specialty_fields), cuyas claves no están en el catálogo TS.
   const especializados: Record<string, string> = {};
-  for (const f of SPECIALTY_FIELD_DEFS) {
-    const v = (formData.get(`esp_${f.key}`) as string | null)?.trim();
-    if (v) especializados[f.key] = v;
+  for (const [name, value] of Array.from(formData.entries())) {
+    if (!name.startsWith("esp_") || typeof value !== "string") continue;
+    const v = value.trim();
+    if (v) especializados[name.slice(4)] = v;
   }
   if (Object.keys(especializados).length > 0) structured.especializados = especializados;
 

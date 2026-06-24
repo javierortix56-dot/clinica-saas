@@ -43,8 +43,12 @@ import {
   isSistemaEnabled,
   isSpecialtyFieldEnabled,
   buildConfigFromPreset,
+  presetToSpecialty,
   type FieldKey,
   type NoteFieldConfig,
+  type SpecialtyFieldDef,
+  type ClinicSpecialty,
+  type CustomSpecialtyField,
 } from "./clinical-fields";
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
@@ -325,6 +329,7 @@ function NoteForm({
   treatments,
   config,
   clinicalProfile,
+  specialtyFieldDefs,
   mode,
   note,
   onClose,
@@ -333,6 +338,7 @@ function NoteForm({
   treatments: PatientTreatment[];
   config: NoteFieldConfig;
   clinicalProfile: PatientClinicalProfile | null;
+  specialtyFieldDefs: SpecialtyFieldDef[];
   mode: "create" | "edit";
   note?: ClinicalNote;
   onClose: () => void;
@@ -368,14 +374,14 @@ function NoteForm({
   const [especializados, setEspecializados] = useState<Record<string, string>>(() => {
     const esp = sd.especializados ?? {};
     const init: Record<string, string> = {};
-    for (const f of SPECIALTY_FIELD_DEFS) init[f.key] = esp[f.key] ?? "";
+    for (const f of specialtyFieldDefs) init[f.key] = esp[f.key] ?? "";
     return init;
   });
 
   const show = (k: FieldKey) => isFieldEnabled(config, k);
 
-  // Campos especializados activos para esta especialidad (en orden del catálogo).
-  const activeSpecialtyFields = SPECIALTY_FIELD_DEFS.filter((f) =>
+  // Campos especializados activos para esta especialidad (catálogo + propios).
+  const activeSpecialtyFields = specialtyFieldDefs.filter((f) =>
     isSpecialtyFieldEnabled(config, f.key)
   );
 
@@ -795,9 +801,13 @@ function NoteForm({
 
 function NoteFieldConfigPanel({
   config,
+  specialties,
+  specialtyFieldDefs,
   onClose,
 }: {
   config: NoteFieldConfig;
+  specialties: ClinicSpecialty[];
+  specialtyFieldDefs: SpecialtyFieldDef[];
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -817,7 +827,7 @@ function NoteFieldConfigPanel({
 
   const [especializados, setEspecializados] = useState<Record<string, boolean>>(() => {
     const init: Record<string, boolean> = {};
-    for (const f of SPECIALTY_FIELD_DEFS) init[f.key] = isSpecialtyFieldEnabled(config, f.key);
+    for (const f of specialtyFieldDefs) init[f.key] = isSpecialtyFieldEnabled(config, f.key);
     return init;
   });
 
@@ -834,11 +844,11 @@ function NoteFieldConfigPanel({
   }
 
   // Aplica un preset: setea todos los toggles. El profesional puede ajustar luego.
-  function applyPreset(presetId: string) {
-    setEspecialidad(presetId);
-    const preset = SPECIALTY_PRESETS.find((p) => p.id === presetId);
+  function applyPreset(slug: string) {
+    setEspecialidad(slug);
+    const preset = specialties.find((p) => p.slug === slug);
     if (!preset) return;
-    const cfg = buildConfigFromPreset(preset);
+    const cfg = buildConfigFromPreset(preset, specialtyFieldDefs);
     const nextLocal = {} as Record<FieldKey, boolean>;
     for (const f of FIELD_DEFS) nextLocal[f.key] = cfg[f.key] !== false;
     setLocal(nextLocal);
@@ -868,11 +878,11 @@ function NoteFieldConfigPanel({
   // Campos especializados a mostrar como checkboxes: los del preset activo +
   // cualquiera ya activado. Evita listar los ~85 campos del catálogo completo.
   const activePresetFields = especialidad
-    ? SPECIALTY_PRESETS.find((p) => p.id === especialidad)?.specialtyFields ?? []
+    ? specialties.find((p) => p.slug === especialidad)?.specialtyFields ?? []
     : [];
   const visibleEspKeys = new Set<string>(activePresetFields);
   for (const [k, on] of Object.entries(especializados)) if (on) visibleEspKeys.add(k);
-  const visibleEspFields = SPECIALTY_FIELD_DEFS.filter((f) => visibleEspKeys.has(f.key));
+  const visibleEspFields = specialtyFieldDefs.filter((f) => visibleEspKeys.has(f.key));
 
   return (
     <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
@@ -893,8 +903,8 @@ function NoteFieldConfigPanel({
           className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
         >
           <option value="">— Personalizado —</option>
-          {SPECIALTY_PRESETS.map((p) => (
-            <option key={p.id} value={p.id}>{p.label}</option>
+          {specialties.map((p) => (
+            <option key={p.id} value={p.slug}>{p.label}</option>
           ))}
         </select>
       </div>
@@ -1096,12 +1106,18 @@ function ClinicalProfileCard({
 
 // ─── Vista de datos estructurados dentro de cada nota ─────────────────────────
 
-function StructuredDataView({ data }: { data: NoteStructuredData }) {
+function StructuredDataView({
+  data,
+  specialtyFieldDefs,
+}: {
+  data: NoteStructuredData;
+  specialtyFieldDefs: SpecialtyFieldDef[];
+}) {
   const vitals = data.vitals ?? {};
   const vitalEntries = VITAL_DEFS.filter((v) => vitals[v.key]);
   const examEntries = Object.entries(data.examen_fisico ?? {}).filter(([, v]) => v);
   const espData = data.especializados ?? {};
-  const espEntries = SPECIALTY_FIELD_DEFS.filter((f) => espData[f.key]);
+  const espEntries = specialtyFieldDefs.filter((f) => espData[f.key]);
   const hasAny =
     data.motivo || data.enfermedad_actual || data.diagnostico ||
     data.indicaciones || data.fecha_control ||
@@ -1338,6 +1354,8 @@ export function PatientTabs({
   role,
   clinicalProfile,
   noteConfig,
+  specialties,
+  customSpecialtyFields,
 }: {
   patientId: string;
   appointments: PatientAppointment[];
@@ -1346,7 +1364,23 @@ export function PatientTabs({
   role: string | null;
   clinicalProfile: PatientClinicalProfile | null;
   noteConfig: NoteFieldConfig;
+  specialties: ClinicSpecialty[];
+  customSpecialtyFields: CustomSpecialtyField[];
 }) {
+  // Catálogo de campos = base estático + campos propios de la clínica (DB).
+  const specialtyFieldDefs: SpecialtyFieldDef[] = [
+    ...SPECIALTY_FIELD_DEFS,
+    ...customSpecialtyFields.map((c) => ({
+      key: c.key,
+      label: c.label,
+      placeholder: c.placeholder,
+    })),
+  ];
+  // Lista de especialidades = las de la clínica (DB) o los presets de fallback.
+  const specialtyList: ClinicSpecialty[] = specialties.length
+    ? specialties
+    : SPECIALTY_PRESETS.map(presetToSpecialty);
+
   const [tab, setTab] = useState<"turnos" | "historia">("turnos");
   const [showForm, setShowForm] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
@@ -1469,6 +1503,8 @@ export function PatientTabs({
           {canCreateNote && showConfig && (
             <NoteFieldConfigPanel
               config={noteConfig}
+              specialties={specialtyList}
+              specialtyFieldDefs={specialtyFieldDefs}
               onClose={() => setShowConfig(false)}
             />
           )}
@@ -1493,6 +1529,7 @@ export function PatientTabs({
               treatments={treatments}
               config={noteConfig}
               clinicalProfile={clinicalProfile}
+              specialtyFieldDefs={specialtyFieldDefs}
               mode="create"
               onClose={() => setShowForm(false)}
             />
@@ -1528,6 +1565,7 @@ export function PatientTabs({
                       treatments={treatments}
                       config={noteConfig}
                       clinicalProfile={clinicalProfile}
+                      specialtyFieldDefs={specialtyFieldDefs}
                       mode="edit"
                       note={note}
                       onClose={() => setEditingNoteId(null)}
@@ -1569,7 +1607,10 @@ export function PatientTabs({
                       <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-slate-700">
                         {note.body}
                       </p>
-                      <StructuredDataView data={note.structured_data} />
+                      <StructuredDataView
+                        data={note.structured_data}
+                        specialtyFieldDefs={specialtyFieldDefs}
+                      />
                       <AttachmentGallery
                         attachments={note.attachments}
                         onOpenImage={openImage}

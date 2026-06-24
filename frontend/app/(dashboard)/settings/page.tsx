@@ -1,8 +1,15 @@
 import { redirect } from "next/navigation";
 
-import { getSessionAuth, getClinicSettings, getTreatmentTypesWithPhases } from "@/lib/supabase/server";
-import { Badge } from "@/components/ui/badge";
+import {
+  getSessionAuth,
+  getClinicSettings,
+  getTreatmentTypesWithPhases,
+  getClinicSpecialties,
+  getClinicSpecialtyFields,
+} from "@/lib/supabase/server";
 import { SettingsClient } from "./SettingsClient";
+import { SpecialtiesManager } from "./SpecialtiesManager";
+import { ensureSpecialtiesSeeded } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -13,10 +20,16 @@ export default async function SettingsPage() {
     redirect("/approvals");
   }
 
-  const [clinicSettings, treatmentTypes] = await Promise.all([
-    getClinicSettings(),
-    getTreatmentTypesWithPhases(),
-  ]);
+  // Siembra las especialidades base la primera vez que el admin abre Ajustes.
+  await ensureSpecialtiesSeeded();
+
+  const [clinicSettings, treatmentTypes, specialties, customFields] =
+    await Promise.all([
+      getClinicSettings(),
+      getTreatmentTypesWithPhases(),
+      getClinicSpecialties(),
+      getClinicSpecialtyFields(),
+    ]);
 
   return (
     <div className="mx-auto flex max-w-[1100px] flex-col gap-10">
@@ -31,6 +44,10 @@ export default async function SettingsPage() {
         clinicSettings={clinicSettings}
         treatmentTypes={treatmentTypes}
       />
+
+      <hr className="border-slate-200" />
+
+      <SpecialtiesManager specialties={specialties} customFields={customFields} />
     </div>
   );
 }

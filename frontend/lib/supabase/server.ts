@@ -2,7 +2,12 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { Appointment, Patient } from "@clinica/shared";
-import type { NoteFieldConfig } from "@/app/(dashboard)/patients/clinical-fields";
+import type {
+  NoteFieldConfig,
+  ClinicSpecialty,
+  CustomSpecialtyField,
+  FieldKey,
+} from "@/app/(dashboard)/patients/clinical-fields";
 
 // Cliente Supabase para Server Components y Route Handlers.
 // Persiste la sesión vía cookies (requerido por @supabase/ssr en Next.js App Router).
@@ -601,6 +606,63 @@ export async function getProfessionalNoteConfig(): Promise<NoteFieldConfig | nul
   const cfg = (data as { note_field_config?: NoteFieldConfig } | null)
     ?.note_field_config;
   return cfg ?? {};
+}
+
+// Especialidades editables de la clínica (clinic_specialties). Vacío si todavía
+// no se sembraron — en ese caso el frontend usa los presets estáticos de fallback.
+export async function getClinicSpecialties(): Promise<ClinicSpecialty[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("clinic_specialties")
+    .select("id, slug, label, base_off, exam_systems, specialty_fields, is_builtin")
+    .is("deleted_at", null)
+    .order("sort_order", { ascending: true })
+    .order("label", { ascending: true });
+  if (error || !data) return [];
+  return (
+    data as unknown as {
+      id: string;
+      slug: string;
+      label: string;
+      base_off: string[] | null;
+      exam_systems: string[] | null;
+      specialty_fields: string[] | null;
+      is_builtin: boolean;
+    }[]
+  ).map((r) => ({
+    id: r.id,
+    slug: r.slug,
+    label: r.label,
+    baseOff: (r.base_off ?? []) as FieldKey[],
+    examSystems: r.exam_systems ?? [],
+    specialtyFields: r.specialty_fields ?? [],
+    isBuiltin: r.is_builtin,
+  }));
+}
+
+// Campos clínicos propios de la clínica (clinic_specialty_fields). Extienden el
+// catálogo estático del frontend.
+export async function getClinicSpecialtyFields(): Promise<CustomSpecialtyField[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("clinic_specialty_fields")
+    .select("id, key, label, placeholder")
+    .is("deleted_at", null)
+    .order("label", { ascending: true });
+  if (error || !data) return [];
+  return (
+    data as unknown as {
+      id: string;
+      key: string;
+      label: string;
+      placeholder: string | null;
+    }[]
+  ).map((r) => ({
+    id: r.id,
+    key: r.key,
+    label: r.label,
+    placeholder: r.placeholder ?? "",
+  }));
 }
 
 export interface PatientTreatment {
