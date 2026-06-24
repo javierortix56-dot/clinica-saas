@@ -437,9 +437,12 @@ export interface ClinicalAttachment {
 
 export interface NoteStructuredData {
   motivo?: string;
+  enfermedad_actual?: string;
   vitals?: Record<string, string>;
+  examen_fisico?: Record<string, string>;
   diagnostico?: string;
   indicaciones?: string;
+  fecha_control?: string;
 }
 
 export interface ClinicalNote {
@@ -560,6 +563,7 @@ export async function getClinicalNotes(patientId: string): Promise<ClinicalNote[
 export interface PatientClinicalProfile {
   allergies: string | null;
   medical_history: string | null;
+  antecedentes_familiares: string | null;
 }
 
 export async function getPatientClinicalProfile(
@@ -568,7 +572,7 @@ export async function getPatientClinicalProfile(
   const supabase = createClient();
   const { data, error } = await supabase
     .from("patient_clinical_profile")
-    .select("allergies, medical_history")
+    .select("allergies, medical_history, antecedentes_familiares")
     .eq("patient_id", patientId)
     .maybeSingle();
   // Si RLS lo oculta (recepción) o no existe fila aún, devolvemos null.

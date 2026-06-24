@@ -29,12 +29,15 @@ import {
   updatePatientClinicalProfile,
   updateNoteFieldConfig,
   transcribeNoteDictation,
+  suggestDiagnosis,
   type DictationResult,
 } from "./actions";
 import {
   FIELD_DEFS,
   VITAL_DEFS,
+  EXAM_FISICO_SISTEMAS,
   isFieldEnabled,
+  isSistemaEnabled,
   type FieldKey,
   type NoteFieldConfig,
 } from "./clinical-fields";
@@ -241,6 +244,7 @@ function NoteForm({
   patientId,
   treatments,
   config,
+  clinicalProfile,
   mode,
   note,
   onClose,
@@ -248,6 +252,7 @@ function NoteForm({
   patientId: string;
   treatments: PatientTreatment[];
   config: NoteFieldConfig;
+  clinicalProfile: PatientClinicalProfile | null;
   mode: "create" | "edit";
   note?: ClinicalNote;
   onClose: () => void;
@@ -255,37 +260,42 @@ function NoteForm({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  // Campos controlados: el dictado por voz los precarga programáticamente.
+  const sd = note?.structured_data ?? {};
   const [noteType, setNoteType] = useState(note?.note_type ?? "consulta");
   const [treatmentId, setTreatmentId] = useState(note?.treatment_id ?? "");
   const [body, setBody] = useState(note?.body ?? "");
-  const [motivo, setMotivo] = useState(note?.structured_data.motivo ?? "");
-  const [diagnostico, setDiagnostico] = useState(
-    note?.structured_data.diagnostico ?? ""
-  );
-  const [indicaciones, setIndicaciones] = useState(
-    note?.structured_data.indicaciones ?? ""
-  );
+  const [motivo, setMotivo] = useState(sd.motivo ?? "");
+  const [enfermedadActual, setEnfermedadActual] = useState(sd.enfermedad_actual ?? "");
+  const [diagnostico, setDiagnostico] = useState(sd.diagnostico ?? "");
+  const [dxSuggestions, setDxSuggestions] = useState<string[]>([]);
+  const [dxLoading, setDxLoading] = useState(false);
+  const [indicaciones, setIndicaciones] = useState(sd.indicaciones ?? "");
+  const [fechaControl, setFechaControl] = useState(sd.fecha_control ?? "");
   const [vitals, setVitals] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
-    const v = note?.structured_data.vitals ?? {};
+    const v = sd.vitals ?? {};
     for (const d of VITAL_DEFS) init[d.key] = v[d.key] ?? "";
+    return init;
+  });
+  const [examFisico, setExamFisico] = useState<Record<string, string>>(() => {
+    const ef = sd.examen_fisico ?? {};
+    const init: Record<string, string> = {};
+    for (const s of EXAM_FISICO_SISTEMAS) init[s.key] = ef[s.key] ?? "";
     return init;
   });
 
   const show = (k: FieldKey) => isFieldEnabled(config, k);
 
-  // Campos estructurados activos (para enfocar el dictado en lo relevante).
+  // Dictado solo incluye campos note-scope (excluye diagnostico, va por IA separada).
   const dictationFields = FIELD_DEFS.filter(
-    (f) => f.scope === "note" && show(f.key)
+    (f) => f.scope === "note" && f.key !== "diagnostico" && show(f.key)
   ).map((f) => f.key);
 
-  // Aplica el resultado del dictado: el cuerpo se agrega; los campos vacíos se
-  // completan (no se pisa lo que el profesional ya escribió a mano).
   function applyDictation(d: DictationResult) {
     setBody((prev) => (prev.trim() ? `${prev.trim()}\n${d.body}` : d.body));
     if (d.motivo) setMotivo((prev) => (prev.trim() ? prev : d.motivo!));
-    if (d.diagnostico) setDiagnostico((prev) => (prev.trim() ? prev : d.diagnostico!));
+    if (d.enfermedad_actual)
+      setEnfermedadActual((prev) => (prev.trim() ? prev : d.enfermedad_actual!));
     if (d.indicaciones)
       setIndicaciones((prev) => (prev.trim() ? prev : d.indicaciones!));
     if (d.vitals) {
@@ -296,6 +306,34 @@ function NoteForm({
         }
         return next;
       });
+    }
+    if (d.examen_fisico) {
+      setExamFisico((prev) => {
+        const next = { ...prev };
+        for (const [k, val] of Object.entries(d.examen_fisico!)) {
+          if (val && !next[k]?.trim()) next[k] = val;
+        }
+        return next;
+      });
+    }
+  }
+
+  async function handleSuggestDx() {
+    setDxLoading(true);
+    setDxSuggestions([]);
+    const result = await suggestDiagnosis({
+      motivo: motivo || undefined,
+      enfermedad_actual: enfermedadActual || undefined,
+      vitals: Object.fromEntries(Object.entries(vitals).filter(([, v]) => v.trim())),
+      examen_fisico: Object.fromEntries(Object.entries(examFisico).filter(([, v]) => v.trim())),
+      antecedentes: clinicalProfile?.medical_history ?? undefined,
+      body: body || undefined,
+    });
+    setDxLoading(false);
+    if (result.error) {
+      toast.error(result.error);
+    } else if (result.suggestions) {
+      setDxSuggestions(result.suggestions);
     }
   }
 
@@ -311,11 +349,8 @@ function NoteForm({
         toast.error(result.error);
         return;
       }
-      if (result.warning) {
-        toast.warning(result.warning);
-      } else {
-        toast.success(mode === "edit" ? "Nota actualizada." : "Nota guardada.");
-      }
+      if (result.warning) toast.warning(result.warning);
+      else toast.success(mode === "edit" ? "Nota actualizada." : "Nota guardada.");
       router.refresh();
       onClose();
     });
@@ -327,9 +362,7 @@ function NoteForm({
       className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4"
     >
       <input type="hidden" name="patient_id" value={patientId} />
-      {mode === "edit" && note && (
-        <input type="hidden" name="id" value={note.id} />
-      )}
+      {mode === "edit" && note && <input type="hidden" name="id" value={note.id} />}
 
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-medium text-slate-700">
@@ -338,6 +371,7 @@ function NoteForm({
         <DictationButton fields={dictationFields} onResult={applyDictation} />
       </div>
 
+      {/* Tipo + Tratamiento */}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <label className={fieldLabel}>Tipo</label>
@@ -353,7 +387,6 @@ function NoteForm({
             ))}
           </select>
         </div>
-
         {treatments.length > 0 && (
           <div className="space-y-1">
             <label className={fieldLabel}>
@@ -374,6 +407,7 @@ function NoteForm({
         )}
       </div>
 
+      {/* 1. Motivo de consulta */}
       {show("motivo") && (
         <div className="space-y-1">
           <label className={fieldLabel}>Motivo de consulta</label>
@@ -382,12 +416,28 @@ function NoteForm({
             name="motivo"
             value={motivo}
             onChange={(e) => setMotivo(e.target.value)}
-            placeholder="Ej: dolor en molar inferior derecho"
+            placeholder="En palabras del paciente: ej. 'me duele la panza desde ayer'"
             className={fieldInput}
           />
         </div>
       )}
 
+      {/* 2. Enfermedad actual */}
+      {show("enfermedad_actual") && (
+        <div className="space-y-1">
+          <label className={fieldLabel}>Enfermedad actual</label>
+          <textarea
+            name="enfermedad_actual"
+            rows={3}
+            value={enfermedadActual}
+            onChange={(e) => setEnfermedadActual(e.target.value)}
+            placeholder="Síntomas, tiempo de evolución, estudios previos relevantes…"
+            className={fieldInput}
+          />
+        </div>
+      )}
+
+      {/* 3. Signos vitales */}
       {show("vitals") && (
         <div className="space-y-1">
           <label className={fieldLabel}>
@@ -413,6 +463,31 @@ function NoteForm({
         </div>
       )}
 
+      {/* 4. Examen físico por sistema */}
+      {show("examen_fisico") && (
+        <div className="space-y-2">
+          <label className={fieldLabel}>Examen físico</label>
+          <div className="space-y-2">
+            {EXAM_FISICO_SISTEMAS.filter((s) => isSistemaEnabled(config, s.key)).map((s) => (
+              <div key={s.key} className="space-y-0.5">
+                <label className="text-[11px] font-medium text-slate-500">{s.label}</label>
+                <textarea
+                  name={`examen_fisico_${s.key}`}
+                  rows={1}
+                  value={examFisico[s.key] ?? ""}
+                  onChange={(e) =>
+                    setExamFisico((prev) => ({ ...prev, [s.key]: e.target.value }))
+                  }
+                  placeholder={s.placeholder}
+                  className={fieldInput}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 5. Nota libre */}
       <div className="space-y-1">
         <label className={fieldLabel}>Nota</label>
         <textarea
@@ -421,38 +496,93 @@ function NoteForm({
           rows={4}
           value={body}
           onChange={(e) => setBody(e.target.value)}
-          placeholder="Escribí la nota clínica aquí… o usá 🎤 Dictar"
+          placeholder="Texto libre de la consulta… o usá 🎤 Dictar"
           className={fieldInput}
         />
       </div>
 
+      {/* 6. Impresión diagnóstica (IA sugiere, médico confirma) */}
       {show("diagnostico") && (
         <div className="space-y-1">
-          <label className={fieldLabel}>Diagnóstico</label>
+          <div className="flex items-center gap-2">
+            <label className={fieldLabel}>Impresión diagnóstica</label>
+            <button
+              type="button"
+              onClick={handleSuggestDx}
+              disabled={dxLoading}
+              className="rounded border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+            >
+              {dxLoading ? "Analizando…" : "🤖 Sugerir"}
+            </button>
+          </div>
+          {dxSuggestions.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {dxSuggestions.map((s, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => {
+                    setDiagnostico(s);
+                    setDxSuggestions([]);
+                  }}
+                  className="rounded border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs text-indigo-800 hover:bg-indigo-100"
+                >
+                  {s}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setDxSuggestions([])}
+                className="text-xs text-slate-400 hover:text-slate-600"
+              >
+                ✕
+              </button>
+            </div>
+          )}
           <textarea
             name="diagnostico"
             rows={2}
             value={diagnostico}
             onChange={(e) => setDiagnostico(e.target.value)}
+            placeholder="El médico confirma y puede editar la impresión diagnóstica."
             className={fieldInput}
           />
+          <p className="text-xs text-slate-400">
+            ⚠ La sugerencia IA es orientativa. El médico es responsable del diagnóstico confirmado.
+          </p>
         </div>
       )}
 
+      {/* 7. Indicaciones */}
       {show("indicaciones") && (
         <div className="space-y-1">
-          <label className={fieldLabel}>Indicaciones / Plan</label>
+          <label className={fieldLabel}>Indicaciones / Tratamiento</label>
           <textarea
             name="indicaciones"
             rows={2}
             value={indicaciones}
             onChange={(e) => setIndicaciones(e.target.value)}
-            placeholder="Tratamiento, medicación, próximos pasos…"
+            placeholder="Medicación, recetas, estudios solicitados, próximos pasos…"
             className={fieldInput}
           />
         </div>
       )}
 
+      {/* 8. Fecha de control */}
+      {show("fecha_control") && (
+        <div className="space-y-1">
+          <label className={fieldLabel}>Fecha de control</label>
+          <input
+            type="date"
+            name="fecha_control"
+            value={fechaControl}
+            onChange={(e) => setFechaControl(e.target.value)}
+            className={fieldInput}
+          />
+        </div>
+      )}
+
+      {/* Adjuntos */}
       <div className="space-y-1">
         <label className={fieldLabel}>
           Adjuntos <span className="text-slate-400">(imágenes o PDF — opcional)</span>
@@ -473,11 +603,7 @@ function NoteForm({
 
       <div className="flex gap-2">
         <Button type="submit" size="sm" disabled={isPending}>
-          {isPending
-            ? "Guardando…"
-            : mode === "edit"
-              ? "Guardar cambios"
-              : "Guardar nota"}
+          {isPending ? "Guardando…" : mode === "edit" ? "Guardar cambios" : "Guardar nota"}
         </Button>
         <Button type="button" size="sm" variant="outline" onClick={onClose}>
           Cancelar
@@ -498,10 +624,16 @@ function NoteFieldConfigPanel({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  // Estado local de los toggles; arranca desde la config (default ON).
+
   const [local, setLocal] = useState<Record<FieldKey, boolean>>(() => {
     const init = {} as Record<FieldKey, boolean>;
     for (const f of FIELD_DEFS) init[f.key] = isFieldEnabled(config, f.key);
+    return init;
+  });
+
+  const [sistemas, setSistemas] = useState<Record<string, boolean>>(() => {
+    const init: Record<string, boolean> = {};
+    for (const s of EXAM_FISICO_SISTEMAS) init[s.key] = isSistemaEnabled(config, s.key);
     return init;
   });
 
@@ -509,46 +641,70 @@ function NoteFieldConfigPanel({
     setLocal((prev) => ({ ...prev, [key]: !prev[key] }));
   }
 
+  function toggleSistema(key: string) {
+    setSistemas((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
   function handleSave() {
     startTransition(async () => {
-      const result = await updateNoteFieldConfig(local);
+      const fullConfig = { ...local, examen_fisico_sistemas: sistemas };
+      const result = await updateNoteFieldConfig(fullConfig);
       if (result.error) {
         toast.error(result.error);
         return;
       }
-      toast.success("Campos actualizados.");
+      toast.success("Configuración guardada.");
       router.refresh();
       onClose();
     });
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
+    <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
       <div>
-        <p className="text-sm font-medium text-slate-700">
-          Configurar campos clínicos
-        </p>
+        <p className="text-sm font-medium text-slate-700">Configurar campos clínicos</p>
         <p className="text-xs text-slate-400">
           Activá solo los campos que usás en tu especialidad. Aplica a tus notas.
         </p>
       </div>
-      <div className="space-y-2">
+      <div className="space-y-1">
         {FIELD_DEFS.map((f) => (
-          <label
-            key={f.key}
-            className="flex cursor-pointer items-start gap-2 rounded border border-slate-100 p-2 hover:bg-slate-50"
-          >
-            <input
-              type="checkbox"
-              checked={local[f.key]}
-              onChange={() => toggle(f.key)}
-              className="mt-0.5 h-4 w-4"
-            />
-            <span>
-              <span className="block text-sm text-slate-700">{f.label}</span>
-              <span className="block text-xs text-slate-400">{f.hint}</span>
-            </span>
-          </label>
+          <div key={f.key}>
+            <label className="flex cursor-pointer items-start gap-2 rounded border border-slate-100 p-2 hover:bg-slate-50">
+              <input
+                type="checkbox"
+                checked={local[f.key]}
+                onChange={() => toggle(f.key)}
+                className="mt-0.5 h-4 w-4"
+              />
+              <span>
+                <span className="block text-sm text-slate-700">{f.label}</span>
+                <span className="block text-xs text-slate-400">{f.hint}</span>
+              </span>
+            </label>
+            {/* Sub-panel de sistemas solo cuando examen_fisico está activo */}
+            {f.key === "examen_fisico" && local["examen_fisico"] && (
+              <div className="ml-6 mt-1 grid grid-cols-2 gap-1 rounded border border-slate-100 bg-slate-50 p-2">
+                <p className="col-span-2 text-xs font-medium text-slate-500 mb-1">
+                  Aparatos / sistemas a mostrar:
+                </p>
+                {EXAM_FISICO_SISTEMAS.map((s) => (
+                  <label
+                    key={s.key}
+                    className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-600"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={sistemas[s.key] ?? true}
+                      onChange={() => toggleSistema(s.key)}
+                      className="h-3.5 w-3.5"
+                    />
+                    {s.label}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
         ))}
       </div>
       <div className="flex gap-2">
@@ -563,22 +719,31 @@ function NoteFieldConfigPanel({
   );
 }
 
-// ─── Perfil clínico: alergias + antecedentes (nivel paciente) ─────────────────
+// ─── Perfil clínico: antecedentes personales + familiares (nivel paciente) ────
 
 function ClinicalProfileCard({
   patientId,
   profile,
   canEdit,
+  showPersonales,
+  showFamiliares,
 }: {
   patientId: string;
   profile: PatientClinicalProfile | null;
   canEdit: boolean;
+  showPersonales: boolean;
+  showFamiliares: boolean;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [isPending, startTransition] = useTransition();
 
-  const hasData = !!(profile?.allergies || profile?.medical_history);
+  // Combina allergies (legacy) con medical_history para mostrar antecedentes personales.
+  const personalesText = [profile?.allergies, profile?.medical_history]
+    .filter(Boolean)
+    .join("\n") || null;
+  const familiaresText = profile?.antecedentes_familiares ?? null;
+  const hasData = !!(personalesText || familiaresText);
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -589,7 +754,7 @@ function ClinicalProfileCard({
         toast.error(result.error);
         return;
       }
-      toast.success("Perfil clínico actualizado.");
+      toast.success("Antecedentes actualizados.");
       router.refresh();
       setEditing(false);
     });
@@ -599,42 +764,39 @@ function ClinicalProfileCard({
     return (
       <form
         onSubmit={handleSubmit}
-        className="space-y-3 rounded-lg border border-rose-200 bg-rose-50/40 p-4"
+        className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/40 p-4"
       >
         <input type="hidden" name="patient_id" value={patientId} />
-        <p className="text-sm font-medium text-rose-900">
-          Alergias y antecedentes
-        </p>
-        <div className="space-y-1">
-          <label className={fieldLabel}>Alergias</label>
-          <textarea
-            name="allergies"
-            rows={2}
-            defaultValue={profile?.allergies ?? ""}
-            placeholder="Ej: penicilina, AINEs…"
-            className={fieldInput}
-          />
-        </div>
-        <div className="space-y-1">
-          <label className={fieldLabel}>Antecedentes</label>
-          <textarea
-            name="medical_history"
-            rows={3}
-            defaultValue={profile?.medical_history ?? ""}
-            placeholder="Patologías previas, cirugías, medicación habitual…"
-            className={fieldInput}
-          />
-        </div>
+        <p className="text-sm font-medium text-amber-900">Antecedentes del paciente</p>
+        {showPersonales && (
+          <div className="space-y-1">
+            <label className={fieldLabel}>Antecedentes personales</label>
+            <textarea
+              name="medical_history"
+              rows={3}
+              defaultValue={personalesText ?? ""}
+              placeholder="Patologías previas, cirugías, alergias, medicación habitual…"
+              className={fieldInput}
+            />
+          </div>
+        )}
+        {showFamiliares && (
+          <div className="space-y-1">
+            <label className={fieldLabel}>Antecedentes familiares</label>
+            <textarea
+              name="antecedentes_familiares"
+              rows={2}
+              defaultValue={familiaresText ?? ""}
+              placeholder="Enfermedades relevantes en familiares directos…"
+              className={fieldInput}
+            />
+          </div>
+        )}
         <div className="flex gap-2">
           <Button type="submit" size="sm" disabled={isPending}>
             {isPending ? "Guardando…" : "Guardar"}
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => setEditing(false)}
-          >
+          <Button type="button" size="sm" variant="outline" onClick={() => setEditing(false)}>
             Cancelar
           </Button>
         </div>
@@ -643,35 +805,27 @@ function ClinicalProfileCard({
   }
 
   return (
-    <div className="rounded-lg border border-rose-200 bg-rose-50/40 p-4">
+    <div className="rounded-lg border border-amber-200 bg-amber-50/40 p-4">
       <div className="flex items-start justify-between gap-2">
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-rose-900">
-            ⚠ Alergias y antecedentes
-          </p>
+        <div className="space-y-2 flex-1">
+          <p className="text-sm font-medium text-amber-900">Antecedentes del paciente</p>
           {hasData ? (
-            <dl className="space-y-1 text-sm">
-              {profile?.allergies && (
+            <dl className="space-y-1.5 text-sm">
+              {showPersonales && personalesText && (
                 <div>
-                  <dt className="inline font-medium text-slate-600">Alergias: </dt>
-                  <dd className="inline whitespace-pre-wrap text-slate-700">
-                    {profile.allergies}
-                  </dd>
+                  <dt className="text-xs font-medium text-slate-500 uppercase tracking-wide">Personales</dt>
+                  <dd className="whitespace-pre-wrap text-slate-700">{personalesText}</dd>
                 </div>
               )}
-              {profile?.medical_history && (
+              {showFamiliares && familiaresText && (
                 <div>
-                  <dt className="inline font-medium text-slate-600">
-                    Antecedentes:{" "}
-                  </dt>
-                  <dd className="inline whitespace-pre-wrap text-slate-700">
-                    {profile.medical_history}
-                  </dd>
+                  <dt className="text-xs font-medium text-slate-500 uppercase tracking-wide">Familiares</dt>
+                  <dd className="whitespace-pre-wrap text-slate-700">{familiaresText}</dd>
                 </div>
               )}
             </dl>
           ) : (
-            <p className="text-sm text-slate-400">Sin datos cargados.</p>
+            <p className="text-sm text-slate-400">Sin antecedentes cargados.</p>
           )}
         </div>
         {canEdit && (
@@ -689,11 +843,11 @@ function ClinicalProfileCard({
 function StructuredDataView({ data }: { data: NoteStructuredData }) {
   const vitals = data.vitals ?? {};
   const vitalEntries = VITAL_DEFS.filter((v) => vitals[v.key]);
+  const examEntries = Object.entries(data.examen_fisico ?? {}).filter(([, v]) => v);
   const hasAny =
-    data.motivo ||
-    data.diagnostico ||
-    data.indicaciones ||
-    vitalEntries.length > 0;
+    data.motivo || data.enfermedad_actual || data.diagnostico ||
+    data.indicaciones || data.fecha_control ||
+    vitalEntries.length > 0 || examEntries.length > 0;
   if (!hasAny) return null;
 
   return (
@@ -702,6 +856,12 @@ function StructuredDataView({ data }: { data: NoteStructuredData }) {
         <p>
           <span className="font-medium text-slate-600">Motivo: </span>
           <span className="text-slate-700">{data.motivo}</span>
+        </p>
+      )}
+      {data.enfermedad_actual && (
+        <p>
+          <span className="font-medium text-slate-600">Enfermedad actual: </span>
+          <span className="whitespace-pre-wrap text-slate-700">{data.enfermedad_actual}</span>
         </p>
       )}
       {vitalEntries.length > 0 && (
@@ -717,20 +877,36 @@ function StructuredDataView({ data }: { data: NoteStructuredData }) {
           ))}
         </div>
       )}
+      {examEntries.length > 0 && (
+        <div className="space-y-0.5">
+          <p className="font-medium text-slate-600">Examen físico:</p>
+          {examEntries.map(([key, val]) => {
+            const def = EXAM_FISICO_SISTEMAS.find((s) => s.key === key);
+            return (
+              <p key={key} className="text-slate-700">
+                <span className="font-medium text-slate-500">{def?.label ?? key}: </span>
+                {val}
+              </p>
+            );
+          })}
+        </div>
+      )}
       {data.diagnostico && (
         <p>
-          <span className="font-medium text-slate-600">Diagnóstico: </span>
-          <span className="whitespace-pre-wrap text-slate-700">
-            {data.diagnostico}
-          </span>
+          <span className="font-medium text-slate-600">Impresión dx: </span>
+          <span className="whitespace-pre-wrap text-slate-700">{data.diagnostico}</span>
         </p>
       )}
       {data.indicaciones && (
         <p>
           <span className="font-medium text-slate-600">Indicaciones: </span>
-          <span className="whitespace-pre-wrap text-slate-700">
-            {data.indicaciones}
-          </span>
+          <span className="whitespace-pre-wrap text-slate-700">{data.indicaciones}</span>
+        </p>
+      )}
+      {data.fecha_control && (
+        <p>
+          <span className="font-medium text-slate-600">Control: </span>
+          <span className="text-slate-700">{data.fecha_control}</span>
         </p>
       )}
     </div>
@@ -909,7 +1085,9 @@ export function PatientTabs({
     if (next !== "historia") setNoteSearch("");
   }
   const canCreateNote = role === "admin" || role === "doctor";
-  const showAllergies = isFieldEnabled(noteConfig, "alergias");
+  const showPersonales = isFieldEnabled(noteConfig, "antecedentes_personales");
+  const showFamiliares = isFieldEnabled(noteConfig, "antecedentes_familiares");
+  const showAntecedentes = canCreateNote && (showPersonales || showFamiliares);
 
   const filteredNotes = noteSearch.trim()
     ? notes.filter((n) => {
@@ -1009,11 +1187,13 @@ export function PatientTabs({
             />
           )}
 
-          {canCreateNote && showAllergies && (
+          {showAntecedentes && (
             <ClinicalProfileCard
               patientId={patientId}
               profile={clinicalProfile}
               canEdit={canCreateNote}
+              showPersonales={showPersonales}
+              showFamiliares={showFamiliares}
             />
           )}
 
@@ -1026,6 +1206,7 @@ export function PatientTabs({
               patientId={patientId}
               treatments={treatments}
               config={noteConfig}
+              clinicalProfile={clinicalProfile}
               mode="create"
               onClose={() => setShowForm(false)}
             />
@@ -1057,6 +1238,7 @@ export function PatientTabs({
                       patientId={patientId}
                       treatments={treatments}
                       config={noteConfig}
+                      clinicalProfile={clinicalProfile}
                       mode="edit"
                       note={note}
                       onClose={() => setEditingNoteId(null)}

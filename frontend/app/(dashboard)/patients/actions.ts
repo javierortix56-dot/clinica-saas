@@ -78,16 +78,27 @@ function sanitizeFileName(name: string): string {
 
 const VITAL_KEYS = ["ta", "fc", "fr", "temp", "peso", "talla", "sato2"];
 
+const EXAM_FISICO_KEYS = [
+  "general", "piel", "cabeza_cuello", "cardiovascular", "respiratorio",
+  "abdomen", "genitourinario", "neurologico", "musculoesqueletico",
+  "oftalmologico", "orl",
+];
+
 // Arma el objeto structured_data desde el form, descartando campos vacíos.
-// El formulario solo envía los campos que el profesional tiene activos.
 function parseStructuredData(formData: FormData): Record<string, unknown> {
   const structured: Record<string, unknown> = {};
+
   const motivo = (formData.get("motivo") as string | null)?.trim();
+  const enfermedadActual = (formData.get("enfermedad_actual") as string | null)?.trim();
   const diagnostico = (formData.get("diagnostico") as string | null)?.trim();
   const indicaciones = (formData.get("indicaciones") as string | null)?.trim();
+  const fechaControl = (formData.get("fecha_control") as string | null)?.trim();
+
   if (motivo) structured.motivo = motivo;
+  if (enfermedadActual) structured.enfermedad_actual = enfermedadActual;
   if (diagnostico) structured.diagnostico = diagnostico;
   if (indicaciones) structured.indicaciones = indicaciones;
+  if (fechaControl) structured.fecha_control = fechaControl;
 
   const vitals: Record<string, string> = {};
   for (const k of VITAL_KEYS) {
@@ -95,6 +106,14 @@ function parseStructuredData(formData: FormData): Record<string, unknown> {
     if (v) vitals[k] = v;
   }
   if (Object.keys(vitals).length > 0) structured.vitals = vitals;
+
+  const examFisico: Record<string, string> = {};
+  for (const k of EXAM_FISICO_KEYS) {
+    const v = (formData.get(`examen_fisico_${k}`) as string | null)?.trim();
+    if (v) examFisico[k] = v;
+  }
+  if (Object.keys(examFisico).length > 0) structured.examen_fisico = examFisico;
+
   return structured;
 }
 
@@ -342,11 +361,11 @@ export async function updatePatientClinicalProfile(
   const patient_id = formData.get("patient_id") as string;
   if (!patient_id) return { error: "Falta el paciente." };
 
-  const allergies = (formData.get("allergies") as string | null)?.trim() || null;
   const medical_history =
     (formData.get("medical_history") as string | null)?.trim() || null;
+  const antecedentes_familiares =
+    (formData.get("antecedentes_familiares") as string | null)?.trim() || null;
 
-  // professional_id del autor (para updated_by) y clinic_id del JWT.
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -366,8 +385,8 @@ export async function updatePatientClinicalProfile(
       {
         patient_id,
         clinic_id: clinicId,
-        allergies,
         medical_history,
+        antecedentes_familiares,
         updated_by: (prof as { id?: string } | null)?.id ?? null,
       },
       { onConflict: "patient_id" }
@@ -383,7 +402,7 @@ export async function updatePatientClinicalProfile(
 // Guarda qué campos clínicos ve el profesional logueado en su formulario de nota.
 // Es por profesional (resuelto del JWT) — cada especialidad arma su propio set.
 export async function updateNoteFieldConfig(
-  config: Record<string, boolean>
+  config: Record<string, boolean | Record<string, boolean>>
 ): Promise<{ error?: string }> {
   const supabase = createClient();
   const {
@@ -412,9 +431,10 @@ export async function updateNoteFieldConfig(
 export interface DictationResult {
   body: string;
   motivo?: string;
-  diagnostico?: string;
-  indicaciones?: string;
+  enfermedad_actual?: string;
   vitals?: Record<string, string>;
+  examen_fisico?: Record<string, string>;
+  indicaciones?: string;
 }
 
 // Recibe el audio dictado por el profesional (base64) y lo convierte en una nota
@@ -448,15 +468,24 @@ export async function transcribeNoteDictation(input: {
   const enabled = new Set(input.fields ?? []);
   const wants = (k: string) => enabled.size === 0 || enabled.has(k);
 
+  // La impresión diagnóstica NUNCA se dicta: va por sugerencia IA separada
+  // que el médico confirma obligatoriamente. No se incluye en este prompt.
   const camposPedidos = [
-    "- body: el texto de la nota clínica redactado en prosa clara, en español (OBLIGATORIO).",
-    wants("motivo") ? "- motivo: motivo de consulta, si se menciona." : "",
-    wants("diagnostico") ? "- diagnostico: diagnóstico, si se menciona." : "",
-    wants("indicaciones")
-      ? "- indicaciones: indicaciones, plan o tratamiento, si se menciona."
+    "- body: texto de la nota clínica en prosa clara, en español (OBLIGATORIO).",
+    wants("motivo")
+      ? "- motivo: motivo de consulta en palabras del paciente, si se menciona."
+      : "",
+    wants("enfermedad_actual")
+      ? "- enfermedad_actual: síntomas, tiempo de evolución y estudios previos mencionados."
       : "",
     wants("vitals")
-      ? "- vitals: objeto con signos vitales mencionados { ta, fc, fr, temp, peso, talla, sato2 } como strings con unidad."
+      ? '- vitals: { ta, fc, fr, temp, peso, talla, sato2 } con unidad, solo los mencionados.'
+      : "",
+    wants("examen_fisico")
+      ? '- examen_fisico: objeto con hallazgos por sistema { general, piel, cabeza_cuello, cardiovascular, respiratorio, abdomen, genitourinario, neurologico, musculoesqueletico, oftalmologico, orl }, solo los mencionados.'
+      : "",
+    wants("indicaciones")
+      ? "- indicaciones: indicaciones, plan o tratamiento indicado, si se menciona."
       : "",
   ]
     .filter(Boolean)
@@ -464,13 +493,13 @@ export async function transcribeNoteDictation(input: {
 
   const prompt = [
     "Sos un asistente de transcripción clínica. El audio es el dictado de un",
-    "profesional de salud sobre una consulta. Transcribí lo dictado y organizalo",
-    "en un objeto JSON con estas claves (todas opcionales salvo body):",
+    "profesional de salud durante o después de una consulta médica.",
+    "Transcribí y organizá en un objeto JSON con estas claves (todas opcionales salvo body):",
     camposPedidos,
     "",
     "Reglas:",
     "- No inventes datos: si algo no se menciona, omití la clave.",
-    "- Corregí muletillas y errores obvios de dictado, sin cambiar el contenido clínico.",
+    "- Corregí muletillas y errores obvios de dictado, sin alterar el contenido clínico.",
     "- Respondé ÚNICAMENTE el JSON, sin texto adicional ni markdown.",
   ].join("\n");
 
@@ -655,6 +684,94 @@ export async function summarizePatientHistory(
 
     if (!summary) return { error: "La IA no devolvió un resumen." };
     return { summary };
+  } catch (err) {
+    return { error: `No se pudo contactar al servicio de IA: ${String(err)}` };
+  }
+}
+
+// ─── Sugerencia de diagnóstico con IA ─────────────────────────────────────────
+
+// Recibe el contenido parcial de la consulta y devuelve 3-5 posibles impresiones
+// diagnósticas. NO toma ni devuelve diagnóstico confirmado: eso lo hace el médico.
+// La impresión diagnóstica jamás se dicta (ver transcribeNoteDictation); este
+// endpoint es el único canal de IA para ese campo.
+export async function suggestDiagnosis(content: {
+  motivo?: string;
+  enfermedad_actual?: string;
+  vitals?: Record<string, string>;
+  examen_fisico?: Record<string, string>;
+  antecedentes?: string;
+  body?: string;
+}): Promise<{ suggestions?: string[]; error?: string }> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return { error: "Falta configurar GEMINI_API_KEY en el entorno." };
+
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Sesión expirada." };
+  const { data: prof } = await supabase
+    .from("professionals")
+    .select("id, staff_members!inner(auth_user_id)")
+    .eq("staff_members.auth_user_id", user.id)
+    .single();
+  if (!prof) return { error: "Solo profesionales pueden usar el asistente diagnóstico." };
+
+  const partes: string[] = [];
+  if (content.antecedentes) partes.push(`Antecedentes: ${content.antecedentes}`);
+  if (content.motivo) partes.push(`Motivo: ${content.motivo}`);
+  if (content.enfermedad_actual) partes.push(`Enfermedad actual: ${content.enfermedad_actual}`);
+  if (content.vitals && Object.keys(content.vitals).length > 0) {
+    const LABELS: Record<string, string> = { ta:"TA",fc:"FC",fr:"FR",temp:"Temp",peso:"Peso",talla:"Talla",sato2:"SatO2" };
+    partes.push(`Signos vitales: ${Object.entries(content.vitals).map(([k,v]) => `${LABELS[k]??k} ${v}`).join(", ")}`);
+  }
+  if (content.examen_fisico && Object.keys(content.examen_fisico).length > 0) {
+    const ef = Object.entries(content.examen_fisico).map(([k,v]) => `${k}: ${v}`).join("; ");
+    partes.push(`Examen físico: ${ef}`);
+  }
+  if (content.body) partes.push(`Nota: ${content.body}`);
+
+  if (partes.length === 0) return { error: "No hay contenido clínico para analizar." };
+
+  const prompt = [
+    "Sos un asistente clínico. A partir de los datos de la consulta, sugerí",
+    "entre 3 y 5 posibles impresiones diagnósticas ordenadas de mayor a menor probabilidad.",
+    "Devolvé un JSON con la clave 'suggestions' (array de strings en español).",
+    "Cada ítem: diagnóstico en 1 línea, conciso. No incluyas explicaciones largas.",
+    "No inventes datos. Si el cuadro es inespecífico, indicá diagnósticos diferenciales.",
+    "Respondé ÚNICAMENTE el JSON.",
+    "",
+    "Datos de la consulta:",
+    ...partes,
+  ].join("\n");
+
+  try {
+    const resp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: "application/json" },
+        }),
+      }
+    );
+    if (!resp.ok) return { error: `El servicio de IA respondió ${resp.status}.` };
+
+    const data = (await resp.json()) as GeminiResponse;
+    const raw = data.candidates?.[0]?.content?.parts?.map(p => p.text ?? "").join("").trim();
+    if (!raw) return { error: "La IA no devolvió sugerencias." };
+
+    let parsed: { suggestions?: string[] };
+    try {
+      parsed = JSON.parse(raw) as { suggestions?: string[] };
+    } catch {
+      const m = raw.match(/\{[\s\S]*\}/);
+      if (!m) return { error: "No se pudieron interpretar las sugerencias." };
+      parsed = JSON.parse(m[0]) as { suggestions?: string[] };
+    }
+    if (!parsed.suggestions?.length) return { error: "La IA no generó sugerencias." };
+    return { suggestions: parsed.suggestions };
   } catch (err) {
     return { error: `No se pudo contactar al servicio de IA: ${String(err)}` };
   }
