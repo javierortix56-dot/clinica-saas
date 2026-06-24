@@ -1,7 +1,8 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { createClient, getSessionAuth } from "@/lib/supabase/server";
+import { Sidebar } from "./Sidebar";
+import { Topbar } from "./Topbar";
 
 async function signOut() {
   "use server";
@@ -10,10 +11,10 @@ async function signOut() {
   redirect("/login");
 }
 
-const ROLE_BADGE: Record<string, { label: string; className: string }> = {
-  admin:     { label: "Admin",      className: "bg-slate-700 text-white" },
-  doctor:    { label: "Profesional", className: "bg-blue-600 text-white" },
-  reception: { label: "Recepción",  className: "bg-green-600 text-white" },
+const ROLE_LABEL: Record<string, string> = {
+  admin: "Administración",
+  doctor: "Profesional",
+  reception: "Recepción",
 };
 
 export default async function DashboardLayout({
@@ -31,87 +32,42 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
-  // Ambas lecturas dependen solo de `user`; corren en paralelo para no encadenar
-  // round-trips en cada navegación.
-  const [{ role, isOwner }, { data: sm }] = await Promise.all([
-    getSessionAuth(),
-    supabase
-      .from("staff_members")
-      .select("full_name")
-      .eq("auth_user_id", user.id)
-      .single(),
-  ]);
-  const displayName = sm?.full_name ?? user.email ?? "Usuario";
+  // Lecturas dependientes solo de `user`; corren en paralelo para no encadenar
+  // round-trips en cada navegación. El conteo de aprobaciones alimenta el badge
+  // del sidebar (solo cuenta, sin traer filas).
+  const [{ role, isOwner }, { data: sm }, { count: approvalsCount }] =
+    await Promise.all([
+      getSessionAuth(),
+      supabase
+        .from("staff_members")
+        .select("full_name")
+        .eq("auth_user_id", user.id)
+        .single(),
+      supabase
+        .from("appointments")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "proposed"),
+    ]);
 
-  const badge = role ? ROLE_BADGE[role] : null;
+  const displayName = sm?.full_name ?? user.email ?? "Usuario";
+  const roleLabel = role ? ROLE_LABEL[role] ?? "Usuario" : "Usuario";
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="border-b">
-        <nav className="mx-auto flex h-14 max-w-5xl items-center gap-6 px-4">
-          <span className="font-semibold">Clínica</span>
+    <div className="flex min-h-screen bg-background">
+      <Sidebar
+        displayName={displayName}
+        roleLabel={roleLabel}
+        isOwner={isOwner}
+        approvalsCount={approvalsCount ?? 0}
+        signOutAction={signOut}
+      />
 
-          {/* Todos los roles ven todos los links; /settings solo admin */}
-          <Link
-            href="/approvals"
-            className="text-sm text-muted-foreground hover:text-foreground"
-          >
-            Aprobaciones
-          </Link>
-          <Link
-            href="/calendar"
-            className="text-sm text-muted-foreground hover:text-foreground"
-          >
-            Calendario
-          </Link>
-          <Link
-            href="/patients"
-            className="text-sm text-muted-foreground hover:text-foreground"
-          >
-            Pacientes
-          </Link>
-          {/* Equipo y Ajustes: exclusivos del dueño de la clínica */}
-          {isOwner && (
-            <Link
-              href="/staff"
-              className="text-sm text-muted-foreground hover:text-foreground"
-            >
-              Equipo
-            </Link>
-          )}
-          {isOwner && (
-            <Link
-              href="/settings"
-              className="text-sm text-muted-foreground hover:text-foreground"
-            >
-              Ajustes
-            </Link>
-          )}
-
-          {/* Identidad del usuario logueado + cerrar sesión */}
-          <div className="ml-auto flex items-center gap-3">
-            <span className="text-sm text-slate-600 hidden sm:inline">{displayName}</span>
-            {badge && (
-              <span
-                className={`rounded px-2 py-0.5 text-xs font-medium ${badge.className}`}
-              >
-                {badge.label}
-              </span>
-            )}
-            <form action={signOut}>
-              <button
-                type="submit"
-                className="text-sm text-slate-400 hover:text-slate-700 transition-colors"
-              >
-                Cerrar sesión
-              </button>
-            </form>
-          </div>
-        </nav>
-      </header>
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">
-        {children}
-      </main>
+      <div className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
+        <Topbar />
+        <div className="flex-1 overflow-y-auto px-7 py-7">
+          <div className="animate-fade-up">{children}</div>
+        </div>
+      </div>
     </div>
   );
 }
