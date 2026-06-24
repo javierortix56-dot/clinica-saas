@@ -34,14 +34,14 @@ DECLARE
   v_uuid_recepcion   uuid := '<UUID_RECEPCION>';    -- UUID del usuario recepcion@test.com
 BEGIN
 
-  -- ── Admin ────────────────────────────────────────────────────────────────────
-  INSERT INTO public.staff_members (auth_user_id, clinic_id, role, full_name, email, is_active)
-  VALUES (v_uuid_admin, v_clinic_id, 'admin', 'Admin Test', 'admin@test.com', true)
+  -- ── Admin (dueño de prueba) ───────────────────────────────────────────────────
+  INSERT INTO public.staff_members (auth_user_id, clinic_id, role, full_name, email, is_active, is_owner)
+  VALUES (v_uuid_admin, v_clinic_id, 'admin', 'Admin Test', 'admin@test.com', true, true)
   ON CONFLICT (auth_user_id) DO NOTHING;
 
   -- ── Doctor ───────────────────────────────────────────────────────────────────
-  INSERT INTO public.staff_members (auth_user_id, clinic_id, role, full_name, email, is_active)
-  VALUES (v_uuid_doctor, v_clinic_id, 'doctor', 'Doctor Test', 'doctor@test.com', true)
+  INSERT INTO public.staff_members (auth_user_id, clinic_id, role, full_name, email, is_active, is_owner)
+  VALUES (v_uuid_doctor, v_clinic_id, 'doctor', 'Doctor Test', 'doctor@test.com', true, false)
   ON CONFLICT (auth_user_id) DO NOTHING;
 
   -- Fila en professionals requerida para que el doctor pueda crear notas clínicas.
@@ -50,8 +50,8 @@ BEGIN
   ON CONFLICT (staff_member_id) DO NOTHING;
 
   -- ── Recepción ────────────────────────────────────────────────────────────────
-  INSERT INTO public.staff_members (auth_user_id, clinic_id, role, full_name, email, is_active)
-  VALUES (v_uuid_recepcion, v_clinic_id, 'reception', 'Recepción Test', 'recepcion@test.com', true)
+  INSERT INTO public.staff_members (auth_user_id, clinic_id, role, full_name, email, is_active, is_owner)
+  VALUES (v_uuid_recepcion, v_clinic_id, 'reception', 'Recepción Test', 'recepcion@test.com', true, false)
   ON CONFLICT (auth_user_id) DO NOTHING;
 
 END $$;
