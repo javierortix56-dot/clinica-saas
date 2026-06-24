@@ -250,12 +250,14 @@ model appointments {
   professional_id   String             @db.Uuid
   start_at          DateTime           @db.Timestamptz(6)
   end_at            DateTime           @db.Timestamptz(6)
-  status            appointment_status @default(proposed)
-  origin            String             @default("staff")
-  google_event_id   String?
-  created_at        DateTime           @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime           @default(now()) @db.Timestamptz(6)
-  deleted_at        DateTime?          @db.Timestamptz(6)
+  status               appointment_status @default(proposed)
+  origin               String             @default("staff")
+  google_event_id      String?
+  reminder_24h_sent_at DateTime?          @db.Timestamptz(6)
+  reminder_4h_sent_at  DateTime?          @db.Timestamptz(6)
+  created_at           DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime           @default(now()) @db.Timestamptz(6)
+  deleted_at           DateTime?          @db.Timestamptz(6)
 
   clinics                   clinics                    @relation(fields: [clinic_id], references: [id])
   treatments                treatments?                @relation(fields: [treatment_id], references: [id])

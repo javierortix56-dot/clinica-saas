@@ -62,6 +62,23 @@ export class EnvironmentVariables {
   @IsNotEmpty()
   WHATSAPP_APP_SECRET!: string;
 
+  // --- Recordatorios de turnos (plantillas de Meta) ---
+  // Nombres de las Message Templates aprobadas en Meta para los recordatorios.
+  // Si quedan vacíos, el cron de recordatorios no envía nada (feature inerte).
+  @IsOptional()
+  @IsString()
+  WHATSAPP_REMINDER_TEMPLATE_24H?: string;
+
+  @IsOptional()
+  @IsString()
+  WHATSAPP_REMINDER_TEMPLATE_4H?: string;
+
+  // Código de idioma de las plantillas (ej. 'es_AR', 'es'). Debe coincidir
+  // EXACTO con el idioma con el que se aprobó la plantilla en Meta.
+  @IsOptional()
+  @IsString()
+  WHATSAPP_REMINDER_TEMPLATE_LANG?: string;
+
   // --- LLM ---
   @IsEnum(LlmProvider)
   LLM_PROVIDER: LlmProvider = LlmProvider.Gemini;

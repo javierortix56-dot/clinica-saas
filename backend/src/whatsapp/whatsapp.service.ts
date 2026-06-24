@@ -46,13 +46,51 @@ export class WhatsappService {
     });
   }
 
+  /**
+   * Envía una plantilla pre-aprobada (Message Template) a un número. Necesario
+   * para mensajes proactivos FUERA de la ventana de 24h (p. ej. recordatorios):
+   * Meta solo permite iniciar conversación con plantillas aprobadas.
+   *
+   * `bodyParams` son los valores posicionales {{1}}, {{2}}, ... del cuerpo de la
+   * plantilla, en orden. `phoneNumberId` permite enviar desde el número de la
+   * clínica correspondiente (multi-clínica); si se omite usa el global.
+   */
+  async sendTemplate(
+    to: string,
+    templateName: string,
+    languageCode: string,
+    bodyParams: string[],
+    phoneNumberId?: string,
+  ): Promise<WhatsappSendResult> {
+    return this.sendMessage(
+      {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: 'template',
+        template: {
+          name: templateName,
+          language: { code: languageCode },
+          components: [
+            {
+              type: 'body',
+              parameters: bodyParams.map((text) => ({ type: 'text', text })),
+            },
+          ],
+        },
+      },
+      phoneNumberId,
+    );
+  }
+
   /** Envía un payload arbitrario al endpoint /messages de la Cloud API. */
   async sendMessage(
     payload: Record<string, unknown>,
+    phoneNumberIdOverride?: string,
   ): Promise<WhatsappSendResult> {
-    const phoneNumberId = this.config.getOrThrow<string>(
-      'WHATSAPP_PHONE_NUMBER_ID',
-    );
+    const phoneNumberId =
+      phoneNumberIdOverride ??
+      this.config.getOrThrow<string>('WHATSAPP_PHONE_NUMBER_ID');
     const token = this.config.getOrThrow<string>('WHATSAPP_ACCESS_TOKEN');
     const url = `${GRAPH_API_BASE}/${GRAPH_API_VERSION}/${phoneNumberId}/messages`;
 
