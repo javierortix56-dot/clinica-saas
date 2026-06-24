@@ -77,7 +77,18 @@ export default async function PatientDetailPage({
           </div>
           <div>
             <dt className="text-sm font-medium text-muted-foreground">Email</dt>
-            <dd className="mt-1 text-sm">{patient.email ?? "—"}</dd>
+            <dd className="mt-1 flex flex-wrap items-center gap-2 text-sm">
+              <span>{patient.email ?? "—"}</span>
+              {patient.email ? (
+                <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
+                  Portal activo
+                </span>
+              ) : (
+                <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
+                  Sin acceso al portal
+                </span>
+              )}
+            </dd>
           </div>
           <div>
             <dt className="text-sm font-medium text-muted-foreground">Fecha de alta</dt>
