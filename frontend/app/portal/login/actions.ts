@@ -22,13 +22,20 @@ export async function requestOtp(
     .from("patients")
     .select("email")
     .eq("national_id", trimmed)
-    .not("email", "is", null)
+    .order("email", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: true })
     .limit(1)
-    .single();
+    .maybeSingle();
 
-  if (error || !data?.email) {
-    return { error: "DNI no encontrado o sin email registrado." };
+  if (error || !data) {
+    return { error: "No encontramos ese DNI. Revisá el número o contactá a la clínica." };
+  }
+
+  if (!data.email) {
+    return {
+      error:
+        "Tu DNI está registrado pero no tenés un email asociado. Contactá a la clínica para activar tu acceso.",
+    };
   }
 
   const email = data.email as string;

@@ -21,6 +21,7 @@ function Field({
   defaultValue,
   required,
   placeholder,
+  hint,
 }: {
   label: string;
   name: string;
@@ -28,6 +29,7 @@ function Field({
   defaultValue?: string | null;
   required?: boolean;
   placeholder?: string;
+  hint?: string;
 }) {
   return (
     <div className="space-y-1">
@@ -43,6 +45,7 @@ function Field({
         placeholder={placeholder}
         className="block w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none"
       />
+      {hint && <p className="text-xs text-slate-400">{hint}</p>}
     </div>
   );
 }
@@ -110,6 +113,7 @@ export function PatientSheet({
             type="email"
             defaultValue={patient?.email}
             placeholder="paciente@email.com"
+            hint="Necesario para que el paciente acceda al Portal del Paciente."
           />
           <Button type="submit" className="w-full" disabled={isPending}>
             {isPending ? "Guardando…" : patient ? "Guardar cambios" : "Crear paciente"}
