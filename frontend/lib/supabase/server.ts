@@ -435,6 +435,13 @@ export interface ClinicalAttachment {
   signed_url: string | null;
 }
 
+export interface NoteStructuredData {
+  motivo?: string;
+  vitals?: Record<string, string>;
+  diagnostico?: string;
+  indicaciones?: string;
+}
+
 export interface ClinicalNote {
   id: string;
   note_type: string;
@@ -442,6 +449,7 @@ export interface ClinicalNote {
   created_at: string;
   author_name: string | null;
   treatment_name: string | null;
+  structured_data: NoteStructuredData;
   attachments: ClinicalAttachment[];
 }
 
@@ -450,6 +458,7 @@ interface ClinicalNoteRow {
   note_type: string;
   body: string;
   created_at: string;
+  structured_data: NoteStructuredData | null;
   professionals: { staff_members: { full_name: string } | null } | null;
   treatments: { treatment_types: { name: string } | null } | null;
   clinical_note_attachments:
@@ -471,7 +480,7 @@ export async function getClinicalNotes(patientId: string): Promise<ClinicalNote[
   const { data, error } = await supabase
     .from("clinical_notes")
     .select(
-      `id, note_type, body, created_at,
+      `id, note_type, body, created_at, structured_data,
        professionals ( staff_members ( full_name ) ),
        treatments ( treatment_types ( name ) ),
        clinical_note_attachments ( id, file_name, mime_type, size_bytes, storage_path )`
@@ -506,6 +515,7 @@ export async function getClinicalNotes(patientId: string): Promise<ClinicalNote[
     created_at: row.created_at,
     author_name: row.professionals?.staff_members?.full_name ?? null,
     treatment_name: row.treatments?.treatment_types?.name ?? null,
+    structured_data: row.structured_data ?? {},
     attachments: (row.clinical_note_attachments ?? []).map((a) => ({
       id: a.id,
       file_name: a.file_name,
@@ -515,6 +525,51 @@ export async function getClinicalNotes(patientId: string): Promise<ClinicalNote[
       signed_url: signedByPath.get(a.storage_path) ?? null,
     })),
   }));
+}
+
+// Perfil clínico del paciente (alergias + antecedentes). RLS: solo admin/doctor.
+// Recepción no tiene policy sobre patient_clinical_profile -> recibe null.
+export interface PatientClinicalProfile {
+  allergies: string | null;
+  medical_history: string | null;
+}
+
+export async function getPatientClinicalProfile(
+  patientId: string
+): Promise<PatientClinicalProfile | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("patient_clinical_profile")
+    .select("allergies, medical_history")
+    .eq("patient_id", patientId)
+    .maybeSingle();
+  // Si RLS lo oculta (recepción) o no existe fila aún, devolvemos null.
+  if (error) return null;
+  return (data as PatientClinicalProfile | null) ?? null;
+}
+
+// Config de campos clínicos del profesional logueado (qué campos ve en la nota).
+// Se resuelve desde el JWT (auth_user_id) -> professionals.note_field_config.
+// {} = todos activos. null si el usuario no es profesional (no crea notas).
+export async function getProfessionalNoteConfig(): Promise<Record<
+  string,
+  boolean
+> | null> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data } = await supabase
+    .from("professionals")
+    .select("note_field_config, staff_members!inner(auth_user_id)")
+    .eq("staff_members.auth_user_id", user.id)
+    .maybeSingle();
+
+  const cfg = (data as { note_field_config?: Record<string, boolean> } | null)
+    ?.note_field_config;
+  return cfg ?? {};
 }
 
 export interface PatientTreatment {
