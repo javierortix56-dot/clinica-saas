@@ -4,6 +4,7 @@ import {
   HttpCode,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   UseGuards,
   ValidationPipe,
@@ -18,6 +19,7 @@ import {
   ConfirmAppointmentResult,
 } from './appointments.service';
 import { CreateManualAppointmentDto } from './dto/create-manual-appointment.dto';
+import { UpdateAppointmentStatusDto } from './dto/update-appointment-status.dto';
 
 /**
  * Endpoints de escritura de turnos para el staff. Protegidos por JWT de
@@ -60,9 +62,25 @@ export class AppointmentsController {
    * Alta manual de turno (recepción/admin). Inserta como confirmado y sincroniza
    * con Google Calendar. Reemplaza el INSERT directo a Supabase del frontend.
    */
+  /**
+   * Actualiza el estado de un turno (in_progress, completed, no_show).
+   * Admin, reception y doctor pueden marcar la evolución del turno.
+   */
+  @Patch(':id/status')
+  @HttpCode(200)
+  @Roles('admin', 'reception', 'doctor')
+  updateStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    dto: UpdateAppointmentStatusDto,
+    @CurrentUser() user: AuthUser,
+  ): Promise<ConfirmAppointmentResult> {
+    return this.appointments.updateStatus(id, dto.status, user);
+  }
+
   @Post('manual')
   @HttpCode(201)
-  @Roles('admin', 'reception')
+  @Roles('admin', 'reception', 'doctor')
   createManual(
     @Body(new ValidationPipe({ transform: true, whitelist: true }))
     dto: CreateManualAppointmentDto,

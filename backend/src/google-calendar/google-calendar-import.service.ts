@@ -172,26 +172,28 @@ export class GoogleCalendarImportService {
       select: { id: true, google_event_id: true },
     });
 
-    for (const appt of appts) {
-      try {
-        const eventRes = await cal.events.get({
-          calendarId: link.target_calendar_id!,
-          eventId: appt.google_event_id!,
-        });
-        if (eventRes.data.status === 'cancelled') {
-          await this.cancelFromGCal(appt.id);
+    await Promise.allSettled(
+      appts.map(async (appt) => {
+        try {
+          const eventRes = await cal.events.get({
+            calendarId: link.target_calendar_id!,
+            eventId: appt.google_event_id!,
+          });
+          if (eventRes.data.status === 'cancelled') {
+            await this.cancelFromGCal(appt.id);
+          }
+        } catch (err) {
+          const status = (err as GaxiosError)?.response?.status;
+          if (status === 404 || status === 410) {
+            await this.cancelFromGCal(appt.id);
+          } else {
+            this.logger.warn(
+              `No se pudo verificar evento ${appt.google_event_id} en GCal: ${String(err)}`,
+            );
+          }
         }
-      } catch (err) {
-        const status = (err as GaxiosError)?.response?.status;
-        if (status === 404 || status === 410) {
-          await this.cancelFromGCal(appt.id);
-        } else {
-          this.logger.warn(
-            `No se pudo verificar evento ${appt.google_event_id} en GCal: ${String(err)}`,
-          );
-        }
-      }
-    }
+      }),
+    );
   }
 
   /** Cancela un turno que fue eliminado desde Google Calendar. */

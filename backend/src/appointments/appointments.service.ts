@@ -256,6 +256,60 @@ export class AppointmentsService {
     return this.toResult(appt);
   }
 
+  /**
+   * Actualiza el estado de un turno a in_progress, completed o no_show.
+   * Transiciones válidas: confirmed → in_progress | no_show; in_progress → completed.
+   * Filtrado por clinic_id del JWT para aislamiento de tenant.
+   */
+  async updateStatus(
+    appointmentId: string,
+    status: 'in_progress' | 'completed' | 'no_show',
+    user: AuthUser,
+  ): Promise<ConfirmAppointmentResult> {
+    const appt = await this.prisma.appointments.findFirst({
+      where: { id: appointmentId, clinic_id: user.clinicId, deleted_at: null },
+      select: SELECT,
+    });
+    if (!appt) {
+      throw new NotFoundException('Turno no encontrado.');
+    }
+
+    const valid: Record<string, string[]> = {
+      confirmed: ['in_progress', 'no_show'],
+      in_progress: ['completed'],
+    };
+    if (!valid[appt.status]?.includes(status)) {
+      throw new ConflictException(
+        `No se puede pasar de "${appt.status}" a "${status}".`,
+      );
+    }
+
+    try {
+      await this.prisma.runAsActor(
+        { actorId: user.userId, source: ActorSource.Staff },
+        (tx) =>
+          tx.appointments.updateMany({
+            where: {
+              id: appointmentId,
+              clinic_id: user.clinicId,
+              status: appt.status,
+              deleted_at: null,
+            },
+            data: { status },
+          }),
+      );
+    } catch (err) {
+      throw this.mapManualWriteError(err);
+    }
+
+    const after = await this.prisma.appointments.findFirstOrThrow({
+      where: { id: appointmentId, clinic_id: user.clinicId },
+      select: SELECT,
+    });
+
+    return this.toResult(after);
+  }
+
   private toResult(appt: {
     id: string;
     status: string;

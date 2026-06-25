@@ -1399,7 +1399,7 @@ export function PatientTabs({
     if (next !== "historia") setNoteSearch("");
   }
   const canCreateNote = role === "admin" || role === "doctor";
-  const canScheduleAppointment = role === "admin" || role === "reception";
+  const canScheduleAppointment = role === "admin" || role === "reception" || role === "doctor";
   const showPersonales = isFieldEnabled(noteConfig, "antecedentes_personales");
   const showFamiliares = isFieldEnabled(noteConfig, "antecedentes_familiares");
   const showAntecedentes = canCreateNote && (showPersonales || showFamiliares);

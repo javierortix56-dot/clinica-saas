@@ -42,7 +42,7 @@ export default async function CalendarPage({
     : currentMonday;
 
   const { role } = await getSessionAuth();
-  const canCreateAppointment = role === "admin" || role === "reception";
+  const canCreateAppointment = role === "admin" || role === "reception" || role === "doctor";
 
   const [appointments, patients, professionals] = await Promise.all([
     getWeeklyAppointments(displayedMonday),
