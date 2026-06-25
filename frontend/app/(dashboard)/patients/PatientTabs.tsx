@@ -1446,20 +1446,26 @@ export function PatientTabs({
               {appointments.map((appt) => (
                 <div
                   key={appt.id}
-                  className="flex flex-col gap-2 border-b border-slate-100 px-4 py-[14px] last:border-0 sm:grid sm:grid-cols-[1.4fr_1.2fr_1.6fr_1fr] sm:items-center sm:gap-0 sm:px-[22px] sm:py-[15px]"
+                  className="flex flex-col gap-[3px] border-b border-slate-100 px-4 py-[11px] last:border-0 sm:grid sm:grid-cols-[1.4fr_1.2fr_1.6fr_1fr] sm:items-center sm:gap-0 sm:px-[22px] sm:py-[15px]"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <div className="text-[14px] font-bold text-foreground">
+                    <div className="text-[13.5px] font-bold text-foreground sm:text-[14px]">
                       {dateTimeFormatter.format(new Date(appt.start_at))}
                     </div>
                     <div className="sm:hidden">
                       <ApptStatusBadge status={appt.status} />
                     </div>
                   </div>
-                  <div className="text-[13.5px] font-medium text-slate-600">
+                  {/* Móvil: profesional · tratamiento en una sola línea */}
+                  <div className="text-[12.5px] font-medium text-slate-500 sm:hidden">
+                    {appt.professional_name ?? "—"}
+                    {appt.treatment_label ? ` · ${appt.treatment_label}` : ""}
+                  </div>
+                  {/* Desktop: columnas separadas */}
+                  <div className="hidden text-[13.5px] font-medium text-slate-600 sm:block">
                     {appt.professional_name ?? "—"}
                   </div>
-                  <div className="text-[13.5px] font-medium text-slate-600">
+                  <div className="hidden text-[13.5px] font-medium text-slate-600 sm:block">
                     {appt.treatment_label ?? "—"}
                   </div>
                   <div className="hidden sm:block">
