@@ -90,54 +90,72 @@ function ApprovalCard({
   const name = appt.patient?.full_name ?? "—";
   const start = new Date(appt.start_at);
 
+  const via = viaLabel(appt.origin);
+
   return (
-    <div className="flex items-center gap-[18px] rounded-card border border-border bg-white px-5 py-4 shadow-card-soft">
-      <span
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[14px] font-bold text-white"
-        style={{ background: AVATAR_COLORS[colorIndex % AVATAR_COLORS.length] }}
-      >
-        {initialsOf(name)}
-      </span>
-
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-[10px]">
-          <span className="text-[15px] font-bold text-foreground">{name}</span>
-          <span className="font-mono text-[12px] text-slate-400">
-            {appt.patient_national_id ?? "—"}
+    <div className="rounded-card border border-border bg-white px-4 py-[14px] shadow-card-soft sm:px-5 sm:py-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-[18px]">
+        {/* Avatar + datos */}
+        <div className="flex min-w-0 items-start gap-3 sm:flex-1 sm:items-center">
+          <span
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[13.5px] font-bold text-white sm:h-11 sm:w-11 sm:text-[14px]"
+            style={{ background: AVATAR_COLORS[colorIndex % AVATAR_COLORS.length] }}
+          >
+            {initialsOf(name)}
           </span>
-        </div>
-        <div className="mt-2 flex flex-wrap items-center gap-[7px] text-[13px] font-medium text-muted-foreground">
-          <Calendar className="h-[14px] w-[14px] text-slate-400" strokeWidth={1.9} />
-          {dateFormatter.format(start)} · {timeFormatter.format(start)}
-          <span className="h-1 w-1 rounded-full bg-slate-300" />
-          {appt.phase_name ?? appt.treatment_type ?? "Consulta"}
-          <span className="h-1 w-1 rounded-full bg-slate-300" />
-          {appt.professional?.full_name ?? "—"}
-        </div>
-      </div>
 
-      <span className="inline-flex items-center gap-[6px] rounded-full border border-border bg-slate-50 px-[11px] py-[5px] text-[12px] font-semibold text-muted-foreground">
-        <Clock className="h-3 w-3" strokeWidth={2} />
-        {viaLabel(appt.origin)}
-      </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-[10px] gap-y-[2px]">
+              <span className="text-[14.5px] font-bold text-foreground sm:text-[15px]">
+                {name}
+              </span>
+              <span className="font-mono text-[12px] text-slate-400">
+                {appt.patient_national_id ?? "—"}
+              </span>
+              {/* Chip de vía — inline en móvil */}
+              <span className="inline-flex items-center gap-[5px] rounded-full border border-border bg-slate-50 px-[9px] py-[3px] text-[11px] font-semibold text-muted-foreground sm:hidden">
+                <Clock className="h-[11px] w-[11px]" strokeWidth={2} />
+                {via}
+              </span>
+            </div>
+            <div className="mt-[6px] flex flex-wrap items-center gap-x-[7px] gap-y-[3px] text-[12.5px] font-medium text-muted-foreground sm:mt-2 sm:text-[13px]">
+              <Calendar className="h-[14px] w-[14px] text-slate-400" strokeWidth={1.9} />
+              <span className="whitespace-nowrap">
+                {dateFormatter.format(start)} · {timeFormatter.format(start)}
+              </span>
+              <span className="h-1 w-1 rounded-full bg-slate-300" />
+              {appt.phase_name ?? appt.treatment_type ?? "Consulta"}
+              <span className="h-1 w-1 rounded-full bg-slate-300" />
+              {appt.professional?.full_name ?? "—"}
+            </div>
+          </div>
+        </div>
 
-      <div className="flex gap-[9px]">
-        <button
-          onClick={handleReject}
-          disabled={busy}
-          className="flex items-center gap-[6px] rounded-[10px] border border-border bg-white px-[14px] py-[9px] text-[13px] font-bold text-[#be123c] transition hover:border-[#fecdd3] hover:bg-[#fff1f2] disabled:opacity-50"
-        >
-          <X className="h-[14px] w-[14px]" strokeWidth={2.2} />
-          {isRejecting ? "…" : "Rechazar"}
-        </button>
-        <button
-          onClick={handleConfirm}
-          disabled={busy}
-          className="flex items-center gap-[6px] rounded-[10px] bg-[#059669] px-4 py-[9px] text-[13px] font-bold text-white shadow-[0_4px_12px_rgba(5,150,105,.25)] transition hover:brightness-[1.06] disabled:opacity-50"
-        >
-          <Check className="h-[14px] w-[14px]" strokeWidth={2.4} />
-          {isConfirming ? "…" : "Aprobar"}
-        </button>
+        {/* Chip de vía — columna propia en desktop */}
+        <span className="hidden shrink-0 items-center gap-[6px] rounded-full border border-border bg-slate-50 px-[11px] py-[5px] text-[12px] font-semibold text-muted-foreground sm:inline-flex">
+          <Clock className="h-3 w-3" strokeWidth={2} />
+          {via}
+        </span>
+
+        {/* Acciones — full width en móvil, auto en desktop */}
+        <div className="flex gap-[9px]">
+          <button
+            onClick={handleReject}
+            disabled={busy}
+            className="flex flex-1 items-center justify-center gap-[6px] rounded-[10px] border border-border bg-white px-[14px] py-[9px] text-[13px] font-bold text-[#be123c] transition hover:border-[#fecdd3] hover:bg-[#fff1f2] disabled:opacity-50 sm:flex-none"
+          >
+            <X className="h-[14px] w-[14px]" strokeWidth={2.2} />
+            {isRejecting ? "…" : "Rechazar"}
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={busy}
+            className="flex flex-1 items-center justify-center gap-[6px] rounded-[10px] bg-[#059669] px-4 py-[9px] text-[13px] font-bold text-white shadow-[0_4px_12px_rgba(5,150,105,.25)] transition hover:brightness-[1.06] disabled:opacity-50 sm:flex-none"
+          >
+            <Check className="h-[14px] w-[14px]" strokeWidth={2.4} />
+            {isConfirming ? "…" : "Aprobar"}
+          </button>
+        </div>
       </div>
     </div>
   );
