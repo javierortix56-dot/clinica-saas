@@ -32,11 +32,11 @@ export class AppointmentsController {
   constructor(private readonly appointments: AppointmentsService) {}
 
   /**
-   * Confirma un turno propuesto. Solo admin y reception. Idempotente.
+   * Confirma un turno propuesto. Admin, reception y doctor. Idempotente.
    */
   @Post(':id/confirm')
   @HttpCode(200)
-  @Roles('admin', 'reception')
+  @Roles('admin', 'reception', 'doctor')
   confirm(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthUser,
@@ -45,12 +45,12 @@ export class AppointmentsController {
   }
 
   /**
-   * Cancela un turno. Solo admin y reception. Idempotente. Elimina el evento
+   * Cancela un turno. Admin, reception y doctor. Idempotente. Elimina el evento
    * espejo del Google Calendar del profesional si estaba sincronizado.
    */
   @Post(':id/cancel')
   @HttpCode(200)
-  @Roles('admin', 'reception')
+  @Roles('admin', 'reception', 'doctor')
   cancel(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthUser,
