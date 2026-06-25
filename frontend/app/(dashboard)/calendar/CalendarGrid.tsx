@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 
 import type { WeeklyAppointment, ProfessionalForScheduling } from "@/lib/supabase/server";
 import type { Patient } from "@clinica/shared";
@@ -13,6 +13,7 @@ import {
   formatDuration,
   formatSlot,
   formatTime,
+  isSameLocalDay,
   isToday,
   parseISODate,
 } from "./grid-utils";
@@ -61,6 +62,12 @@ export function CalendarGrid({
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const weekDays = weekDayStrs.map(parseISODate);
 
+  // Mobile: día seleccionado en el navegador de día, centrado en hoy si aplica.
+  const [mobileDayIdx, setMobileDayIdx] = useState(() => {
+    const todayIdx = weekDays.findIndex((d) => isToday(d));
+    return todayIdx >= 0 ? todayIdx : 0;
+  });
+
   // Apertura desde "Generar turno" en la historia clínica:
   // /calendar?nuevo=1&paciente=<id>&fecha=<YYYY-MM-DD>. Precarga el alta manual.
   useEffect(() => {
@@ -100,9 +107,19 @@ export function CalendarGrid({
     (a) => !a.professional_name || !hidden.has(a.professional_name)
   );
 
+  // Turnos del día seleccionado en mobile, ordenados por hora.
+  const mobileDayAppts = useMemo(
+    () =>
+      visibleAppts
+        .filter((a) => isSameLocalDay(a.start_at, weekDays[mobileDayIdx]))
+        .sort((a, b) => (a.start_at < b.start_at ? -1 : 1)),
+    [visibleAppts, mobileDayIdx, weekDays]
+  );
+
   return (
     <>
-      <div className="mb-[14px] flex flex-wrap items-center gap-2">
+      {/* Barra de filtros + Nuevo turno */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         {profNames.length > 0 && (
           <span className="mr-1 text-[11px] font-semibold uppercase tracking-[.06em] text-slate-400">
             Profesionales
@@ -116,23 +133,15 @@ export function CalendarGrid({
               key={name}
               type="button"
               onClick={() => toggleProf(name)}
-              className="flex items-center gap-[7px] rounded-full border px-[11px] py-[5px] text-[12.5px] font-semibold transition"
+              className="flex items-center gap-[6px] rounded-full border px-[10px] py-[4px] text-[12px] font-semibold transition"
               style={
                 off
-                  ? {
-                      borderColor: "#e2e8f0",
-                      background: "#fff",
-                      color: "#94a3b8",
-                    }
-                  : {
-                      borderColor: `${color}40`,
-                      background: `${color}14`,
-                      color,
-                    }
+                  ? { borderColor: "#e2e8f0", background: "#fff", color: "#94a3b8" }
+                  : { borderColor: `${color}40`, background: `${color}14`, color }
               }
             >
               <span
-                className="h-[7px] w-[7px] rounded-full"
+                className="h-[6px] w-[6px] rounded-full"
                 style={{ background: off ? "#cbd5e1" : color }}
               />
               {name}
@@ -143,15 +152,129 @@ export function CalendarGrid({
           <button
             type="button"
             onClick={() => { setPrefill({}); setNewApptOpen(true); }}
-            className="ml-auto flex items-center gap-[6px] rounded-[10px] bg-primary px-[13px] py-[8px] text-[12.5px] font-bold text-white shadow-[0_4px_12px_rgba(37,99,235,.3)] transition hover:brightness-[1.07]"
+            className="ml-auto flex items-center gap-[6px] rounded-[10px] bg-primary px-[12px] py-[7px] text-[12px] font-bold text-white shadow-[0_4px_12px_rgba(37,99,235,.3)] transition hover:brightness-[1.07] sm:px-[13px] sm:py-[8px] sm:text-[12.5px]"
           >
-            <Plus className="h-[14px] w-[14px]" strokeWidth={2.4} />
+            <Plus className="h-[13px] w-[13px]" strokeWidth={2.4} />
             Nuevo turno
           </button>
         )}
       </div>
 
-      <div className="overflow-hidden rounded-card border border-border bg-white shadow-card">
+      {/* ── Vista MOBILE: navegador de día + lista de turnos ───────────────── */}
+      <div className="md:hidden overflow-hidden rounded-card border border-border bg-white shadow-card">
+        {/* Selector de día */}
+        <div className="flex items-center border-b border-border bg-[#fbfcfe]">
+          <button
+            type="button"
+            onClick={() => setMobileDayIdx((i) => Math.max(0, i - 1))}
+            disabled={mobileDayIdx === 0}
+            className="flex h-10 w-9 shrink-0 items-center justify-center text-slate-400 transition hover:text-slate-700 disabled:opacity-30"
+            aria-label="Día anterior"
+          >
+            <ChevronLeft className="h-4 w-4" strokeWidth={2} />
+          </button>
+
+          <div className="flex flex-1 items-center justify-around px-1">
+            {weekDays.map((day, i) => {
+              const today = isToday(day);
+              const active = i === mobileDayIdx;
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setMobileDayIdx(i)}
+                  className={`flex flex-col items-center rounded-lg px-1.5 py-1.5 transition ${
+                    active ? "bg-primary/10" : "hover:bg-slate-50"
+                  }`}
+                >
+                  <span
+                    className={`text-[10px] font-semibold uppercase tracking-wide ${
+                      today ? "text-primary" : "text-slate-400"
+                    }`}
+                  >
+                    {DAY_LABELS[i].slice(0, 2)}
+                  </span>
+                  <span
+                    className={`mt-0.5 flex h-6 w-6 items-center justify-center rounded-full text-[13px] font-bold ${
+                      today && active
+                        ? "bg-primary text-white"
+                        : today
+                        ? "text-primary"
+                        : active
+                        ? "text-foreground"
+                        : "text-slate-400"
+                    }`}
+                  >
+                    {day.getDate()}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setMobileDayIdx((i) => Math.min(5, i + 1))}
+            disabled={mobileDayIdx === 5}
+            className="flex h-10 w-9 shrink-0 items-center justify-center text-slate-400 transition hover:text-slate-700 disabled:opacity-30"
+            aria-label="Día siguiente"
+          >
+            <ChevronRight className="h-4 w-4" strokeWidth={2} />
+          </button>
+        </div>
+
+        {/* Lista de turnos del día */}
+        {mobileDayAppts.length === 0 ? (
+          <div className="py-8 text-center text-[13px] font-medium text-slate-400">
+            {appointments.length === 0 || visibleAppts.length === 0
+              ? "Sin turnos este día."
+              : "Sin turnos visibles. Activá un profesional arriba."}
+          </div>
+        ) : (
+          <div className="divide-y divide-[#eef2f7]">
+            {mobileDayAppts.map((a) => {
+              const color = profColor(a.professional_name);
+              return (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => setSelectedId(a.id)}
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50 active:bg-slate-100"
+                >
+                  <div
+                    className="h-8 w-[3px] shrink-0 rounded-full"
+                    style={{ background: color }}
+                  />
+                  <div className="w-[52px] shrink-0 text-right">
+                    <div className="font-mono text-[12.5px] font-bold text-slate-700">
+                      {formatTime(a.start_at)}
+                    </div>
+                    <div className="text-[10px] text-slate-400">
+                      {formatDuration(a.start_at, a.end_at)}
+                    </div>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13.5px] font-semibold text-foreground">
+                      {a.patient_name}
+                    </div>
+                    {(a.treatment_label || a.professional_name) && (
+                      <div className="truncate text-[11px] text-slate-400">
+                        {[a.treatment_label, a.professional_name]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </div>
+                    )}
+                  </div>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── Vista DESKTOP: grilla semanal ──────────────────────────────────── */}
+      <div className="hidden md:block overflow-hidden rounded-card border border-border bg-white shadow-card">
         <div className="overflow-x-auto">
           <div
             className="grid min-w-[640px]"
@@ -206,7 +329,6 @@ export function CalendarGrid({
             {visibleAppts.length > 0 &&
               SLOTS.map((slot) => (
                 <React.Fragment key={`${slot.hour}-${slot.minute}`}>
-                  {/* Etiqueta de hora — solo en punto */}
                   <div
                     className={`border-b border-[#eef2f7] pr-2 text-right ${
                       slot.minute === 0 ? "pb-0 pt-[6px]" : "pb-[6px] pt-0"
@@ -219,7 +341,6 @@ export function CalendarGrid({
                     )}
                   </div>
 
-                  {/* Celdas por día */}
                   {weekDays.map((day, di) => {
                     const cellAppts = appointmentsForSlot(
                       visibleAppts,
@@ -270,8 +391,8 @@ export function CalendarGrid({
         </div>
       </div>
 
-      {/* Leyenda */}
-      <div className="mt-4 flex flex-wrap items-center gap-5">
+      {/* Leyenda (solo desktop) */}
+      <div className="mt-3 hidden flex-wrap items-center gap-5 md:flex">
         <div className="flex items-center gap-[7px] text-[12.5px] font-medium text-muted-foreground">
           <span className="h-[10px] w-[10px] rounded-[3px] border border-status-confirmado-border bg-status-confirmado-bg" />
           Confirmado

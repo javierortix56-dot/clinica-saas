@@ -76,21 +76,21 @@ export default async function CalendarPage({
 
   return (
     <div className="mx-auto max-w-[1240px]">
-      {/* Header */}
-      <div className="mb-[22px] flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-[27px] font-extrabold tracking-[-.02em]">
+      {/* Header — título + nav en la misma fila */}
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-[22px] font-extrabold tracking-[-.02em] sm:text-[27px]">
             Calendario
           </h1>
-          <p className="mt-[9px] text-[14px] font-medium text-muted-foreground">
+          <p className="mt-0.5 truncate text-[12px] font-medium text-muted-foreground sm:text-[14px]">
             {weekLabel}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           {!isCurrentWeek && (
             <Link
               href="/calendar"
-              className="rounded-[10px] border border-border bg-white px-[14px] py-[9px] text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50"
+              className="rounded-[10px] border border-border bg-white px-[12px] py-[7px] text-[12px] font-semibold text-slate-700 transition hover:bg-slate-50 sm:px-[14px] sm:py-[9px] sm:text-[13px]"
             >
               Hoy
             </Link>
@@ -114,59 +114,55 @@ export default async function CalendarPage({
         </div>
       </div>
 
-      {/* Resumen del día actual */}
-      <div className="mb-5 grid gap-4 sm:grid-cols-3">
-        <div className="rounded-card border border-border bg-white px-5 py-[18px] shadow-card-soft">
-          <div className="flex items-center gap-[9px] text-[11px] font-semibold uppercase tracking-[.06em] text-muted-foreground">
-            <span className="flex h-[26px] w-[26px] items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <CheckCircle2 className="h-[14px] w-[14px]" strokeWidth={2} />
-            </span>
-            Turnos hoy
-          </div>
-          <div className="my-[14px] text-[34px] font-extrabold leading-none tracking-[-.02em]">
-            {summary.todayCount}
-          </div>
-          <div className="text-[13px] font-medium text-slate-400">
-            confirmados
-          </div>
-        </div>
-
-        <div className="rounded-card border border-border bg-white px-5 py-[18px] shadow-card-soft">
-          <div className="flex items-center gap-[9px] text-[11px] font-semibold uppercase tracking-[.06em] text-muted-foreground">
-            <span className="flex h-[26px] w-[26px] items-center justify-center rounded-lg bg-orange-50 text-orange-600">
-              <Clock className="h-[14px] w-[14px]" strokeWidth={2} />
-            </span>
-            Próximo turno
-          </div>
-          {summary.next ? (
-            <>
-              <div className="my-[14px] truncate text-[19px] font-extrabold leading-tight">
-                {summary.next.patient_name}
-              </div>
-              <div className="text-[13px] font-medium text-slate-400">
-                {formatTime(summary.next.start_at)} ·{" "}
-                {summary.next.treatment_label ?? "—"}
-              </div>
-            </>
-          ) : (
-            <div className="my-[14px] text-[15px] font-medium text-slate-400">
-              Sin turnos pendientes
+      {/* Resumen compacto — barra horizontal única en lugar de 3 cards */}
+      <div className="mb-3 grid grid-cols-3 divide-x divide-border overflow-hidden rounded-card border border-border bg-white shadow-card-soft">
+        <div className="flex items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-5 sm:py-4">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <CheckCircle2 className="h-[14px] w-[14px]" strokeWidth={2} />
+          </span>
+          <div>
+            <div className="text-[20px] font-extrabold leading-none tracking-[-.02em] sm:text-[28px]">
+              {summary.todayCount}
             </div>
-          )}
+            <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-[.05em] text-slate-400 sm:text-[11px]">
+              Turnos hoy
+            </div>
+          </div>
         </div>
 
-        <div className="rounded-card border border-border bg-white px-5 py-[18px] shadow-card-soft">
-          <div className="flex items-center gap-[9px] text-[11px] font-semibold uppercase tracking-[.06em] text-muted-foreground">
-            <span className="flex h-[26px] w-[26px] items-center justify-center rounded-lg bg-cyan-50 text-cyan-600">
-              <Activity className="h-[14px] w-[14px]" strokeWidth={2} />
-            </span>
-            Restantes hoy
+        <div className="flex items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-5 sm:py-4">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-orange-50 text-orange-500">
+            <Clock className="h-[14px] w-[14px]" strokeWidth={2} />
+          </span>
+          <div className="min-w-0">
+            {summary.next ? (
+              <>
+                <div className="truncate text-[13px] font-bold leading-none sm:text-[15px]">
+                  {summary.next.patient_name}
+                </div>
+                <div className="mt-0.5 text-[10px] font-medium text-slate-400 sm:text-[11px]">
+                  {formatTime(summary.next.start_at)}
+                </div>
+              </>
+            ) : (
+              <div className="text-[11px] font-medium text-slate-400 sm:text-[13px]">
+                Sin próximo
+              </div>
+            )}
           </div>
-          <div className="my-[14px] text-[34px] font-extrabold leading-none tracking-[-.02em]">
-            {summary.remaining.length}
-          </div>
-          <div className="text-[13px] font-medium text-slate-400">
-            por atender
+        </div>
+
+        <div className="flex items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-5 sm:py-4">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-cyan-50 text-cyan-600">
+            <Activity className="h-[14px] w-[14px]" strokeWidth={2} />
+          </span>
+          <div>
+            <div className="text-[20px] font-extrabold leading-none tracking-[-.02em] sm:text-[28px]">
+              {summary.remaining.length}
+            </div>
+            <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-[.05em] text-slate-400 sm:text-[11px]">
+              Restantes
+            </div>
           </div>
         </div>
       </div>
