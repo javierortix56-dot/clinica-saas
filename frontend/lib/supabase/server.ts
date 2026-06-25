@@ -244,7 +244,13 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
     patients: { full_name: string } | null;
     treatments: { treatment_types: { name: string } | null } | null;
     treatment_phase_templates: { name: string } | null;
-    professionals: { staff_members: { full_name: string } | null } | null;
+    professionals: {
+      staff_members: {
+        full_name: string;
+        is_active: boolean;
+        deleted_at: string | null;
+      } | null;
+    } | null;
   };
 
   let query = supabase
@@ -254,7 +260,7 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
        patients ( full_name ),
        treatments ( treatment_types ( name ) ),
        treatment_phase_templates ( name ),
-       professionals ( staff_members ( full_name ) )`
+       professionals ( staff_members ( full_name, is_active, deleted_at ) )`
     )
     .eq("status", "confirmed")
     .gte("start_at", weekStart.toISOString())
@@ -275,17 +281,98 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
   const { data, error } = await query;
   if (error) throw new Error(`No se pudieron cargar los turnos: ${error.message}`);
 
-  return ((data ?? []) as unknown as ApptRow[]).map((row) => ({
-    id: row.id,
-    start_at: row.start_at,
-    end_at: row.end_at,
-    patient_name: row.patients?.full_name ?? "Paciente",
-    treatment_label:
-      row.treatments?.treatment_types?.name ??
-      row.treatment_phase_templates?.name ??
-      null,
-    professional_name: row.professionals?.staff_members?.full_name ?? null,
-  }));
+  return ((data ?? []) as unknown as ApptRow[]).map((row) => {
+    const sm = row.professionals?.staff_members;
+    const activeProf = sm && sm.is_active && sm.deleted_at === null ? sm.full_name : null;
+    return {
+      id: row.id,
+      start_at: row.start_at,
+      end_at: row.end_at,
+      patient_name: row.patients?.full_name ?? "Paciente",
+      treatment_label:
+        row.treatments?.treatment_types?.name ??
+        row.treatment_phase_templates?.name ??
+        null,
+      professional_name: activeProf,
+    };
+  });
+}
+
+// Lee los bloqueos de disponibilidad (kind='block') que se solapan con la semana
+// de `refDate`. Incluye los eventos importados de Google Calendar (source
+// 'google_calendar') y los bloqueos manuales. Doctores: solo los propios.
+export async function getWeeklyBlocks(refDate?: Date): Promise<WeeklyBlock[]> {
+  const supabase = createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: { session } } = await supabase.auth.getSession();
+  let role: string | null = null;
+  if (session) {
+    try {
+      role = (JSON.parse(Buffer.from(session.access_token.split(".")[1], "base64").toString("utf8")) as { user_role?: string }).user_role ?? null;
+    } catch {}
+  }
+  const isDoctor = role === "doctor" || role === "professional";
+
+  const { weekStart, weekEnd } = getWeekBounds(refDate);
+
+  type BlockRow = {
+    id: string;
+    starts_at: string;
+    ends_at: string;
+    reason: string | null;
+    source: string;
+    professionals: {
+      staff_members: {
+        full_name: string;
+        is_active: boolean;
+        deleted_at: string | null;
+      } | null;
+    } | null;
+  };
+
+  let query = supabase
+    .from("availability_exceptions")
+    .select(
+      `id, starts_at, ends_at, reason, source,
+       professionals ( staff_members ( full_name, is_active, deleted_at ) )`
+    )
+    .eq("kind", "block")
+    .is("deleted_at", null)
+    // Se solapa con la semana: empieza antes del fin y termina después del inicio.
+    .lt("starts_at", weekEnd.toISOString())
+    .gt("ends_at", weekStart.toISOString())
+    .order("starts_at", { ascending: true });
+
+  if (isDoctor) {
+    const { data: prof } = await supabase
+      .from("professionals")
+      .select("id, staff_members!inner(auth_user_id)")
+      .eq("staff_members.auth_user_id", user.id)
+      .single();
+    if (!prof) return [];
+    query = query.eq("professional_id", prof.id);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(`No se pudieron cargar los bloqueos: ${error.message}`);
+
+  return ((data ?? []) as unknown as BlockRow[]).map((row) => {
+    const sm = row.professionals?.staff_members;
+    const activeProf = sm && sm.is_active && sm.deleted_at === null ? sm.full_name : null;
+    return {
+      id: row.id,
+      start_at: row.starts_at,
+      end_at: row.ends_at,
+      reason: row.reason,
+      source: row.source,
+      professional_name: activeProf,
+    };
+  });
 }
 
 // Lee los bloqueos de disponibilidad (kind='block') que se solapan con la semana

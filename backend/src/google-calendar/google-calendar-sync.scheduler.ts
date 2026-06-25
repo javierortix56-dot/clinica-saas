@@ -6,7 +6,7 @@ import { GoogleCalendarWatchService } from './google-calendar-watch.service';
 /**
  * Scheduler de Google Calendar.
  *
- * - Poll cada 10 min (red de seguridad): importa bloqueos y reconcilia
+ * - Poll cada 2 min (red de seguridad): importa bloqueos y reconcilia
  *   cancelaciones por si se perdió alguna notificación push.
  * - Renovación de watch channels cada hora: registra canales faltantes y
  *   renueva los que están por expirar, para mantener vivas las notificaciones
@@ -21,7 +21,7 @@ export class GoogleCalendarSyncScheduler {
     private readonly watch: GoogleCalendarWatchService,
   ) {}
 
-  @Cron(CronExpression.EVERY_10_MINUTES)
+  @Cron('*/2 * * * *')
   async syncGoogleToApp(): Promise<void> {
     this.logger.debug('Iniciando sync Google Calendar → App');
     try {
