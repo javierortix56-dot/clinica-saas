@@ -8,6 +8,7 @@ import { Calendar, Clock, Check, X, CheckCircle2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { ProposedAppointment } from "@/lib/supabase/server";
 import { confirmAppointment, rejectAppointment } from "./actions";
+import { initialsOf } from "@/lib/utils";
 
 const dateFormatter = new Intl.DateTimeFormat("es-AR", {
   dateStyle: "medium",
@@ -29,12 +30,6 @@ const AVATAR_COLORS = [
   "#16a34a",
 ];
 
-function initialsOf(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
 
 // Mapea el origen interno a una etiqueta de vía legible para el chip.
 function viaLabel(origin: string | null | undefined): string {

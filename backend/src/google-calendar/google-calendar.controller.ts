@@ -41,10 +41,11 @@ export class GoogleCalendarController {
   @Get('google-calendar/connect/:professionalId')
   @UseGuards(SupabaseJwtGuard, RolesGuard)
   @Roles('admin')
-  getConnectUrl(
+  async getConnectUrl(
     @Param('professionalId', ParseUUIDPipe) professionalId: string,
     @CurrentUser() user: AuthUser,
-  ): { url: string } {
+  ): Promise<{ url: string }> {
+    await this.oauth.validateProfessionalOwnership(professionalId, user.clinicId);
     const url = this.oauth.getAuthUrl(professionalId, user.clinicId);
     return { url };
   }
@@ -86,6 +87,7 @@ export class GoogleCalendarController {
     @Param('professionalId', ParseUUIDPipe) professionalId: string,
     @CurrentUser() user: AuthUser,
   ): Promise<{ ok: boolean }> {
+    await this.oauth.validateProfessionalOwnership(professionalId, user.clinicId);
     // Detener el canal push ANTES de borrar los tokens (stop necesita auth).
     await this.watch.stopChannel(professionalId).catch(() => undefined);
     await this.oauth.disconnect(professionalId, user.clinicId);
@@ -99,8 +101,9 @@ export class GoogleCalendarController {
   @Roles('admin')
   async forceSync(
     @Param('professionalId', ParseUUIDPipe) professionalId: string,
+    @CurrentUser() user: AuthUser,
   ): Promise<{ ok: boolean }> {
-    await this.importer.syncByProfessionalId(professionalId);
+    await this.importer.syncByProfessionalId(professionalId, user.clinicId);
     return { ok: true };
   }
 }
