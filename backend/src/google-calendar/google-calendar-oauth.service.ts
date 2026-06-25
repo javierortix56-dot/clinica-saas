@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { calendar } from '@googleapis/calendar';
 import { OAuth2Client, Credentials } from 'google-auth-library';
 import { PrismaService } from '../database/prisma.service';
@@ -8,6 +9,10 @@ import { VaultService } from './vault.service';
 const SCOPES = [
   'https://www.googleapis.com/auth/calendar',
 ];
+
+// Ventana de validez del `state` de OAuth. El flujo (consent de Google) toma
+// segundos; 10 minutos es holgado y acota la ventana de replay.
+const STATE_TTL_MS = 10 * 60 * 1000;
 
 @Injectable()
 export class GoogleCalendarOAuthService {
@@ -39,14 +44,14 @@ export class GoogleCalendarOAuthService {
 
   /**
    * Genera la URL de autorización OAuth. `state` codifica professionalId +
-   * clinicId en base64 para recuperarlos en el callback sin necesidad de
-   * sesión en el backend.
+   * clinicId, pero FIRMADO con HMAC (clave = GOOGLE_CLIENT_SECRET) y con
+   * expiración. Sin la firma, un atacante podría falsificar un state con el
+   * professionalId de otra clínica y vincular SU cuenta de Google al
+   * profesional víctima (los turnos de la víctima se filtrarían a su calendario).
    */
   getAuthUrl(professionalId: string, clinicId: string): string {
     const client = this.makeClient();
-    const state = Buffer.from(
-      JSON.stringify({ professionalId, clinicId }),
-    ).toString('base64url');
+    const state = this.signState({ professionalId, clinicId });
 
     return client.generateAuthUrl({
       access_type: 'offline',
@@ -56,23 +61,69 @@ export class GoogleCalendarOAuthService {
     });
   }
 
+  /** Firma un payload de state como `base64url(body).base64url(hmac)`. */
+  private signState(data: { professionalId: string; clinicId: string }): string {
+    const body = Buffer.from(
+      JSON.stringify({ ...data, nonce: randomUUID(), exp: Date.now() + STATE_TTL_MS }),
+    ).toString('base64url');
+    const sig = createHmac('sha256', this.stateSecret())
+      .update(body)
+      .digest('base64url');
+    return `${body}.${sig}`;
+  }
+
+  /**
+   * Verifica la firma y la expiración del state, y devuelve los IDs. Rechaza
+   * (401) si la firma no valida o el state expiró. Comparación en tiempo
+   * constante para no filtrar la firma por timing.
+   */
+  private verifyState(state: string): {
+    professionalId: string;
+    clinicId: string;
+  } {
+    const [body, sig] = state.split('.');
+    if (!body || !sig) {
+      throw new UnauthorizedException('Estado OAuth inválido.');
+    }
+    const expected = createHmac('sha256', this.stateSecret())
+      .update(body)
+      .digest('base64url');
+    const sigBuf = Buffer.from(sig);
+    const expBuf = Buffer.from(expected);
+    if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) {
+      throw new UnauthorizedException('Estado OAuth inválido.');
+    }
+
+    let parsed: { professionalId?: string; clinicId?: string; exp?: number };
+    try {
+      parsed = JSON.parse(Buffer.from(body, 'base64url').toString()) as typeof parsed;
+    } catch {
+      throw new UnauthorizedException('Estado OAuth inválido.');
+    }
+    if (!parsed.professionalId || !parsed.clinicId) {
+      throw new UnauthorizedException('Estado OAuth inválido.');
+    }
+    if (!parsed.exp || parsed.exp < Date.now()) {
+      throw new UnauthorizedException('Estado OAuth expirado. Reintentá la conexión.');
+    }
+    return { professionalId: parsed.professionalId, clinicId: parsed.clinicId };
+  }
+
+  /** Clave HMAC para firmar el state. Reusa el client secret de OAuth (server-only). */
+  private stateSecret(): string {
+    if (!this.clientSecret) {
+      throw new Error('Google Calendar no está configurado (falta GOOGLE_CLIENT_SECRET).');
+    }
+    return this.clientSecret;
+  }
+
   /**
    * Callback de OAuth: intercambia el code por tokens, crea un calendario
    * dedicado "Turnos - [nombre]" en Google, guarda tokens en Vault y registra
    * el link en professional_calendar_links.
    */
   async handleCallback(code: string, rawState: string): Promise<string> {
-    let professionalId: string;
-    let clinicId: string;
-    try {
-      const parsed = JSON.parse(
-        Buffer.from(rawState, 'base64url').toString(),
-      ) as { professionalId: string; clinicId: string };
-      professionalId = parsed.professionalId;
-      clinicId = parsed.clinicId;
-    } catch {
-      throw new UnauthorizedException('Estado OAuth inválido.');
-    }
+    const { professionalId, clinicId } = this.verifyState(rawState);
 
     const client = this.makeClient();
     const { tokens } = await client.getToken(code);
