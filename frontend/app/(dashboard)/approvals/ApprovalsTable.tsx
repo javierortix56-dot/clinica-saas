@@ -30,8 +30,6 @@ const AVATAR_COLORS = [
   "#16a34a",
 ];
 
-
-// Mapea el origen interno a una etiqueta de vía legible para el chip.
 function viaLabel(origin: string | null | undefined): string {
   switch (origin) {
     case "portal":
@@ -49,7 +47,7 @@ function viaLabel(origin: string | null | undefined): string {
   }
 }
 
-// ─── Card de solicitud con acciones ─────────────────────────────────────────
+// ─── Card ────────────────────────────────────────────────────────────────────
 
 function ApprovalCard({
   appt,
@@ -89,73 +87,68 @@ function ApprovalCard({
   const busy = isConfirming || isRejecting;
   const name = appt.patient?.full_name ?? "—";
   const start = new Date(appt.start_at);
-
   const via = viaLabel(appt.origin);
 
   return (
-    <div className="rounded-card border border-border bg-white px-4 py-[14px] shadow-card-soft sm:px-5 sm:py-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-[18px]">
-        {/* Avatar + datos */}
-        <div className="flex min-w-0 items-start gap-3 sm:flex-1 sm:items-center">
-          <span
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[13.5px] font-bold text-white sm:h-11 sm:w-11 sm:text-[14px]"
-            style={{ background: AVATAR_COLORS[colorIndex % AVATAR_COLORS.length] }}
-          >
-            {initialsOf(name)}
-          </span>
-
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-x-[10px] gap-y-[2px]">
-              <span className="text-[14.5px] font-bold text-foreground sm:text-[15px]">
-                {name}
-              </span>
-              <span className="font-mono text-[12px] text-slate-400">
-                {appt.patient_national_id ?? "—"}
-              </span>
-              {/* Chip de vía — inline en móvil */}
-              <span className="inline-flex items-center gap-[5px] rounded-full border border-border bg-slate-50 px-[9px] py-[3px] text-[11px] font-semibold text-muted-foreground sm:hidden">
-                <Clock className="h-[11px] w-[11px]" strokeWidth={2} />
-                {via}
-              </span>
-            </div>
-            <div className="mt-[6px] flex flex-wrap items-center gap-x-[7px] gap-y-[3px] text-[12.5px] font-medium text-muted-foreground sm:mt-2 sm:text-[13px]">
-              <Calendar className="h-[14px] w-[14px] text-slate-400" strokeWidth={1.9} />
-              <span className="whitespace-nowrap">
-                {dateFormatter.format(start)} · {timeFormatter.format(start)}
-              </span>
-              <span className="h-1 w-1 rounded-full bg-slate-300" />
-              {appt.phase_name ?? appt.treatment_type ?? "Consulta"}
-              <span className="h-1 w-1 rounded-full bg-slate-300" />
-              {appt.professional?.full_name ?? "—"}
-            </div>
-          </div>
-        </div>
-
-        {/* Chip de vía — columna propia en desktop */}
-        <span className="hidden shrink-0 items-center gap-[6px] rounded-full border border-border bg-slate-50 px-[11px] py-[5px] text-[12px] font-semibold text-muted-foreground sm:inline-flex">
-          <Clock className="h-3 w-3" strokeWidth={2} />
-          {via}
+    <div className="rounded-card border border-border bg-white p-4 shadow-card-soft">
+      {/* Fila superior: avatar + datos */}
+      <div className="flex items-start gap-3">
+        <span
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[13px] font-bold text-white"
+          style={{ background: AVATAR_COLORS[colorIndex % AVATAR_COLORS.length] }}
+        >
+          {initialsOf(name)}
         </span>
 
-        {/* Acciones — full width en móvil, auto en desktop */}
-        <div className="flex gap-[9px]">
-          <button
-            onClick={handleReject}
-            disabled={busy}
-            className="flex flex-1 items-center justify-center gap-[6px] rounded-[10px] border border-border bg-white px-[14px] py-[9px] text-[13px] font-bold text-[#be123c] transition hover:border-[#fecdd3] hover:bg-[#fff1f2] disabled:opacity-50 sm:flex-none"
-          >
-            <X className="h-[14px] w-[14px]" strokeWidth={2.2} />
-            {isRejecting ? "…" : "Rechazar"}
-          </button>
-          <button
-            onClick={handleConfirm}
-            disabled={busy}
-            className="flex flex-1 items-center justify-center gap-[6px] rounded-[10px] bg-[#059669] px-4 py-[9px] text-[13px] font-bold text-white shadow-[0_4px_12px_rgba(5,150,105,.25)] transition hover:brightness-[1.06] disabled:opacity-50 sm:flex-none"
-          >
-            <Check className="h-[14px] w-[14px]" strokeWidth={2.4} />
-            {isConfirming ? "…" : "Aprobar"}
-          </button>
+        <div className="min-w-0 flex-1">
+          {/* Nombre + DNI + chip de vía */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-[14.5px] font-bold text-foreground leading-snug">
+              {name}
+            </span>
+            <span className="font-mono text-[11.5px] text-slate-400">
+              {appt.patient_national_id ?? "—"}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-slate-50 px-2 py-[2px] text-[11px] font-semibold text-muted-foreground">
+              <Clock className="h-[10px] w-[10px]" strokeWidth={2} />
+              {via}
+            </span>
+          </div>
+
+          {/* Fecha + prestación + profesional */}
+          <div className="mt-[5px] flex flex-wrap items-center gap-x-[6px] gap-y-[2px] text-[12px] text-muted-foreground">
+            <span className="flex items-center gap-[5px]">
+              <Calendar className="h-3 w-3 shrink-0 text-slate-400" strokeWidth={1.9} />
+              <span className="whitespace-nowrap font-medium">
+                {dateFormatter.format(start)} · {timeFormatter.format(start)}
+              </span>
+            </span>
+            <span className="text-slate-300 select-none">·</span>
+            <span>{appt.phase_name ?? appt.treatment_type ?? "Consulta"}</span>
+            <span className="text-slate-300 select-none">·</span>
+            <span>{appt.professional?.full_name ?? "—"}</span>
+          </div>
         </div>
+      </div>
+
+      {/* Botones — siempre debajo, full width en mobile, auto en desktop */}
+      <div className="mt-3 flex gap-2 sm:mt-2">
+        <button
+          onClick={handleReject}
+          disabled={busy}
+          className="flex flex-1 items-center justify-center gap-[6px] rounded-[10px] border border-border bg-white px-3 py-[9px] text-[13px] font-bold text-[#be123c] transition hover:border-[#fecdd3] hover:bg-[#fff1f2] disabled:opacity-50 sm:flex-none sm:px-[14px]"
+        >
+          <X className="h-[13px] w-[13px]" strokeWidth={2.2} />
+          {isRejecting ? "…" : "Rechazar"}
+        </button>
+        <button
+          onClick={handleConfirm}
+          disabled={busy}
+          className="flex flex-1 items-center justify-center gap-[6px] rounded-[10px] bg-[#059669] px-3 py-[9px] text-[13px] font-bold text-white shadow-[0_4px_12px_rgba(5,150,105,.25)] transition hover:brightness-[1.06] disabled:opacity-50 sm:flex-none sm:px-4"
+        >
+          <Check className="h-[13px] w-[13px]" strokeWidth={2.4} />
+          {isConfirming ? "…" : "Aprobar"}
+        </button>
       </div>
     </div>
   );
