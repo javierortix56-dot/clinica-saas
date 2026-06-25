@@ -3,12 +3,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 
-import type { WeeklyAppointment, ProfessionalForScheduling } from "@/lib/supabase/server";
+import type { WeeklyAppointment, WeeklyBlock, ProfessionalForScheduling } from "@/lib/supabase/server";
 import type { Patient } from "@clinica/shared";
 import {
   DAY_LABELS,
   SLOTS,
   appointmentsForSlot,
+  blocksForSlot,
   formatDayDate,
   formatDuration,
   formatSlot,
@@ -46,12 +47,14 @@ function profColor(name: string | null): string {
 export function CalendarGrid({
   weekDays: weekDayStrs,
   appointments,
+  blocks = [],
   canCreateAppointment,
   patients,
   professionals,
 }: {
   weekDays: string[];
   appointments: WeeklyAppointment[];
+  blocks?: WeeklyBlock[];
   canCreateAppointment: boolean;
   patients: Pick<Patient, "id" | "full_name" | "national_id">[];
   professionals: ProfessionalForScheduling[];
@@ -86,13 +89,17 @@ export function CalendarGrid({
 
 
   // Profesionales presentes esta semana (para los chips de filtro y la leyenda).
+  // Incluye los que solo tienen bloqueos (eventos de Google), no solo turnos.
   const profNames = useMemo(() => {
     const names = new Set<string>();
     for (const a of appointments) {
       if (a.professional_name) names.add(a.professional_name);
     }
+    for (const b of blocks) {
+      if (b.professional_name) names.add(b.professional_name);
+    }
     return Array.from(names).sort();
-  }, [appointments]);
+  }, [appointments, blocks]);
 
   function toggleProf(name: string) {
     setHidden((prev) => {
@@ -106,6 +113,9 @@ export function CalendarGrid({
   const visibleAppts = appointments.filter(
     (a) => !a.professional_name || !hidden.has(a.professional_name)
   );
+  const visibleBlocks = blocks.filter(
+    (b) => !b.professional_name || !hidden.has(b.professional_name)
+  );
 
   // Turnos del día seleccionado en mobile, ordenados por hora.
   const mobileDayAppts = useMemo(
@@ -114,6 +124,15 @@ export function CalendarGrid({
         .filter((a) => isSameLocalDay(a.start_at, weekDays[mobileDayIdx]))
         .sort((a, b) => (a.start_at < b.start_at ? -1 : 1)),
     [visibleAppts, mobileDayIdx, weekDays]
+  );
+
+  // Bloqueos del día seleccionado en mobile, ordenados por hora.
+  const mobileDayBlocks = useMemo(
+    () =>
+      visibleBlocks
+        .filter((b) => isSameLocalDay(b.start_at, weekDays[mobileDayIdx]))
+        .sort((a, b) => (a.start_at < b.start_at ? -1 : 1)),
+    [visibleBlocks, mobileDayIdx, weekDays]
   );
 
   return (
@@ -223,12 +242,12 @@ export function CalendarGrid({
           </button>
         </div>
 
-        {/* Lista de turnos del día */}
-        {mobileDayAppts.length === 0 ? (
+        {/* Lista de turnos + bloqueos del día */}
+        {mobileDayAppts.length === 0 && mobileDayBlocks.length === 0 ? (
           <div className="py-8 text-center text-[13px] font-medium text-slate-400">
-            {appointments.length === 0 || visibleAppts.length === 0
+            {appointments.length === 0 && blocks.length === 0
               ? "Sin turnos este día."
-              : "Sin turnos visibles. Activá un profesional arriba."}
+              : "Nada visible. Activá un profesional arriba."}
           </div>
         ) : (
           <div className="divide-y divide-[#eef2f7]">
@@ -269,6 +288,37 @@ export function CalendarGrid({
                 </button>
               );
             })}
+
+            {/* Bloqueos (eventos de Google / manuales) — grises, no clickeables */}
+            {mobileDayBlocks.map((b) => (
+              <div
+                key={b.id}
+                className="flex w-full items-center gap-3 bg-slate-50/60 px-4 py-3 text-left"
+              >
+                <div className="h-8 w-[3px] shrink-0 rounded-full bg-slate-300" />
+                <div className="w-[52px] shrink-0 text-right">
+                  <div className="font-mono text-[12.5px] font-bold text-slate-500">
+                    {formatTime(b.start_at)}
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    {formatDuration(b.start_at, b.end_at)}
+                  </div>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13px] font-semibold text-slate-500">
+                    {b.reason || "Ocupado"}
+                  </div>
+                  <div className="truncate text-[11px] text-slate-400">
+                    {[
+                      b.source === "google_calendar" ? "Google Calendar" : "Bloqueo",
+                      b.professional_name,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -310,7 +360,7 @@ export function CalendarGrid({
             })}
 
             {/* Estado vacío */}
-            {visibleAppts.length === 0 && (
+            {visibleAppts.length === 0 && visibleBlocks.length === 0 && (
               <React.Fragment>
                 <div className="border-b border-[#eef2f7] py-3 pr-2 text-right">
                   <span className="font-mono text-[11px] text-slate-400">
@@ -318,7 +368,7 @@ export function CalendarGrid({
                   </span>
                 </div>
                 <div className="col-span-6 border-b border-l border-[#eef2f7] px-4 py-10 text-center text-[13.5px] font-medium text-slate-400">
-                  {appointments.length === 0
+                  {appointments.length === 0 && blocks.length === 0
                     ? "No hay turnos confirmados en esta semana."
                     : "Ningún profesional visible. Activá un chip para ver sus turnos."}
                 </div>
@@ -326,7 +376,7 @@ export function CalendarGrid({
             )}
 
             {/* Filas de franjas horarias */}
-            {visibleAppts.length > 0 &&
+            {(visibleAppts.length > 0 || visibleBlocks.length > 0) &&
               SLOTS.map((slot) => (
                 <React.Fragment key={`${slot.hour}-${slot.minute}`}>
                   <div
@@ -348,6 +398,12 @@ export function CalendarGrid({
                       slot.hour,
                       slot.minute
                     );
+                    const cellBlocks = blocksForSlot(
+                      visibleBlocks,
+                      day,
+                      slot.hour,
+                      slot.minute
+                    );
                     return (
                       <div
                         key={di}
@@ -355,6 +411,33 @@ export function CalendarGrid({
                           isToday(day) ? "bg-primary/[.035]" : ""
                         }`}
                       >
+                        {cellBlocks.map((b) => (
+                          <div
+                            key={b.id}
+                            title={`${formatTime(b.start_at)}–${formatTime(b.end_at)} · ${
+                              b.reason || "Ocupado"
+                            }${b.professional_name ? ` · ${b.professional_name}` : ""}`}
+                            className="w-full space-y-[1px] rounded-md border border-slate-200 border-l-[3px] border-l-slate-300 bg-slate-100 px-[6px] py-[3px] text-left"
+                          >
+                            <p className="font-mono text-[9px] text-slate-500">
+                              {formatTime(b.start_at)} ·{" "}
+                              {formatDuration(b.start_at, b.end_at)}
+                            </p>
+                            <p className="truncate text-[11.5px] font-semibold text-slate-500">
+                              {b.reason || "Ocupado"}
+                            </p>
+                            {(b.source === "google_calendar" || b.professional_name) && (
+                              <p className="truncate text-[9.5px] text-slate-400">
+                                {[
+                                  b.source === "google_calendar" ? "Google Calendar" : null,
+                                  b.professional_name,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </p>
+                            )}
+                          </div>
+                        ))}
                         {cellAppts.map((a) => {
                           const color = profColor(a.professional_name);
                           return (
@@ -397,6 +480,12 @@ export function CalendarGrid({
           <span className="h-[10px] w-[10px] rounded-[3px] border border-status-confirmado-border bg-status-confirmado-bg" />
           Confirmado
         </div>
+        {visibleBlocks.length > 0 && (
+          <div className="flex items-center gap-[7px] text-[12.5px] font-medium text-muted-foreground">
+            <span className="h-[10px] w-[10px] rounded-[3px] border border-slate-200 bg-slate-100" />
+            Ocupado (Google)
+          </div>
+        )}
         {profNames.length > 0 && <div className="flex-1" />}
         <div className="flex flex-wrap items-center gap-[14px]">
           {profNames.map((name) => (

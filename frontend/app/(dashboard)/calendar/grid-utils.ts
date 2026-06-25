@@ -1,4 +1,4 @@
-import type { WeeklyAppointment } from "@/lib/supabase/server";
+import type { WeeklyAppointment, WeeklyBlock } from "@/lib/supabase/server";
 
 // Helpers puros de fecha/slot para el calendario. Sin secretos ni acceso a datos
 // — solo aritmética de fechas. Compartidos entre page.tsx (Server Component, para
@@ -102,6 +102,28 @@ export function appointmentsForSlot(
 ): WeeklyAppointment[] {
   return appointments.filter((a) => {
     const localStr = new Date(a.start_at).toLocaleString("en-US", {
+      timeZone: TZ,
+    });
+    const local = new Date(localStr);
+    const slottedMinute = Math.floor(local.getMinutes() / 30) * 30;
+    return (
+      local.getHours() === hour &&
+      slottedMinute === minute &&
+      local.toDateString() === day.toDateString()
+    );
+  });
+}
+
+// Bloqueos cuyo inicio cae en este slot de 30 min (mismo criterio de floor que
+// los turnos). Un bloqueo largo se muestra en su slot de inicio con su duración.
+export function blocksForSlot(
+  blocks: WeeklyBlock[],
+  day: Date,
+  hour: number,
+  minute: number
+): WeeklyBlock[] {
+  return blocks.filter((b) => {
+    const localStr = new Date(b.start_at).toLocaleString("en-US", {
       timeZone: TZ,
     });
     const local = new Date(localStr);

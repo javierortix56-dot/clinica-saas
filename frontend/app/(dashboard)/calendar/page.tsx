@@ -3,6 +3,7 @@ import { CheckCircle2, Clock, Activity, ChevronLeft, ChevronRight } from "lucide
 
 import {
   getWeeklyAppointments,
+  getWeeklyBlocks,
   getSessionAuth,
   isDoctorRole,
   getPatients,
@@ -44,8 +45,9 @@ export default async function CalendarPage({
   const { role } = await getSessionAuth();
   const canCreateAppointment = role === "admin" || role === "reception" || role === "doctor";
 
-  const [appointments, patients, professionals] = await Promise.all([
+  const [appointments, blocks, patients, professionals] = await Promise.all([
     getWeeklyAppointments(displayedMonday),
+    getWeeklyBlocks(displayedMonday),
     canCreateAppointment ? getPatients() : Promise.resolve([]),
     canCreateAppointment ? getProfessionalsForScheduling() : Promise.resolve([]),
   ]);
@@ -171,6 +173,7 @@ export default async function CalendarPage({
       <CalendarGrid
         weekDays={weekDays.map(toISODate)}
         appointments={appointments}
+        blocks={blocks}
         canCreateAppointment={canCreateAppointment}
         patients={patients.map((p) => ({ id: p.id, full_name: p.full_name, national_id: p.national_id }))}
         professionals={professionals}
