@@ -305,6 +305,7 @@ export class AppointmentsService {
               patient_id: patient.patientId,
               deleted_at: null,
               status: { in: ['proposed', 'confirmed'] },
+              start_at: { gt: new Date() },
             },
             data: { status: 'cancelled' },
           }),
