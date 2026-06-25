@@ -351,7 +351,7 @@ export function CalendarGrid({
                     return (
                       <div
                         key={di}
-                        className={`min-h-[1.75rem] space-y-[3px] border-b border-l border-[#eef2f7] p-[3px] ${
+                        className={`min-h-[1.375rem] space-y-[2px] border-b border-l border-[#eef2f7] p-[2px] ${
                           isToday(day) ? "bg-primary/[.035]" : ""
                         }`}
                       >
@@ -363,17 +363,17 @@ export function CalendarGrid({
                               type="button"
                               onClick={() => setSelectedId(a.id)}
                               style={{ borderLeftColor: color }}
-                              className="w-full space-y-[2px] rounded-lg border border-status-confirmado-border border-l-[3px] bg-status-confirmado-bg px-[8px] py-[5px] text-left transition-shadow hover:shadow-[0_5px_14px_rgba(15,23,42,.13)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                              className="w-full space-y-[1px] rounded-md border border-status-confirmado-border border-l-[3px] bg-status-confirmado-bg px-[6px] py-[3px] text-left transition-shadow hover:shadow-[0_5px_14px_rgba(15,23,42,.13)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                             >
-                              <p className="font-mono text-[9.5px] text-status-confirmado-fg">
+                              <p className="font-mono text-[9px] text-status-confirmado-fg">
                                 {formatTime(a.start_at)} ·{" "}
                                 {formatDuration(a.start_at, a.end_at)}
                               </p>
-                              <p className="truncate text-[12px] font-semibold text-status-confirmado-fg">
+                              <p className="truncate text-[11.5px] font-semibold text-status-confirmado-fg">
                                 {a.patient_name}
                               </p>
                               {(a.treatment_label || a.professional_name) && (
-                                <p className="truncate text-[10px] text-status-confirmado-fg/70">
+                                <p className="truncate text-[9.5px] text-status-confirmado-fg/70">
                                   {[a.treatment_label, a.professional_name]
                                     .filter(Boolean)
                                     .join(" · ")}

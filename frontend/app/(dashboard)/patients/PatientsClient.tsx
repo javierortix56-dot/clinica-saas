@@ -43,12 +43,12 @@ export function PatientsClient({ patients }: { patients: Patient[] }) {
 
   return (
     <div className="mx-auto max-w-[1100px]">
-      <div className="mb-[22px] flex items-end justify-between gap-4">
+      <div className="mb-4 flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-[27px] font-extrabold tracking-[-.02em]">
+          <h1 className="text-[22px] font-extrabold tracking-[-.02em] sm:text-[24px]">
             Pacientes
           </h1>
-          <p className="mt-[9px] text-[14px] font-medium text-muted-foreground">
+          <p className="mt-1 text-[13px] font-medium text-muted-foreground sm:text-[14px]">
             Todos los pacientes registrados en la clínica.
           </p>
         </div>
@@ -61,7 +61,7 @@ export function PatientsClient({ patients }: { patients: Patient[] }) {
         </button>
       </div>
 
-      <div className="mb-[18px] flex max-w-[420px] items-center gap-[10px] rounded-[11px] border border-border bg-white px-[14px] py-[11px]">
+      <div className="mb-3 flex max-w-[420px] items-center gap-[10px] rounded-[11px] border border-border bg-white px-[14px] py-[9px]">
         <Search className="h-[17px] w-[17px] text-slate-400" strokeWidth={1.9} />
         <input
           type="search"
