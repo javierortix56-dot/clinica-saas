@@ -9,6 +9,8 @@ import {
   getPatientTreatments,
   getPatientClinicalProfile,
   getProfessionalNoteConfig,
+  getClinicSpecialties,
+  getClinicSpecialtyFields,
   getSessionAuth,
 } from "@/lib/supabase/server";
 import { PatientTabs } from "../PatientTabs";
@@ -46,6 +48,8 @@ export default async function PatientDetailPage({
     treatments,
     clinicalProfile,
     noteConfig,
+    specialties,
+    customSpecialtyFields,
   ] = await Promise.all([
     getSessionAuth(),
     getPatientById(params.id),
@@ -54,6 +58,8 @@ export default async function PatientDetailPage({
     getPatientTreatments(params.id),
     getPatientClinicalProfile(params.id),
     getProfessionalNoteConfig(),
+    getClinicSpecialties(),
+    getClinicSpecialtyFields(),
   ]);
 
   if (!patient) {
@@ -145,6 +151,8 @@ export default async function PatientDetailPage({
         role={role}
         clinicalProfile={clinicalProfile}
         noteConfig={noteConfig ?? {}}
+        specialties={specialties}
+        customSpecialtyFields={customSpecialtyFields}
       />
     </div>
   );

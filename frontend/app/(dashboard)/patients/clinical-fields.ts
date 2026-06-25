@@ -368,8 +368,22 @@ export function isSpecialtyFieldEnabled(config: NoteFieldConfig, key: string): b
   return config.especializados?.[key] === true;
 }
 
-// Construye una config completa a partir de un preset de especialidad.
-export function buildConfigFromPreset(preset: SpecialtyPreset): NoteFieldConfig {
+// Forma común de una especialidad, venga del catálogo estático (SpecialtyPreset)
+// o de la DB editable de la clínica (clinic_specialties).
+interface SpecialtyLike {
+  id?: string;
+  slug?: string;
+  baseOff?: FieldKey[];
+  examSystems: string[];
+  specialtyFields: string[];
+}
+
+// Construye una config completa a partir de una especialidad. `specialtyFieldDefs`
+// permite incluir los campos propios de la clínica además del catálogo base.
+export function buildConfigFromPreset(
+  preset: SpecialtyLike,
+  specialtyFieldDefs: SpecialtyFieldDef[] = SPECIALTY_FIELD_DEFS
+): NoteFieldConfig {
   const cfg: NoteFieldConfig = {};
   for (const f of FIELD_DEFS) cfg[f.key] = !preset.baseOff?.includes(f.key);
 
@@ -378,12 +392,48 @@ export function buildConfigFromPreset(preset: SpecialtyPreset): NoteFieldConfig 
   cfg.examen_fisico_sistemas = sistemas;
 
   const esp: Record<string, boolean> = {};
-  for (const sf of SPECIALTY_FIELD_DEFS) esp[sf.key] = preset.specialtyFields.includes(sf.key);
+  for (const sf of specialtyFieldDefs) esp[sf.key] = preset.specialtyFields.includes(sf.key);
   cfg.especializados = esp;
 
-  cfg.especialidad = preset.id;
+  cfg.especialidad = preset.slug ?? preset.id;
   return cfg;
 }
+
+// ─── Especialidades y campos administrables por la clínica (DB) ───────────────
+
+// Especialidad editable cargada desde clinic_specialties.
+export interface ClinicSpecialty {
+  id: string;
+  slug: string;
+  label: string;
+  baseOff: FieldKey[];
+  examSystems: string[];
+  specialtyFields: string[];
+  isBuiltin: boolean;
+}
+
+// Campo clínico propio de la clínica (clinic_specialty_fields), extiende el catálogo.
+export interface CustomSpecialtyField {
+  id: string;
+  key: string;
+  label: string;
+  placeholder: string;
+}
+
+// Normaliza un preset estático al shape de ClinicSpecialty (fallback cuando la
+// clínica todavía no sembró sus especialidades en la DB).
+export function presetToSpecialty(p: SpecialtyPreset): ClinicSpecialty {
+  return {
+    id: p.id,
+    slug: p.id,
+    label: p.label,
+    baseOff: p.baseOff ?? [],
+    examSystems: p.examSystems,
+    specialtyFields: p.specialtyFields,
+    isBuiltin: true,
+  };
+}
+
 
 // ─── Datos estructurados guardados en clinical_notes.structured_data ──────────
 

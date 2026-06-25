@@ -3,7 +3,16 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Sparkles, Settings, Plus, Pencil, Search } from "lucide-react";
+import {
+  Sparkles,
+  Settings,
+  Plus,
+  Pencil,
+  Search,
+  Upload,
+  Camera,
+  CalendarPlus,
+} from "lucide-react";
 
 import type {
   PatientAppointment,
@@ -34,8 +43,12 @@ import {
   isSistemaEnabled,
   isSpecialtyFieldEnabled,
   buildConfigFromPreset,
+  presetToSpecialty,
   type FieldKey,
   type NoteFieldConfig,
+  type SpecialtyFieldDef,
+  type ClinicSpecialty,
+  type CustomSpecialtyField,
 } from "./clinical-fields";
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
@@ -241,11 +254,82 @@ function DictationButton({
   );
 }
 
+// Subir un archivo de audio ya grabado (p. ej. una nota de voz reenviada por
+// WhatsApp) y transcribirlo con la misma IA que el dictado en vivo. Acepta los
+// formatos comunes de notas de voz (ogg/opus, m4a, mp3…).
+function AudioUploadButton({
+  fields,
+  onResult,
+}: {
+  fields: string[];
+  onResult: (d: DictationResult) => void;
+}) {
+  const [processing, setProcessing] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // permite volver a elegir el mismo archivo
+    if (!file) return;
+    setProcessing(true);
+    try {
+      const audioBase64 = await blobToBase64(file);
+      // Las notas de voz de WhatsApp suelen llegar como ogg/opus; si el browser
+      // no reporta el tipo, asumimos audio/ogg. Sin el parámetro ;codecs=…
+      const baseMime = (file.type || "audio/ogg").split(";")[0];
+      const result = await transcribeNoteDictation({
+        audioBase64,
+        mimeType: baseMime,
+        fields,
+      });
+      if (result.error) {
+        toast.error(result.error);
+      } else if (result.data) {
+        onResult(result.data);
+        toast.success("Audio transcripto. Revisá y completá la nota.");
+      }
+    } catch {
+      toast.error("No se pudo procesar el audio.");
+    } finally {
+      setProcessing(false);
+    }
+  }
+
+  return (
+    <>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="audio/*"
+        className="hidden"
+        onChange={handleFile}
+      />
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        disabled={processing}
+        onClick={() => inputRef.current?.click()}
+      >
+        {processing ? (
+          "Transcribiendo…"
+        ) : (
+          <span className="flex items-center gap-[6px]">
+            <Upload className="h-[14px] w-[14px]" strokeWidth={1.9} />
+            Subir audio
+          </span>
+        )}
+      </Button>
+    </>
+  );
+}
+
 function NoteForm({
   patientId,
   treatments,
   config,
   clinicalProfile,
+  specialtyFieldDefs,
   mode,
   note,
   onClose,
@@ -254,12 +338,15 @@ function NoteForm({
   treatments: PatientTreatment[];
   config: NoteFieldConfig;
   clinicalProfile: PatientClinicalProfile | null;
+  specialtyFieldDefs: SpecialtyFieldDef[];
   mode: "create" | "edit";
   note?: ClinicalNote;
   onClose: () => void;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const cameraRef = useRef<HTMLInputElement | null>(null);
+  const [cameraName, setCameraName] = useState<string | null>(null);
 
   const sd = note?.structured_data ?? {};
   const [noteType, setNoteType] = useState(note?.note_type ?? "consulta");
@@ -287,21 +374,26 @@ function NoteForm({
   const [especializados, setEspecializados] = useState<Record<string, string>>(() => {
     const esp = sd.especializados ?? {};
     const init: Record<string, string> = {};
-    for (const f of SPECIALTY_FIELD_DEFS) init[f.key] = esp[f.key] ?? "";
+    for (const f of specialtyFieldDefs) init[f.key] = esp[f.key] ?? "";
     return init;
   });
 
   const show = (k: FieldKey) => isFieldEnabled(config, k);
 
-  // Campos especializados activos para esta especialidad (en orden del catálogo).
-  const activeSpecialtyFields = SPECIALTY_FIELD_DEFS.filter((f) =>
+  // Campos especializados activos para esta especialidad (catálogo + propios).
+  const activeSpecialtyFields = specialtyFieldDefs.filter((f) =>
     isSpecialtyFieldEnabled(config, f.key)
   );
 
-  // Dictado solo incluye campos note-scope (excluye diagnostico, va por IA separada).
-  const dictationFields = FIELD_DEFS.filter(
-    (f) => f.scope === "note" && f.key !== "diagnostico" && show(f.key)
-  ).map((f) => f.key);
+  // Dictado: campos note-scope habilitados (excluye diagnostico, va por IA
+  // separada) + los campos de especialidad activos (como `esp:<key>`). La IA
+  // solo completa los que detecte en el audio.
+  const dictationFields = [
+    ...FIELD_DEFS.filter(
+      (f) => f.scope === "note" && f.key !== "diagnostico" && show(f.key)
+    ).map((f) => f.key as string),
+    ...activeSpecialtyFields.map((f) => `esp:${f.key}`),
+  ];
 
   function applyDictation(d: DictationResult) {
     setBody((prev) => (prev.trim() ? `${prev.trim()}\n${d.body}` : d.body));
@@ -310,6 +402,8 @@ function NoteForm({
       setEnfermedadActual((prev) => (prev.trim() ? prev : d.enfermedad_actual!));
     if (d.indicaciones)
       setIndicaciones((prev) => (prev.trim() ? prev : d.indicaciones!));
+    if (d.fecha_control)
+      setFechaControl((prev) => (prev.trim() ? prev : d.fecha_control!));
     if (d.vitals) {
       setVitals((prev) => {
         const next = { ...prev };
@@ -324,6 +418,15 @@ function NoteForm({
         const next = { ...prev };
         for (const [k, val] of Object.entries(d.examen_fisico!)) {
           if (val && !next[k]?.trim()) next[k] = val;
+        }
+        return next;
+      });
+    }
+    if (d.especializados) {
+      setEspecializados((prev) => {
+        const next = { ...prev };
+        for (const [k, val] of Object.entries(d.especializados!)) {
+          if (val && k in next && !next[k]?.trim()) next[k] = val;
         }
         return next;
       });
@@ -376,15 +479,18 @@ function NoteForm({
       <input type="hidden" name="patient_id" value={patientId} />
       {mode === "edit" && note && <input type="hidden" name="id" value={note.id} />}
 
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-medium text-slate-700">
           {mode === "edit" ? "Editar nota" : "Nueva nota"}
         </p>
-        <DictationButton fields={dictationFields} onResult={applyDictation} />
+        <div className="flex flex-wrap items-center gap-2">
+          <DictationButton fields={dictationFields} onResult={applyDictation} />
+          <AudioUploadButton fields={dictationFields} onResult={applyDictation} />
+        </div>
       </div>
 
       {/* Tipo + Tratamiento */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <label className={fieldLabel}>Tipo</label>
           <select
@@ -615,6 +721,20 @@ function NoteForm({
             onChange={(e) => setFechaControl(e.target.value)}
             className={fieldInput}
           />
+          {fechaControl && (
+            <button
+              type="button"
+              onClick={() =>
+                router.push(
+                  `/calendar?nuevo=1&paciente=${patientId}&fecha=${fechaControl}`
+                )
+              }
+              className="mt-1 inline-flex items-center gap-[6px] rounded-[9px] border border-primary/25 bg-primary/[.07] px-[12px] py-[7px] text-[12.5px] font-bold text-primary transition hover:bg-primary/[.12]"
+            >
+              <CalendarPlus className="h-[15px] w-[15px]" strokeWidth={2} />
+              Generar turno para esta fecha
+            </button>
+          )}
         </div>
       )}
 
@@ -630,6 +750,34 @@ function NoteForm({
           accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
           className="w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm file:mr-3 file:rounded file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-medium hover:file:bg-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-400"
         />
+
+        {/* Captura desde la cámara (móvil). Comparte el name "attachments", así
+            se envía junto con el resto en el mismo submit. */}
+        <input
+          ref={cameraRef}
+          type="file"
+          name="attachments"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(e) => setCameraName(e.target.files?.[0]?.name ?? null)}
+        />
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => cameraRef.current?.click()}
+            className="inline-flex items-center gap-[6px] rounded-[9px] border border-slate-200 bg-white px-[12px] py-[7px] text-[12.5px] font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            <Camera className="h-[15px] w-[15px]" strokeWidth={1.9} />
+            Tomar foto
+          </button>
+          {cameraName && (
+            <span className="truncate text-[12px] font-medium text-emerald-600">
+              ✓ {cameraName}
+            </span>
+          )}
+        </div>
+
         <p className="text-xs text-slate-400">
           {mode === "edit"
             ? "Se agregan a los adjuntos existentes. Máx. 10 MB por archivo."
@@ -653,9 +801,13 @@ function NoteForm({
 
 function NoteFieldConfigPanel({
   config,
+  specialties,
+  specialtyFieldDefs,
   onClose,
 }: {
   config: NoteFieldConfig;
+  specialties: ClinicSpecialty[];
+  specialtyFieldDefs: SpecialtyFieldDef[];
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -675,7 +827,7 @@ function NoteFieldConfigPanel({
 
   const [especializados, setEspecializados] = useState<Record<string, boolean>>(() => {
     const init: Record<string, boolean> = {};
-    for (const f of SPECIALTY_FIELD_DEFS) init[f.key] = isSpecialtyFieldEnabled(config, f.key);
+    for (const f of specialtyFieldDefs) init[f.key] = isSpecialtyFieldEnabled(config, f.key);
     return init;
   });
 
@@ -692,11 +844,11 @@ function NoteFieldConfigPanel({
   }
 
   // Aplica un preset: setea todos los toggles. El profesional puede ajustar luego.
-  function applyPreset(presetId: string) {
-    setEspecialidad(presetId);
-    const preset = SPECIALTY_PRESETS.find((p) => p.id === presetId);
+  function applyPreset(slug: string) {
+    setEspecialidad(slug);
+    const preset = specialties.find((p) => p.slug === slug);
     if (!preset) return;
-    const cfg = buildConfigFromPreset(preset);
+    const cfg = buildConfigFromPreset(preset, specialtyFieldDefs);
     const nextLocal = {} as Record<FieldKey, boolean>;
     for (const f of FIELD_DEFS) nextLocal[f.key] = cfg[f.key] !== false;
     setLocal(nextLocal);
@@ -726,11 +878,11 @@ function NoteFieldConfigPanel({
   // Campos especializados a mostrar como checkboxes: los del preset activo +
   // cualquiera ya activado. Evita listar los ~85 campos del catálogo completo.
   const activePresetFields = especialidad
-    ? SPECIALTY_PRESETS.find((p) => p.id === especialidad)?.specialtyFields ?? []
+    ? specialties.find((p) => p.slug === especialidad)?.specialtyFields ?? []
     : [];
   const visibleEspKeys = new Set<string>(activePresetFields);
   for (const [k, on] of Object.entries(especializados)) if (on) visibleEspKeys.add(k);
-  const visibleEspFields = SPECIALTY_FIELD_DEFS.filter((f) => visibleEspKeys.has(f.key));
+  const visibleEspFields = specialtyFieldDefs.filter((f) => visibleEspKeys.has(f.key));
 
   return (
     <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
@@ -751,8 +903,8 @@ function NoteFieldConfigPanel({
           className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
         >
           <option value="">— Personalizado —</option>
-          {SPECIALTY_PRESETS.map((p) => (
-            <option key={p.id} value={p.id}>{p.label}</option>
+          {specialties.map((p) => (
+            <option key={p.id} value={p.slug}>{p.label}</option>
           ))}
         </select>
       </div>
@@ -954,12 +1106,18 @@ function ClinicalProfileCard({
 
 // ─── Vista de datos estructurados dentro de cada nota ─────────────────────────
 
-function StructuredDataView({ data }: { data: NoteStructuredData }) {
+function StructuredDataView({
+  data,
+  specialtyFieldDefs,
+}: {
+  data: NoteStructuredData;
+  specialtyFieldDefs: SpecialtyFieldDef[];
+}) {
   const vitals = data.vitals ?? {};
   const vitalEntries = VITAL_DEFS.filter((v) => vitals[v.key]);
   const examEntries = Object.entries(data.examen_fisico ?? {}).filter(([, v]) => v);
   const espData = data.especializados ?? {};
-  const espEntries = SPECIALTY_FIELD_DEFS.filter((f) => espData[f.key]);
+  const espEntries = specialtyFieldDefs.filter((f) => espData[f.key]);
   const hasAny =
     data.motivo || data.enfermedad_actual || data.diagnostico ||
     data.indicaciones || data.fecha_control ||
@@ -1196,6 +1354,8 @@ export function PatientTabs({
   role,
   clinicalProfile,
   noteConfig,
+  specialties,
+  customSpecialtyFields,
 }: {
   patientId: string;
   appointments: PatientAppointment[];
@@ -1204,7 +1364,23 @@ export function PatientTabs({
   role: string | null;
   clinicalProfile: PatientClinicalProfile | null;
   noteConfig: NoteFieldConfig;
+  specialties: ClinicSpecialty[];
+  customSpecialtyFields: CustomSpecialtyField[];
 }) {
+  // Catálogo de campos = base estático + campos propios de la clínica (DB).
+  const specialtyFieldDefs: SpecialtyFieldDef[] = [
+    ...SPECIALTY_FIELD_DEFS,
+    ...customSpecialtyFields.map((c) => ({
+      key: c.key,
+      label: c.label,
+      placeholder: c.placeholder,
+    })),
+  ];
+  // Lista de especialidades = las de la clínica (DB) o los presets de fallback.
+  const specialtyList: ClinicSpecialty[] = specialties.length
+    ? specialties
+    : SPECIALTY_PRESETS.map(presetToSpecialty);
+
   const [tab, setTab] = useState<"turnos" | "historia">("turnos");
   const [showForm, setShowForm] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
@@ -1258,7 +1434,7 @@ export function PatientTabs({
             </div>
           ) : (
             <div className="overflow-hidden rounded-card border border-border bg-white shadow-card-soft">
-              <div className="grid grid-cols-[1.4fr_1.2fr_1.6fr_1fr] border-b border-[#eef2f7] bg-[#fbfcfe] px-[22px] py-[13px] text-[11.5px] font-semibold uppercase tracking-[.05em] text-muted-foreground">
+              <div className="hidden grid-cols-[1.4fr_1.2fr_1.6fr_1fr] border-b border-[#eef2f7] bg-[#fbfcfe] px-[22px] py-[13px] text-[11.5px] font-semibold uppercase tracking-[.05em] text-muted-foreground sm:grid">
                 <div>Fecha / hora</div>
                 <div>Profesional</div>
                 <div>Tratamiento / Fase</div>
@@ -1267,10 +1443,15 @@ export function PatientTabs({
               {appointments.map((appt) => (
                 <div
                   key={appt.id}
-                  className="grid grid-cols-[1.4fr_1.2fr_1.6fr_1fr] items-center border-b border-slate-100 px-[22px] py-[15px] last:border-0"
+                  className="flex flex-col gap-2 border-b border-slate-100 px-4 py-[14px] last:border-0 sm:grid sm:grid-cols-[1.4fr_1.2fr_1.6fr_1fr] sm:items-center sm:gap-0 sm:px-[22px] sm:py-[15px]"
                 >
-                  <div className="text-[14px] font-bold text-foreground">
-                    {dateTimeFormatter.format(new Date(appt.start_at))}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[14px] font-bold text-foreground">
+                      {dateTimeFormatter.format(new Date(appt.start_at))}
+                    </div>
+                    <div className="sm:hidden">
+                      <ApptStatusBadge status={appt.status} />
+                    </div>
                   </div>
                   <div className="text-[13.5px] font-medium text-slate-600">
                     {appt.professional_name ?? "—"}
@@ -1278,7 +1459,7 @@ export function PatientTabs({
                   <div className="text-[13.5px] font-medium text-slate-600">
                     {appt.treatment_label ?? "—"}
                   </div>
-                  <div>
+                  <div className="hidden sm:block">
                     <ApptStatusBadge status={appt.status} />
                   </div>
                 </div>
@@ -1322,6 +1503,8 @@ export function PatientTabs({
           {canCreateNote && showConfig && (
             <NoteFieldConfigPanel
               config={noteConfig}
+              specialties={specialtyList}
+              specialtyFieldDefs={specialtyFieldDefs}
               onClose={() => setShowConfig(false)}
             />
           )}
@@ -1346,6 +1529,7 @@ export function PatientTabs({
               treatments={treatments}
               config={noteConfig}
               clinicalProfile={clinicalProfile}
+              specialtyFieldDefs={specialtyFieldDefs}
               mode="create"
               onClose={() => setShowForm(false)}
             />
@@ -1381,6 +1565,7 @@ export function PatientTabs({
                       treatments={treatments}
                       config={noteConfig}
                       clinicalProfile={clinicalProfile}
+                      specialtyFieldDefs={specialtyFieldDefs}
                       mode="edit"
                       note={note}
                       onClose={() => setEditingNoteId(null)}
@@ -1422,7 +1607,10 @@ export function PatientTabs({
                       <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-slate-700">
                         {note.body}
                       </p>
-                      <StructuredDataView data={note.structured_data} />
+                      <StructuredDataView
+                        data={note.structured_data}
+                        specialtyFieldDefs={specialtyFieldDefs}
+                      />
                       <AttachmentGallery
                         attachments={note.attachments}
                         onOpenImage={openImage}

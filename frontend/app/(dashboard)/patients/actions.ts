@@ -115,11 +115,14 @@ function parseStructuredData(formData: FormData): Record<string, unknown> {
   }
   if (Object.keys(examFisico).length > 0) structured.examen_fisico = examFisico;
 
-  // Campos especializados: el form los envía con prefijo `esp_<key>`.
+  // Campos especializados: el form los envía con prefijo `esp_<key>`. Se recorren
+  // genéricamente para soportar tanto el catálogo base como los campos propios de
+  // la clínica (clinic_specialty_fields), cuyas claves no están en el catálogo TS.
   const especializados: Record<string, string> = {};
-  for (const f of SPECIALTY_FIELD_DEFS) {
-    const v = (formData.get(`esp_${f.key}`) as string | null)?.trim();
-    if (v) especializados[f.key] = v;
+  for (const [name, value] of Array.from(formData.entries())) {
+    if (!name.startsWith("esp_") || typeof value !== "string") continue;
+    const v = value.trim();
+    if (v) especializados[name.slice(4)] = v;
   }
   if (Object.keys(especializados).length > 0) structured.especializados = especializados;
 
@@ -444,6 +447,8 @@ export interface DictationResult {
   vitals?: Record<string, string>;
   examen_fisico?: Record<string, string>;
   indicaciones?: string;
+  fecha_control?: string;
+  especializados?: Record<string, string>;
 }
 
 // Recibe el audio dictado por el profesional (base64) y lo convierte en una nota
@@ -477,6 +482,29 @@ export async function transcribeNoteDictation(input: {
   const enabled = new Set(input.fields ?? []);
   const wants = (k: string) => enabled.size === 0 || enabled.has(k);
 
+  // Fecha de hoy (zona de la clínica) para resolver expresiones relativas
+  // del dictado ("en 15 días", "el lunes que viene") al campo fecha_control.
+  const TZ = "America/Argentina/Buenos_Aires";
+  const now = new Date();
+  const todayISO = new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(now);
+  const todayHuman = new Intl.DateTimeFormat("es-AR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: TZ,
+  }).format(now);
+
+  // Campos de especialidad habilitados para este profesional. El cliente los
+  // manda como `esp:<key>`; el modelo solo debe completar los que se mencionen.
+  const espWanted = SPECIALTY_FIELD_DEFS.filter((f) => enabled.has(`esp:${f.key}`));
+  const espLines = espWanted
+    .map(
+      (f) =>
+        `    - ${f.key}: ${f.label}${f.placeholder ? ` (ej. ${f.placeholder})` : ""}.`
+    )
+    .join("\n");
+
   // La impresión diagnóstica NUNCA se dicta: va por sugerencia IA separada
   // que el médico confirma obligatoriamente. No se incluye en este prompt.
   const camposPedidos = [
@@ -496,6 +524,12 @@ export async function transcribeNoteDictation(input: {
     wants("indicaciones")
       ? "- indicaciones: indicaciones, plan o tratamiento indicado, si se menciona."
       : "",
+    wants("fecha_control")
+      ? `- fecha_control: fecha del próximo control en formato YYYY-MM-DD. Hoy es ${todayHuman} (${todayISO}); resolvé expresiones relativas ("en 15 días", "la semana que viene") respecto de esa fecha. Omití la clave si no se menciona ninguna fecha de control.`
+      : "",
+    espWanted.length > 0
+      ? `- especializados: objeto con los campos de especialidad mencionados (incluí SOLO los que aparezcan en el dictado):\n${espLines}`
+      : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -508,6 +542,7 @@ export async function transcribeNoteDictation(input: {
     "",
     "Reglas:",
     "- No inventes datos: si algo no se menciona, omití la clave.",
+    "- Completá un campo SOLO si el dictado contiene información que le corresponde.",
     "- Corregí muletillas y errores obvios de dictado, sin alterar el contenido clínico.",
     "- Respondé ÚNICAMENTE el JSON, sin texto adicional ni markdown.",
   ].join("\n");

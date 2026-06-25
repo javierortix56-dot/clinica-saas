@@ -26,18 +26,25 @@ function initialsOf(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-export function Sidebar({
+/**
+ * Contenido del sidebar (logo + navegación + tarjeta de usuario).
+ * Reutilizado por el sidebar fijo de escritorio y por el drawer mobile.
+ * `onNavigate` permite cerrar el drawer al tocar un link en mobile.
+ */
+export function SidebarContent({
   displayName,
   roleLabel,
   isOwner,
   approvalsCount,
   signOutAction,
+  onNavigate,
 }: {
   displayName: string;
   roleLabel: string;
   isOwner: boolean;
   approvalsCount: number;
   signOutAction: () => void;
+  onNavigate?: () => void;
 }) {
   const pathname = usePathname();
 
@@ -69,6 +76,7 @@ export function Sidebar({
     return (
       <Link
         href={item.href}
+        onClick={onNavigate}
         className={`flex items-center gap-[11px] rounded-[10px] px-[11px] py-[9px] text-[13.5px] font-semibold transition-colors ${
           active
             ? "bg-primary/20 text-white"
@@ -87,7 +95,7 @@ export function Sidebar({
   }
 
   return (
-    <aside className="sticky top-0 hidden h-screen w-[246px] shrink-0 flex-col bg-sidebar px-[14px] py-5 md:flex">
+    <div className="flex h-full flex-col bg-sidebar px-[14px] py-5">
       {/* Logo + wordmark */}
       <div className="flex items-center gap-[11px] px-2 pb-[22px] pt-1">
         <div className="flex h-[38px] w-[38px] items-center justify-center rounded-[11px] bg-primary shadow-[0_6px_16px_rgba(37,99,235,.3)]">
@@ -150,6 +158,6 @@ export function Sidebar({
           </button>
         </form>
       </div>
-    </aside>
+    </div>
   );
 }

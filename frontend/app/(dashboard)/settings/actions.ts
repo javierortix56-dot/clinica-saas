@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { createClient } from "@/lib/supabase/server";
+import { SPECIALTY_PRESETS } from "../patients/clinical-fields";
 
 // Las configuraciones de la clínica son exclusivas del dueño (is_owner).
 // Decodifica el JWT de sesión y exige el claim is_owner (inyectado por el Custom
@@ -166,6 +167,164 @@ export async function deleteTreatmentType(
 
   const { error } = await supabase.from("treatment_types").delete().eq("id", id);
   if (error) return { error: `Error al eliminar: ${error.message}` };
+
+  revalidatePath("/settings");
+  return {};
+}
+
+// ─── Especialidades y campos clínicos (admin) ───────────────────────────────────
+
+// Convierte un texto a un identificador seguro [a-z0-9_], acotado.
+function slugify(text: string): string {
+  return text
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40) || "campo";
+}
+
+// Siembra las especialidades base (los 25 presets) para la clínica si todavía no
+// tiene ninguna. Idempotente: no duplica si ya hay filas (aunque estén borradas).
+// Solo admin (RLS lo refuerza). Se llama al abrir Ajustes.
+export async function ensureSpecialtiesSeeded(): Promise<{ error?: string; seeded?: number }> {
+  const result = await requireOwner();
+  if ("error" in result) return { error: result.error };
+  const { supabase, clinicId } = result;
+
+  const { count } = await supabase
+    .from("clinic_specialties")
+    .select("id", { count: "exact", head: true })
+    .eq("clinic_id", clinicId);
+
+  if (count && count > 0) return { seeded: 0 };
+
+  const rows = SPECIALTY_PRESETS.map((p, i) => ({
+    clinic_id: clinicId,
+    slug: p.id,
+    label: p.label,
+    base_off: p.baseOff ?? [],
+    exam_systems: p.examSystems,
+    specialty_fields: p.specialtyFields,
+    is_builtin: true,
+    sort_order: i,
+  }));
+
+  const { error } = await supabase.from("clinic_specialties").insert(rows);
+  if (error) return { error: `No se pudieron sembrar las especialidades: ${error.message}` };
+
+  revalidatePath("/settings");
+  return { seeded: rows.length };
+}
+
+export async function upsertSpecialty(input: {
+  id?: string;
+  label: string;
+  baseOff: string[];
+  examSystems: string[];
+  specialtyFields: string[];
+}): Promise<{ error?: string }> {
+  const result = await requireOwner();
+  if ("error" in result) return { error: result.error };
+  const { supabase, clinicId } = result;
+
+  const label = input.label?.trim();
+  if (!label) return { error: "La especialidad necesita un nombre." };
+
+  const payload = {
+    label,
+    base_off: input.baseOff ?? [],
+    exam_systems: input.examSystems ?? [],
+    specialty_fields: input.specialtyFields ?? [],
+  };
+
+  if (input.id) {
+    const { error } = await supabase
+      .from("clinic_specialties")
+      .update(payload)
+      .eq("id", input.id)
+      .eq("clinic_id", clinicId);
+    if (error) return { error: `No se pudo guardar: ${error.message}` };
+  } else {
+    // Slug estable y único: base del nombre + sufijo corto para evitar choques.
+    const slug = `${slugify(label)}_${crypto.randomUUID().slice(0, 4)}`;
+    const { error } = await supabase.from("clinic_specialties").insert({
+      clinic_id: clinicId,
+      slug,
+      is_builtin: false,
+      sort_order: 999,
+      ...payload,
+    });
+    if (error) return { error: `No se pudo crear: ${error.message}` };
+  }
+
+  revalidatePath("/settings");
+  return {};
+}
+
+export async function deleteSpecialty(id: string): Promise<{ error?: string }> {
+  const result = await requireOwner();
+  if ("error" in result) return { error: result.error };
+  const { supabase, clinicId } = result;
+
+  const { error } = await supabase
+    .from("clinic_specialties")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("clinic_id", clinicId);
+  if (error) return { error: `No se pudo eliminar: ${error.message}` };
+
+  revalidatePath("/settings");
+  return {};
+}
+
+export async function upsertSpecialtyField(input: {
+  id?: string;
+  label: string;
+  placeholder?: string;
+}): Promise<{ error?: string }> {
+  const result = await requireOwner();
+  if ("error" in result) return { error: result.error };
+  const { supabase, clinicId } = result;
+
+  const label = input.label?.trim();
+  if (!label) return { error: "El campo necesita un nombre." };
+  const placeholder = input.placeholder?.trim() || null;
+
+  if (input.id) {
+    const { error } = await supabase
+      .from("clinic_specialty_fields")
+      .update({ label, placeholder })
+      .eq("id", input.id)
+      .eq("clinic_id", clinicId);
+    if (error) return { error: `No se pudo guardar: ${error.message}` };
+  } else {
+    const key = `${slugify(label)}_${crypto.randomUUID().slice(0, 4)}`;
+    const { error } = await supabase.from("clinic_specialty_fields").insert({
+      clinic_id: clinicId,
+      key,
+      label,
+      placeholder,
+    });
+    if (error) return { error: `No se pudo crear el campo: ${error.message}` };
+  }
+
+  revalidatePath("/settings");
+  return {};
+}
+
+export async function deleteSpecialtyField(id: string): Promise<{ error?: string }> {
+  const result = await requireOwner();
+  if ("error" in result) return { error: result.error };
+  const { supabase, clinicId } = result;
+
+  const { error } = await supabase
+    .from("clinic_specialty_fields")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("clinic_id", clinicId);
+  if (error) return { error: `No se pudo eliminar: ${error.message}` };
 
   revalidatePath("/settings");
   return {};

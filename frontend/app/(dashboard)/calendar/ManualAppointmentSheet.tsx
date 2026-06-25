@@ -20,11 +20,15 @@ export function ManualAppointmentSheet({
   onOpenChange,
   patients,
   professionals,
+  initialPatientId,
+  initialDate,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   patients: Pick<Patient, "id" | "full_name" | "national_id">[];
   professionals: ProfessionalForScheduling[];
+  initialPatientId?: string;
+  initialDate?: string;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -74,6 +78,7 @@ export function ManualAppointmentSheet({
               name="patient_id"
               required
               size={5}
+              defaultValue={initialPatientId}
               className="w-full rounded border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-slate-400"
             >
               {filteredPatients.map((p) => (
@@ -108,6 +113,7 @@ export function ManualAppointmentSheet({
               type="date"
               name="date"
               required
+              defaultValue={initialDate}
               min={new Date().toISOString().slice(0, 10)}
               className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400"
             />
