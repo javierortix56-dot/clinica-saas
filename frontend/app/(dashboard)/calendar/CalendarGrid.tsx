@@ -77,6 +77,7 @@ export function CalendarGrid({
     }
   }, [canCreateAppointment]);
 
+
   // Profesionales presentes esta semana (para los chips de filtro y la leyenda).
   const profNames = useMemo(() => {
     const names = new Set<string>();

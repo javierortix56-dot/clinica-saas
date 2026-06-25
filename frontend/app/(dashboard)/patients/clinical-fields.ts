@@ -434,6 +434,7 @@ export function presetToSpecialty(p: SpecialtyPreset): ClinicSpecialty {
   };
 }
 
+
 // ─── Datos estructurados guardados en clinical_notes.structured_data ──────────
 
 export interface NoteStructuredData {
