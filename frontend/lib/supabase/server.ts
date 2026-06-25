@@ -244,7 +244,13 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
     patients: { full_name: string } | null;
     treatments: { treatment_types: { name: string } | null } | null;
     treatment_phase_templates: { name: string } | null;
-    professionals: { staff_members: { full_name: string } | null } | null;
+    professionals: {
+      staff_members: {
+        full_name: string;
+        is_active: boolean;
+        deleted_at: string | null;
+      } | null;
+    } | null;
   };
 
   let query = supabase
@@ -254,7 +260,7 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
        patients ( full_name ),
        treatments ( treatment_types ( name ) ),
        treatment_phase_templates ( name ),
-       professionals ( staff_members ( full_name ) )`
+       professionals ( staff_members ( full_name, is_active, deleted_at ) )`
     )
     .eq("status", "confirmed")
     .gte("start_at", weekStart.toISOString())
@@ -275,17 +281,21 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
   const { data, error } = await query;
   if (error) throw new Error(`No se pudieron cargar los turnos: ${error.message}`);
 
-  return ((data ?? []) as unknown as ApptRow[]).map((row) => ({
-    id: row.id,
-    start_at: row.start_at,
-    end_at: row.end_at,
-    patient_name: row.patients?.full_name ?? "Paciente",
-    treatment_label:
-      row.treatments?.treatment_types?.name ??
-      row.treatment_phase_templates?.name ??
-      null,
-    professional_name: row.professionals?.staff_members?.full_name ?? null,
-  }));
+  return ((data ?? []) as unknown as ApptRow[]).map((row) => {
+    const sm = row.professionals?.staff_members;
+    const activeProf = sm && sm.is_active && sm.deleted_at === null ? sm.full_name : null;
+    return {
+      id: row.id,
+      start_at: row.start_at,
+      end_at: row.end_at,
+      patient_name: row.patients?.full_name ?? "Paciente",
+      treatment_label:
+        row.treatments?.treatment_types?.name ??
+        row.treatment_phase_templates?.name ??
+        null,
+      professional_name: activeProf,
+    };
+  });
 }
 
 // Lee los bloqueos de disponibilidad (kind='block') que se solapan con la semana
@@ -316,14 +326,20 @@ export async function getWeeklyBlocks(refDate?: Date): Promise<WeeklyBlock[]> {
     ends_at: string;
     reason: string | null;
     source: string;
-    professionals: { staff_members: { full_name: string } | null } | null;
+    professionals: {
+      staff_members: {
+        full_name: string;
+        is_active: boolean;
+        deleted_at: string | null;
+      } | null;
+    } | null;
   };
 
   let query = supabase
     .from("availability_exceptions")
     .select(
       `id, starts_at, ends_at, reason, source,
-       professionals ( staff_members ( full_name ) )`
+       professionals ( staff_members ( full_name, is_active, deleted_at ) )`
     )
     .eq("kind", "block")
     .is("deleted_at", null)
@@ -345,14 +361,18 @@ export async function getWeeklyBlocks(refDate?: Date): Promise<WeeklyBlock[]> {
   const { data, error } = await query;
   if (error) throw new Error(`No se pudieron cargar los bloqueos: ${error.message}`);
 
-  return ((data ?? []) as unknown as BlockRow[]).map((row) => ({
-    id: row.id,
-    start_at: row.starts_at,
-    end_at: row.ends_at,
-    reason: row.reason,
-    source: row.source,
-    professional_name: row.professionals?.staff_members?.full_name ?? null,
-  }));
+  return ((data ?? []) as unknown as BlockRow[]).map((row) => {
+    const sm = row.professionals?.staff_members;
+    const activeProf = sm && sm.is_active && sm.deleted_at === null ? sm.full_name : null;
+    return {
+      id: row.id,
+      start_at: row.starts_at,
+      end_at: row.ends_at,
+      reason: row.reason,
+      source: row.source,
+      professional_name: activeProf,
+    };
+  });
 }
 
 // Devuelve un paciente por ID, o null si no existe (o RLS lo oculta).
