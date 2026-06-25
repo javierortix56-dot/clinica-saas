@@ -90,9 +90,10 @@ export function PatientsClient({ patients }: { patients: Patient[] }) {
             <button
               key={p.id}
               onClick={() => router.push(`/patients/${p.id}`)}
-              className="flex w-full flex-col gap-[10px] border-b border-slate-100 px-4 py-[14px] text-left transition-colors last:border-0 hover:bg-slate-50 sm:grid sm:grid-cols-[2.2fr_1.6fr_1.2fr_1.1fr] sm:items-center sm:gap-0 sm:px-[22px] sm:py-[13px]"
+              className="flex w-full items-center gap-3 border-b border-slate-100 px-4 py-[10px] text-left transition-colors last:border-0 hover:bg-slate-50 sm:grid sm:grid-cols-[2.2fr_1.6fr_1.2fr_1.1fr] sm:gap-0 sm:px-[22px] sm:py-[13px]"
             >
-              <div className="flex min-w-0 items-center gap-3">
+              {/* Nombre (+ DNI bajo el nombre solo en móvil) */}
+              <div className="flex min-w-0 flex-1 items-center gap-3 sm:flex-none">
                 <span
                   className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full text-[12.5px] font-bold text-white"
                   style={{
@@ -101,35 +102,39 @@ export function PatientsClient({ patients }: { patients: Patient[] }) {
                 >
                   {initialsOf(p.full_name)}
                 </span>
-                <span className="truncate text-[14px] font-bold text-foreground">
-                  {p.full_name}
-                </span>
-                <ChevronRight
-                  className="ml-auto h-4 w-4 shrink-0 text-slate-300 sm:hidden"
-                  strokeWidth={2}
-                />
+                <div className="min-w-0">
+                  <div className="truncate text-[14px] font-bold text-foreground">
+                    {p.full_name}
+                  </div>
+                  <div className="mt-[1px] font-mono text-[12px] text-slate-400 sm:hidden">
+                    {p.national_id}
+                  </div>
+                </div>
               </div>
-              <div className="font-mono text-[13px] text-slate-600 sm:text-[13.5px]">
-                <span className="mr-[6px] font-sans text-[11px] font-semibold uppercase tracking-[.04em] text-slate-400 sm:hidden">
-                  Tel
-                </span>
+
+              {/* Teléfono — solo desktop */}
+              <div className="hidden font-mono text-[13.5px] text-slate-600 sm:block">
                 {p.phone ?? "—"}
               </div>
-              <div className="font-mono text-[13px] text-slate-600 sm:text-[13.5px]">
-                <span className="mr-[6px] font-sans text-[11px] font-semibold uppercase tracking-[.04em] text-slate-400 sm:hidden">
-                  DNI
-                </span>
+
+              {/* DNI — solo desktop */}
+              <div className="hidden font-mono text-[13.5px] text-slate-600 sm:block">
                 {p.national_id}
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[13px] font-medium text-muted-foreground sm:text-[13.5px]">
+
+              {/* Fecha de alta — solo desktop */}
+              <div className="hidden items-center justify-between sm:flex">
+                <span className="text-[13.5px] font-medium text-muted-foreground">
                   {dateFormatter.format(new Date(p.created_at))}
                 </span>
-                <ChevronRight
-                  className="hidden h-4 w-4 text-slate-300 sm:block"
-                  strokeWidth={2}
-                />
+                <ChevronRight className="h-4 w-4 text-slate-300" strokeWidth={2} />
               </div>
+
+              {/* Chevron móvil */}
+              <ChevronRight
+                className="h-4 w-4 shrink-0 text-slate-300 sm:hidden"
+                strokeWidth={2}
+              />
             </button>
           ))}
         </div>

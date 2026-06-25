@@ -65,27 +65,27 @@ export default async function PatientDetailPage({
     <div className="mx-auto max-w-[1000px]">
       <Link
         href="/patients"
-        className="mb-[18px] flex items-center gap-[7px] text-[13px] font-semibold text-muted-foreground transition-colors hover:text-primary"
+        className="mb-3 flex items-center gap-[7px] text-[13px] font-semibold text-muted-foreground transition-colors hover:text-primary sm:mb-[18px]"
       >
         <ChevronLeft className="h-4 w-4" strokeWidth={2} />
         Volver a pacientes
       </Link>
 
-      <div className="mb-[22px] flex items-center justify-between gap-4">
-        <div className="flex items-center gap-[15px]">
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-primary text-[19px] font-extrabold text-white shadow-[0_6px_16px_rgba(37,99,235,.3)]">
+      <div className="mb-4 flex items-start justify-between gap-3 sm:mb-[22px] sm:items-center">
+        <div className="flex min-w-0 items-center gap-3 sm:gap-[15px]">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary text-[15px] font-extrabold text-white shadow-[0_6px_16px_rgba(37,99,235,.3)] sm:h-14 sm:w-14 sm:rounded-2xl sm:text-[19px]">
             {initialsOf(patient.full_name)}
           </div>
-          <div>
-            <h1 className="text-[26px] font-extrabold tracking-[-.02em]">
+          <div className="min-w-0">
+            <h1 className="truncate text-[21px] font-extrabold tracking-[-.02em] sm:text-[26px]">
               {patient.full_name}
             </h1>
-            <div className="mt-2 flex items-center gap-[10px]">
-              <span className="font-mono text-[13.5px] text-muted-foreground">
+            <div className="mt-[3px] flex flex-wrap items-center gap-x-[10px] gap-y-1 sm:mt-2">
+              <span className="font-mono text-[12.5px] text-muted-foreground sm:text-[13.5px]">
                 {patient.national_id}
               </span>
               <span className="h-1 w-1 rounded-full bg-slate-300" />
-              <span className="text-[13.5px] font-medium text-muted-foreground">
+              <span className="text-[12.5px] font-medium text-muted-foreground sm:text-[13.5px]">
                 Activo desde {shortDateFormatter.format(new Date(patient.created_at))}
               </span>
             </div>
@@ -94,28 +94,28 @@ export default async function PatientDetailPage({
         <EditPatientButton patient={patient} />
       </div>
 
-      <div className="mb-5 grid grid-cols-1 gap-x-10 gap-y-5 rounded-card border border-border bg-white px-6 py-[22px] shadow-card-soft sm:grid-cols-2">
+      <div className="mb-4 grid grid-cols-2 gap-x-5 gap-y-[14px] rounded-card border border-border bg-white p-4 shadow-card-soft sm:mb-5 sm:gap-x-10 sm:gap-y-5 sm:px-6 sm:py-[22px]">
         <div>
-          <div className="mb-[7px] text-[11px] font-semibold uppercase tracking-[.06em] text-slate-400">
+          <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-[.06em] text-slate-400 sm:mb-[7px] sm:text-[11px]">
             DNI / ID
           </div>
-          <div className="font-mono text-[15px] font-semibold text-slate-800">
+          <div className="font-mono text-[14px] font-semibold text-slate-800 sm:text-[15px]">
             {patient.national_id}
           </div>
         </div>
         <div>
-          <div className="mb-[7px] text-[11px] font-semibold uppercase tracking-[.06em] text-slate-400">
+          <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-[.06em] text-slate-400 sm:mb-[7px] sm:text-[11px]">
             Teléfono
           </div>
-          <div className="font-mono text-[15px] font-semibold text-slate-800">
+          <div className="font-mono text-[14px] font-semibold text-slate-800 sm:text-[15px]">
             {patient.phone ?? "—"}
           </div>
         </div>
-        <div>
-          <div className="mb-[7px] text-[11px] font-semibold uppercase tracking-[.06em] text-slate-400">
+        <div className="col-span-2 sm:col-span-1">
+          <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-[.06em] text-slate-400 sm:mb-[7px] sm:text-[11px]">
             Email
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-[15px] font-medium text-slate-800">
+          <div className="flex flex-wrap items-center gap-2 text-[14px] font-medium text-slate-800 sm:text-[15px]">
             <span>{patient.email ?? "—"}</span>
             {patient.email ? (
               <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
@@ -128,11 +128,11 @@ export default async function PatientDetailPage({
             )}
           </div>
         </div>
-        <div>
-          <div className="mb-[7px] text-[11px] font-semibold uppercase tracking-[.06em] text-slate-400">
+        <div className="col-span-2 sm:col-span-1">
+          <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-[.06em] text-slate-400 sm:mb-[7px] sm:text-[11px]">
             Fecha de alta
           </div>
-          <div className="text-[15px] font-medium text-slate-800">
+          <div className="text-[14px] font-medium text-slate-800 sm:text-[15px]">
             {dateFormatter.format(new Date(patient.created_at))}
           </div>
         </div>
