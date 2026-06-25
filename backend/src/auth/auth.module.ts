@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { SupabaseJwtGuard } from './supabase-jwt.guard';
+import { SupabasePatientGuard } from './supabase-patient.guard';
 import { RolesGuard } from './roles.guard';
 
 /**
@@ -8,7 +9,7 @@ import { RolesGuard } from './roles.guard';
  * los módulos de dominio (p.ej. AppointmentsModule) los usen con `@UseGuards`.
  */
 @Module({
-  providers: [SupabaseJwtGuard, RolesGuard],
-  exports: [SupabaseJwtGuard, RolesGuard],
+  providers: [SupabaseJwtGuard, SupabasePatientGuard, RolesGuard],
+  exports: [SupabaseJwtGuard, SupabasePatientGuard, RolesGuard],
 })
 export class AuthModule {}

@@ -2,40 +2,50 @@
 
 import { revalidatePath } from "next/cache";
 
-import { createClient, getPatientSession } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 
+// Cancela un turno del paciente vía el endpoint NestJS POST
+// /portal/appointments/:id/cancel. Pasar por el backend respeta la regla de que
+// los writes de turnos van por el endpoint (nunca directo a Supabase) y, además,
+// elimina el evento espejo del Google Calendar del profesional. El backend
+// valida la titularidad del turno con el claim patient_id del JWT.
 export async function cancelPortalAppointment(
   appointmentId: string
 ): Promise<{ error?: string }> {
-  const { hasSession, patientId } = await getPatientSession();
-  if (!hasSession || !patientId) return { error: "Sesión expirada." };
-
   const supabase = createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) return { error: "Sesión expirada." };
 
-  // RLS policy `patient_view_own` ensures the patient can only access their own rows.
-  // We filter by patient_id explicitly as an extra guard before updating.
-  const { data: appt } = await supabase
-    .from("appointments")
-    .select("id, status, start_at")
-    .eq("id", appointmentId)
-    .eq("patient_id", patientId)
-    .single();
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (!apiUrl) return { error: "API no configurada." };
 
-  if (!appt) return { error: "Turno no encontrado." };
-  if (!["proposed", "confirmed"].includes(appt.status)) {
-    return { error: "Solo se pueden cancelar turnos propuestos o confirmados." };
+  try {
+    const res = await fetch(
+      `${apiUrl}/portal/appointments/${appointmentId}/cancel`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        cache: "no-store",
+      }
+    );
+
+    if (res.status === 404) {
+      return { error: "Turno no encontrado." };
+    }
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as
+        | { message?: string | string[] }
+        | null;
+      const msg = Array.isArray(body?.message)
+        ? body?.message.join(" ")
+        : body?.message;
+      return { error: msg || `No se pudo cancelar el turno (HTTP ${res.status}).` };
+    }
+  } catch {
+    return { error: "No se pudo conectar con el servidor." };
   }
-  if (new Date(appt.start_at) < new Date()) {
-    return { error: "No se puede cancelar un turno que ya ocurrió." };
-  }
-
-  const { error } = await supabase
-    .from("appointments")
-    .update({ status: "cancelled" })
-    .eq("id", appointmentId)
-    .eq("patient_id", patientId);
-
-  if (error) return { error: `No se pudo cancelar: ${error.message}` };
 
   revalidatePath("/portal/turnos");
   return {};
