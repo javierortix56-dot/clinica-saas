@@ -10,13 +10,13 @@ import { GoogleCalendarImportService } from './google-calendar-import.service';
 /**
  * GoogleCalendarWatchService — notificaciones push (tiempo real) Google → App.
  *
- * Registra un "watch channel" sobre el target_calendar_id de cada profesional
- * (el calendario "Turnos - ..."). Google hace un POST a /google-calendar/webhook
- * cada vez que ese calendario cambia; el backend reconcilia los turnos al
- * instante (si el profesional borró el evento, cancela el turno).
+ * Registra un "watch channel" sobre el source_calendar_id de cada profesional
+ * (por defecto 'primary'). Google hace un POST a /google-calendar/webhook
+ * cada vez que ese calendario cambia; el backend dispara un sync completo
+ * (importa bloqueos nuevos y reconcilia cancelaciones) casi al instante.
  *
  * Los canales expiran, así que se renuevan con un cron antes del vencimiento.
- * El poll cada 10 min sigue activo como red de seguridad por si se pierde un
+ * El poll cada 2 min sigue activo como red de seguridad por si se pierde un
  * webhook o el canal caduca entre renovaciones.
  *
  * REQUISITO DE GOOGLE: el dominio que recibe el webhook debe estar verificado
@@ -59,6 +59,8 @@ export class GoogleCalendarWatchService {
 
   /**
    * Registra (o re-registra) el canal de notificaciones para un profesional.
+   * Monitoriza source_calendar_id ('primary' por defecto) para detectar eventos
+   * nuevos/modificados en tiempo real y disparar un sync completo.
    * Detiene el canal anterior si existía. Best-effort: ante cualquier error de
    * Google (típicamente dominio sin verificar) loguea y no propaga.
    */
@@ -66,7 +68,9 @@ export class GoogleCalendarWatchService {
     const link = await this.prisma.professional_calendar_links.findFirst({
       where: { professional_id: professionalId, is_active: true, deleted_at: null },
     });
-    if (!link?.target_calendar_id) return;
+    if (!link) return;
+
+    const sourceCalId = link.source_calendar_id ?? 'primary';
 
     const url = this.webhookUrl();
     if (!url) {
@@ -90,7 +94,7 @@ export class GoogleCalendarWatchService {
 
     try {
       const res = await cal.events.watch({
-        calendarId: link.target_calendar_id,
+        calendarId: sourceCalId,
         requestBody: {
           id: channelId,
           type: 'web_hook',
@@ -115,14 +119,14 @@ export class GoogleCalendarWatchService {
       });
 
       this.logger.log(
-        `Watch registrado para professional ${professionalId} ` +
+        `Watch registrado en '${sourceCalId}' para professional ${professionalId} ` +
           `(expira ${expiration?.toISOString() ?? 'n/d'}).`,
       );
     } catch (err) {
       this.logger.error(
         `No se pudo registrar watch para professional ${professionalId}: ${String(err)}. ` +
           'Verificá que el dominio del webhook esté validado en Google Cloud Console. ' +
-          'El poll cada 10 min sigue funcionando como respaldo.',
+          'El poll cada 2 min sigue funcionando como respaldo.',
       );
     }
   }
@@ -201,20 +205,20 @@ export class GoogleCalendarWatchService {
       return;
     }
 
-    await this.importer.reconcileCancellationsForLink(link);
+    await this.importer.syncProfessional(link);
   }
 
   /**
    * Registra canales faltantes y renueva los que están por expirar. Lo llama
    * el cron periódico. También cubre profesionales conectados antes de existir
-   * esta feature (canal nulo).
+   * esta feature (canal nulo). Monitoriza source_calendar_id ('primary') de
+   * todos los links activos, sin requerir target_calendar_id.
    */
   async ensureAllChannels(): Promise<void> {
     const links = await this.prisma.professional_calendar_links.findMany({
       where: {
         is_active: true,
         deleted_at: null,
-        target_calendar_id: { not: null },
       },
     });
 
