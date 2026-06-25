@@ -42,19 +42,46 @@ export async function cancelAppointment(
   return {};
 }
 
-// Actualiza el estado de un turno. Transiciones válidas desde la UI:
-//   confirmed   → in_progress | no_show
-//   in_progress → completed
+// Actualiza el estado de un turno vía NestJS PATCH /appointments/:id/status.
+// Transiciones válidas: confirmed → in_progress | no_show; in_progress → completed.
 export async function updateAppointmentStatus(
   appointmentId: string,
   status: "in_progress" | "completed" | "no_show"
 ): Promise<{ error?: string }> {
   const supabase = createClient();
-  const { error } = await supabase
-    .from("appointments")
-    .update({ status })
-    .eq("id", appointmentId);
-  if (error) return { error: `No se pudo actualizar el estado: ${error.message}` };
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { error: "Sesión expirada." };
+
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (!apiUrl) return { error: "API no configurada." };
+
+  try {
+    const res = await fetch(
+      `${apiUrl}/appointments/${appointmentId}/status`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ status }),
+        cache: "no-store",
+      }
+    );
+
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as
+        | { message?: string | string[] }
+        | null;
+      const msg = Array.isArray(body?.message)
+        ? body?.message.join(" ")
+        : body?.message;
+      return { error: msg || `No se pudo actualizar el estado (HTTP ${res.status}).` };
+    }
+  } catch {
+    return { error: "Error de red al actualizar el estado del turno." };
+  }
+
   revalidatePath("/calendar");
   return {};
 }

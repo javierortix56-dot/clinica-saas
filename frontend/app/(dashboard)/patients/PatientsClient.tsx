@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search, Plus, ChevronRight } from "lucide-react";
 
 import type { Patient } from "@clinica/shared";
+import { initialsOf } from "@/lib/utils";
 import { PatientSheet } from "./PatientSheet";
 
 const dateFormatter = new Intl.DateTimeFormat("es-AR", {
@@ -24,25 +25,21 @@ const AVATAR_COLORS = [
   "#16a34a",
 ];
 
-function initialsOf(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
 
 export function PatientsClient({ patients }: { patients: Patient[] }) {
   const router = useRouter();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [search, setSearch] = useState("");
 
-  const filtered = search.trim()
-    ? patients.filter(
-        (p) =>
-          p.full_name.toLowerCase().includes(search.toLowerCase()) ||
-          p.national_id.includes(search.trim())
-      )
-    : patients;
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return patients;
+    return patients.filter(
+      (p) =>
+        p.full_name.toLowerCase().includes(q) ||
+        p.national_id.includes(q)
+    );
+  }, [patients, search]);
 
   return (
     <div className="mx-auto max-w-[1100px]">

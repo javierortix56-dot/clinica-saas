@@ -1,4 +1,4 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { calendar } from '@googleapis/calendar';
 import { OAuth2Client, Credentials } from 'google-auth-library';
@@ -207,6 +207,18 @@ export class GoogleCalendarOAuthService {
   }
 
   /** Desconecta Google Calendar para un profesional. */
+  /** Lanza NotFoundException si el profesional no pertenece a la clínica. */
+  async validateProfessionalOwnership(
+    professionalId: string,
+    clinicId: string,
+  ): Promise<void> {
+    const prof = await this.prisma.professionals.findFirst({
+      where: { id: professionalId, clinic_id: clinicId, deleted_at: null },
+      select: { id: true },
+    });
+    if (!prof) throw new NotFoundException('Profesional no encontrado.');
+  }
+
   async disconnect(professionalId: string, clinicId: string): Promise<void> {
     const link = await this.prisma.professional_calendar_links.findFirst({
       where: { professional_id: professionalId, clinic_id: clinicId },

@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 import type { Appointment, Patient } from "@clinica/shared";
 import type {
   NoteFieldConfig,
@@ -34,7 +35,8 @@ export function createClient() {
 // Estado de autenticación del request: si hay sesión y qué rol trae el JWT.
 // El claim `user_role` lo inyecta el Custom Access Token Hook (admin | doctor |
 // reception; "professional" es el alias histórico de doctor).
-export async function getSessionAuth(): Promise<{
+// cache() de React deduplica llamadas dentro del mismo request tree (RSC).
+export const getSessionAuth = cache(async function (): Promise<{
   hasSession: boolean;
   role: string | null;
   isOwner: boolean;
@@ -59,7 +61,7 @@ export async function getSessionAuth(): Promise<{
     isOwner = false;
   }
   return { hasSession: true, role, isOwner };
-}
+});
 
 // True si el rol corresponde a un profesional (doctor / professional).
 export function isDoctorRole(role: string | null): boolean {

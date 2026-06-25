@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { initialsOf } from "@/lib/utils";
 import {
   Calendar,
   Users,
@@ -18,13 +19,6 @@ type NavItem = {
   icon: typeof Calendar;
   badge?: number;
 };
-
-function initialsOf(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
 
 /**
  * Contenido del sidebar (logo + navegación + tarjeta de usuario).

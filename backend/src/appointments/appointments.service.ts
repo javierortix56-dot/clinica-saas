@@ -9,6 +9,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { ActorSource, PrismaService } from '../database/prisma.service';
 import type { AuthUser } from '../auth/auth-user.interface';
+import type { PatientUser } from '../auth/patient-user.interface';
 import { GoogleCalendarEventService } from '../google-calendar/google-calendar-event.service';
 import { CreateManualAppointmentDto } from './dto/create-manual-appointment.dto';
 
@@ -254,6 +255,132 @@ export class AppointmentsService {
     );
 
     return this.toResult(appt);
+  }
+
+  /**
+   * Cancela un turno desde el portal del paciente. A diferencia de `cancel`
+   * (staff), el aislamiento se hace por `patient_id` (el JWT del paciente no
+   * trae clinic_id). Reglas del portal: solo turnos `proposed`/`confirmed` y que
+   * todavía no ocurrieron. Tras cancelar, elimina el evento espejo del Google
+   * Calendar del profesional (lo que el write directo a Supabase no hacía).
+   */
+  async cancelByPatient(
+    appointmentId: string,
+    patient: PatientUser,
+  ): Promise<ConfirmAppointmentResult> {
+    const appt = await this.prisma.appointments.findFirst({
+      where: {
+        id: appointmentId,
+        patient_id: patient.patientId,
+        deleted_at: null,
+      },
+      select: { ...SELECT, start_at: true },
+    });
+    if (!appt) {
+      throw new NotFoundException('Turno no encontrado.');
+    }
+
+    // Idempotencia: ya cancelado -> no-op exitoso.
+    if (appt.status === 'cancelled') {
+      return this.toResult(appt);
+    }
+    if (appt.status !== 'proposed' && appt.status !== 'confirmed') {
+      throw new ConflictException(
+        'Solo se pueden cancelar turnos propuestos o confirmados.',
+      );
+    }
+    if (appt.start_at.getTime() < Date.now()) {
+      throw new BadRequestException(
+        'No se puede cancelar un turno que ya ocurrió.',
+      );
+    }
+
+    try {
+      await this.prisma.runAsActor(
+        { actorId: patient.userId, source: 'patient' },
+        (tx) =>
+          tx.appointments.updateMany({
+            where: {
+              id: appointmentId,
+              patient_id: patient.patientId,
+              deleted_at: null,
+              status: { in: ['proposed', 'confirmed'] },
+              start_at: { gt: new Date() },
+            },
+            data: { status: 'cancelled' },
+          }),
+      );
+    } catch (err) {
+      throw this.mapManualWriteError(err);
+    }
+
+    const after = await this.prisma.appointments.findFirstOrThrow({
+      where: { id: appointmentId, patient_id: patient.patientId },
+      select: SELECT,
+    });
+
+    // Eliminar el evento de Google Calendar del profesional (no bloquea).
+    void this.gcal.deleteEvent(appointmentId).catch((err: unknown) =>
+      this.logger.error(
+        `GCal delete falló para turno ${appointmentId}: ${String(err)}`,
+      ),
+    );
+
+    return this.toResult(after);
+  }
+
+  /**
+   * Actualiza el estado de un turno a in_progress, completed o no_show.
+   * Transiciones válidas: confirmed → in_progress | no_show; in_progress → completed.
+   * Filtrado por clinic_id del JWT para aislamiento de tenant.
+   */
+  async updateStatus(
+    appointmentId: string,
+    status: 'in_progress' | 'completed' | 'no_show',
+    user: AuthUser,
+  ): Promise<ConfirmAppointmentResult> {
+    const appt = await this.prisma.appointments.findFirst({
+      where: { id: appointmentId, clinic_id: user.clinicId, deleted_at: null },
+      select: SELECT,
+    });
+    if (!appt) {
+      throw new NotFoundException('Turno no encontrado.');
+    }
+
+    const valid: Record<string, string[]> = {
+      confirmed: ['in_progress', 'no_show'],
+      in_progress: ['completed'],
+    };
+    if (!valid[appt.status]?.includes(status)) {
+      throw new ConflictException(
+        `No se puede pasar de "${appt.status}" a "${status}".`,
+      );
+    }
+
+    try {
+      await this.prisma.runAsActor(
+        { actorId: user.userId, source: ActorSource.Staff },
+        (tx) =>
+          tx.appointments.updateMany({
+            where: {
+              id: appointmentId,
+              clinic_id: user.clinicId,
+              status: appt.status,
+              deleted_at: null,
+            },
+            data: { status },
+          }),
+      );
+    } catch (err) {
+      throw this.mapManualWriteError(err);
+    }
+
+    const after = await this.prisma.appointments.findFirstOrThrow({
+      where: { id: appointmentId, clinic_id: user.clinicId },
+      select: SELECT,
+    });
+
+    return this.toResult(after);
   }
 
   private toResult(appt: {

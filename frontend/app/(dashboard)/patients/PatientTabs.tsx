@@ -333,6 +333,7 @@ function NoteForm({
   mode,
   note,
   onClose,
+  canScheduleAppointment,
 }: {
   patientId: string;
   treatments: PatientTreatment[];
@@ -342,6 +343,7 @@ function NoteForm({
   mode: "create" | "edit";
   note?: ClinicalNote;
   onClose: () => void;
+  canScheduleAppointment?: boolean;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -721,7 +723,7 @@ function NoteForm({
             onChange={(e) => setFechaControl(e.target.value)}
             className={fieldInput}
           />
-          {fechaControl && (
+          {fechaControl && canScheduleAppointment && (
             <button
               type="button"
               onClick={() =>
@@ -1397,6 +1399,7 @@ export function PatientTabs({
     if (next !== "historia") setNoteSearch("");
   }
   const canCreateNote = role === "admin" || role === "doctor";
+  const canScheduleAppointment = role === "admin" || role === "reception" || role === "doctor";
   const showPersonales = isFieldEnabled(noteConfig, "antecedentes_personales");
   const showFamiliares = isFieldEnabled(noteConfig, "antecedentes_familiares");
   const showAntecedentes = canCreateNote && (showPersonales || showFamiliares);
@@ -1532,6 +1535,7 @@ export function PatientTabs({
               specialtyFieldDefs={specialtyFieldDefs}
               mode="create"
               onClose={() => setShowForm(false)}
+              canScheduleAppointment={canScheduleAppointment}
             />
           )}
 
@@ -1569,6 +1573,7 @@ export function PatientTabs({
                       mode="edit"
                       note={note}
                       onClose={() => setEditingNoteId(null)}
+                      canScheduleAppointment={canScheduleAppointment}
                     />
                   ) : (
                     <div

@@ -142,7 +142,7 @@ export function CalendarGrid({
         {canCreateAppointment && (
           <button
             type="button"
-            onClick={() => setNewApptOpen(true)}
+            onClick={() => { setPrefill({}); setNewApptOpen(true); }}
             className="ml-auto flex items-center gap-[6px] rounded-[10px] bg-primary px-[13px] py-[8px] text-[12.5px] font-bold text-white shadow-[0_4px_12px_rgba(37,99,235,.3)] transition hover:brightness-[1.07]"
           >
             <Plus className="h-[14px] w-[14px]" strokeWidth={2.4} />

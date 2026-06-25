@@ -33,11 +33,13 @@ export class GoogleCalendarImportService {
   ) {}
 
   /** Sincroniza un profesional por su ID (para sync manual desde el controller). */
-  async syncByProfessionalId(professionalId: string): Promise<void> {
+  async syncByProfessionalId(professionalId: string, clinicId?: string): Promise<void> {
     const link = await this.prisma.professional_calendar_links.findFirst({
       where: { professional_id: professionalId, is_active: true, deleted_at: null },
+      include: { professionals: { select: { clinic_id: true } } },
     });
     if (!link) return;
+    if (clinicId && link.professionals?.clinic_id !== clinicId) return;
     await this.syncProfessional(link);
   }
 
@@ -170,26 +172,28 @@ export class GoogleCalendarImportService {
       select: { id: true, google_event_id: true },
     });
 
-    for (const appt of appts) {
-      try {
-        const eventRes = await cal.events.get({
-          calendarId: link.target_calendar_id!,
-          eventId: appt.google_event_id!,
-        });
-        if (eventRes.data.status === 'cancelled') {
-          await this.cancelFromGCal(appt.id);
+    await Promise.allSettled(
+      appts.map(async (appt) => {
+        try {
+          const eventRes = await cal.events.get({
+            calendarId: link.target_calendar_id!,
+            eventId: appt.google_event_id!,
+          });
+          if (eventRes.data.status === 'cancelled') {
+            await this.cancelFromGCal(appt.id);
+          }
+        } catch (err) {
+          const status = (err as GaxiosError)?.response?.status;
+          if (status === 404 || status === 410) {
+            await this.cancelFromGCal(appt.id);
+          } else {
+            this.logger.warn(
+              `No se pudo verificar evento ${appt.google_event_id} en GCal: ${String(err)}`,
+            );
+          }
         }
-      } catch (err) {
-        const status = (err as GaxiosError)?.response?.status;
-        if (status === 404 || status === 410) {
-          await this.cancelFromGCal(appt.id);
-        } else {
-          this.logger.warn(
-            `No se pudo verificar evento ${appt.google_event_id} en GCal: ${String(err)}`,
-          );
-        }
-      }
-    }
+      }),
+    );
   }
 
   /** Cancela un turno que fue eliminado desde Google Calendar. */

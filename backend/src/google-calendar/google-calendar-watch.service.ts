@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { calendar } from '@googleapis/calendar';
@@ -189,7 +189,14 @@ export class GoogleCalendarWatchService {
       this.logger.warn(`Webhook para canal desconocido: ${channelId}`);
       return;
     }
-    if (!link.watch_token || link.watch_token !== token) {
+    const storedBuf = Buffer.from(link.watch_token ?? '');
+    const receivedBuf = Buffer.from(token ?? '');
+    if (
+      !link.watch_token ||
+      !token ||
+      storedBuf.length !== receivedBuf.length ||
+      !timingSafeEqual(storedBuf, receivedBuf)
+    ) {
       this.logger.warn(`Token de canal inválido para ${channelId}; se ignora.`);
       return;
     }
