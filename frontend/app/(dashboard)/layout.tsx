@@ -66,7 +66,7 @@ export default async function DashboardLayout({
 
       <div className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
         <Topbar {...navProps} />
-        <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-7 sm:py-7">
+        <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-5">
           <div className="animate-fade-up">{children}</div>
         </div>
       </div>

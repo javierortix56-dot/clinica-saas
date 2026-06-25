@@ -91,7 +91,7 @@ export function SidebarContent({
   return (
     <div className="flex h-full flex-col bg-sidebar px-[14px] py-5">
       {/* Logo + wordmark */}
-      <div className="flex items-center gap-[11px] px-2 pb-[22px] pt-1">
+      <div className="flex items-center gap-[11px] px-2 pb-[14px] pt-1">
         <div className="flex h-[38px] w-[38px] items-center justify-center rounded-[11px] bg-primary shadow-[0_6px_16px_rgba(37,99,235,.3)]">
           <Plus className="h-5 w-5 text-white" strokeWidth={2.4} />
         </div>
@@ -116,7 +116,7 @@ export function SidebarContent({
 
       {gestion.length > 0 && (
         <>
-          <div className="px-[10px] pb-2 pt-5 text-[10.5px] font-semibold uppercase tracking-[.09em] text-slate-600">
+          <div className="px-[10px] pb-2 pt-3 text-[10.5px] font-semibold uppercase tracking-[.09em] text-slate-600">
             Gestión
           </div>
           <nav className="flex flex-col gap-[3px]">
