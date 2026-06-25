@@ -20,7 +20,6 @@ type NavItem = {
   badge?: number;
 };
 
-
 /**
  * Contenido del sidebar (logo + navegación + tarjeta de usuario).
  * Reutilizado por el sidebar fijo de escritorio y por el drawer mobile.
