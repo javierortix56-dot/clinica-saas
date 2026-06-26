@@ -188,6 +188,7 @@ export interface WeeklyAppointment {
   end_at: string;
   patient_name: string;
   patient_birth_date: string | null;
+  reason: string | null;
   treatment_label: string | null;
   professional_name: string | null;
 }
@@ -242,6 +243,7 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
     id: string;
     start_at: string;
     end_at: string;
+    reason: string | null;
     patients: { full_name: string; birth_date: string | null } | null;
     treatments: { treatment_types: { name: string } | null } | null;
     treatment_phase_templates: { name: string } | null;
@@ -257,7 +259,7 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
   let query = supabase
     .from("appointments")
     .select(
-      `id, start_at, end_at,
+      `id, start_at, end_at, reason,
        patients ( full_name, birth_date ),
        treatments ( treatment_types ( name ) ),
        treatment_phase_templates ( name ),
@@ -291,6 +293,7 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
       end_at: row.end_at,
       patient_name: row.patients?.full_name ?? "Paciente",
       patient_birth_date: row.patients?.birth_date ?? null,
+      reason: row.reason ?? null,
       treatment_label:
         row.treatments?.treatment_types?.name ??
         row.treatment_phase_templates?.name ??
@@ -982,6 +985,24 @@ export async function getPatientSession(): Promise<{
     patientId = null;
   }
   return { hasSession: true, patientId };
+}
+
+/** Tipo de tratamiento para el combo de motivo en el form de nuevo turno. */
+export interface TreatmentTypeOption {
+  id: string;
+  name: string;
+}
+
+/** Lista de tipos de tratamiento activos — para el combo de motivo de consulta. */
+export async function getTreatmentTypeOptions(): Promise<TreatmentTypeOption[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("treatment_types")
+    .select("id, name")
+    .is("deleted_at", null)
+    .eq("is_active", true)
+    .order("name", { ascending: true });
+  return ((data ?? []) as { id: string; name: string }[]);
 }
 
 export interface ProfessionalForScheduling {

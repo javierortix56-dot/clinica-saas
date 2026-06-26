@@ -9,6 +9,7 @@ import {
   isDoctorRole,
   getPatients,
   getProfessionalsForScheduling,
+  getTreatmentTypeOptions,
 } from "@/lib/supabase/server";
 import { CalendarGrid } from "./CalendarGrid";
 import {
@@ -46,12 +47,13 @@ export default async function CalendarPage({
   const { role } = await getSessionAuth();
   const canCreateAppointment = role === "admin" || role === "reception" || role === "doctor";
 
-  const [appointments, blocks, availability, patients, professionals] = await Promise.all([
+  const [appointments, blocks, availability, patients, professionals, treatmentTypes] = await Promise.all([
     getWeeklyAppointments(displayedMonday),
     getWeeklyBlocks(displayedMonday),
     getWeeklyAvailability(),
     canCreateAppointment ? getPatients() : Promise.resolve([]),
     canCreateAppointment ? getProfessionalsForScheduling() : Promise.resolve([]),
+    canCreateAppointment ? getTreatmentTypeOptions() : Promise.resolve([]),
   ]);
   const weekDays = getWeekDays(displayedMonday);
 
@@ -180,6 +182,7 @@ export default async function CalendarPage({
         canCreateAppointment={canCreateAppointment}
         patients={patients.map((p) => ({ id: p.id, full_name: p.full_name, national_id: p.national_id }))}
         professionals={professionals}
+        treatmentTypes={treatmentTypes}
       />
     </div>
   );

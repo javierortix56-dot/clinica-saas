@@ -8,6 +8,7 @@ import type {
   WeeklyBlock,
   AvailabilityWindow,
   ProfessionalForScheduling,
+  TreatmentTypeOption,
 } from "@/lib/supabase/server";
 import type { Patient } from "@clinica/shared";
 import {
@@ -69,6 +70,7 @@ export function CalendarGrid({
   canCreateAppointment,
   patients,
   professionals,
+  treatmentTypes = [],
 }: {
   weekDays: string[];
   appointments: WeeklyAppointment[];
@@ -77,6 +79,7 @@ export function CalendarGrid({
   canCreateAppointment: boolean;
   patients: Pick<Patient, "id" | "full_name" | "national_id">[];
   professionals: ProfessionalForScheduling[];
+  treatmentTypes?: TreatmentTypeOption[];
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newApptOpen, setNewApptOpen] = useState(false);
@@ -476,6 +479,11 @@ export function CalendarGrid({
                         <span className="ml-1 font-normal text-[8.5px] opacity-70">{age}a</span>
                       )}
                     </p>
+                    {(a.reason ?? a.treatment_label) && (
+                      <p className="truncate text-[8px] leading-tight text-status-confirmado-fg/60">
+                        {a.reason ?? a.treatment_label}
+                      </p>
+                    )}
                     {multiProf && a.professional_name && (
                       <p className="truncate text-[8px] leading-tight text-status-confirmado-fg/60">
                         {a.professional_name}
@@ -539,6 +547,7 @@ export function CalendarGrid({
         onOpenChange={setNewApptOpen}
         patients={patients}
         professionals={professionals}
+        treatmentTypes={treatmentTypes}
         initialPatientId={prefill.patientId}
         initialDate={prefill.date}
       />

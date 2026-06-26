@@ -16,7 +16,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { addDays, formatDuration, formatTime } from "./grid-utils";
-import { cancelAppointment, updateAppointmentStatus } from "./actions";
+import { cancelAppointment, updateAppointmentStatus, rescheduleAppointment } from "./actions";
 
 const TZ = "America/Argentina/Buenos_Aires";
 
@@ -468,8 +468,33 @@ function SheetReady({
   const router = useRouter();
   const [isCancelling, startCancelling] = useTransition();
   const [isUpdating, startUpdating] = useTransition();
+  const [isRescheduling, startRescheduling] = useTransition();
+  const [showReschedule, setShowReschedule] = useState(false);
   const { appt, treatmentName, phases, history, noShowCount } = state;
   const now = new Date();
+
+  // Valores iniciales del formulario de reprogramación (fecha y hora local BA).
+  const TZ = "America/Argentina/Buenos_Aires";
+  const localStart = new Date(appt.start_at).toLocaleString("sv-SE", { timeZone: TZ }).slice(0, 16);
+  const [reschedDate, setReschedDate] = useState(localStart.slice(0, 10));
+  const [reschedStart, setReschedStart] = useState(localStart.slice(11, 16));
+  const [reschedEnd, setReschedEnd] = useState(
+    new Date(appt.end_at).toLocaleString("sv-SE", { timeZone: TZ }).slice(11, 16)
+  );
+
+  function handleReschedule(e: React.FormEvent) {
+    e.preventDefault();
+    const startAt = `${reschedDate}T${reschedStart}:00-03:00`;
+    const endAt = `${reschedDate}T${reschedEnd}:00-03:00`;
+    startRescheduling(async () => {
+      const result = await rescheduleAppointment(appt.id, startAt, endAt);
+      if (result.error) { toast.error(result.error); return; }
+      toast.success("Turno reprogramado.");
+      router.refresh();
+      onCancelled();
+      onClose();
+    });
+  }
 
   const patientName = appt.patients?.full_name ?? "Paciente";
   const phaseViews = computePhaseViews(appt.phase_template_id, phases, history, now);
@@ -573,6 +598,68 @@ function SheetReady({
           <SectionTitle>Historial</SectionTitle>
           <HistoryList history={history} />
         </section>
+
+        {/* Reprogramar — desplegable inline */}
+        {(appt.status === "confirmed" || appt.status === "proposed") && (
+          <section className="space-y-2 pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              type="button"
+              onClick={() => setShowReschedule((v) => !v)}
+              className="w-full"
+            >
+              {showReschedule ? "Cancelar reprogramación" : "Reprogramar turno"}
+            </Button>
+
+            {showReschedule && (
+              <form onSubmit={handleReschedule} className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-medium text-slate-500">Nueva fecha y horario</p>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-slate-500">Fecha</label>
+                  <input
+                    type="date"
+                    value={reschedDate}
+                    onChange={(e) => setReschedDate(e.target.value)}
+                    min={new Date().toISOString().slice(0, 10)}
+                    required
+                    className="w-full rounded border border-slate-200 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-slate-400"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-xs text-slate-500">Inicio</label>
+                    <input
+                      type="time"
+                      value={reschedStart}
+                      onChange={(e) => setReschedStart(e.target.value)}
+                      required
+                      className="w-full rounded border border-slate-200 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-slate-400"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-slate-500">Fin</label>
+                    <input
+                      type="time"
+                      value={reschedEnd}
+                      onChange={(e) => setReschedEnd(e.target.value)}
+                      required
+                      className="w-full rounded border border-slate-200 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-slate-400"
+                    />
+                  </div>
+                </div>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={isRescheduling}
+                  className="w-full"
+                >
+                  {isRescheduling ? "Reprogramando…" : "Confirmar nueva fecha"}
+                </Button>
+              </form>
+            )}
+          </section>
+        )}
 
         {/* Cambios de estado */}
         {appt.status === "confirmed" && (

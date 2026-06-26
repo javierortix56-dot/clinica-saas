@@ -121,7 +121,9 @@ export async function createManualAppointment(
   if (!apiUrl) return { error: "API no configurada." };
 
   try {
-    const res = await fetch(`${apiUrl}/appointments/manual`, {
+    const reason = (formData.get("reason") as string | null)?.trim() || undefined;
+
+  const res = await fetch(`${apiUrl}/appointments/manual`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -132,6 +134,7 @@ export async function createManualAppointment(
         professionalId: professional_id,
         startAt,
         endAt,
+        ...(reason ? { reason } : {}),
       }),
     });
 
@@ -147,6 +150,45 @@ export async function createManualAppointment(
     }
   } catch {
     return { error: "Error de red al crear el turno." };
+  }
+
+  revalidatePath("/calendar");
+  return {};
+}
+
+// Reprograma un turno: actualiza start_at y end_at vía NestJS PATCH
+// /appointments/:id/reschedule. El turno queda confirmado (no pide re-confirmación).
+export async function rescheduleAppointment(
+  appointmentId: string,
+  startAt: string,
+  endAt: string
+): Promise<{ error?: string }> {
+  const supabase = createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { error: "Sesión expirada." };
+
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (!apiUrl) return { error: "API no configurada." };
+
+  try {
+    const res = await fetch(
+      `${apiUrl}/appointments/${appointmentId}/reschedule`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ startAt, endAt }),
+      }
+    );
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { message?: string | string[] } | null;
+      const msg = Array.isArray(body?.message) ? body?.message.join(" ") : body?.message;
+      return { error: msg || "No se pudo reprogramar el turno." };
+    }
+  } catch {
+    return { error: "Error de red al reprogramar el turno." };
   }
 
   revalidatePath("/calendar");
