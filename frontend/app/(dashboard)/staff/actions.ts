@@ -298,6 +298,7 @@ export async function upsertStaff(
 
         const rows: {
           professional_id: string;
+          clinic_id: string;
           weekday: number;
           start_time: string;
           end_time: string;
@@ -311,6 +312,7 @@ export async function upsertStaff(
           if (!weekday || !start || !end || end <= start) continue;
           rows.push({
             professional_id: prof.id,
+            clinic_id: sm.clinic_id,
             weekday,
             start_time: start,
             end_time: end,
