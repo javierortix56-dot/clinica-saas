@@ -3,26 +3,34 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 
-import type { WeeklyAppointment, WeeklyBlock, ProfessionalForScheduling } from "@/lib/supabase/server";
+import type {
+  WeeklyAppointment,
+  WeeklyBlock,
+  AvailabilityWindow,
+  ProfessionalForScheduling,
+  TreatmentTypeOption,
+} from "@/lib/supabase/server";
 import type { Patient } from "@clinica/shared";
 import {
   DAY_LABELS,
   SLOTS,
-  appointmentsForSlot,
-  blocksForSlot,
   formatDayDate,
   formatDuration,
   formatSlot,
   formatTime,
+  getDayIndex,
+  getSlotIndex,
+  getSlotSpan,
   isSameLocalDay,
   isToday,
   parseISODate,
+  timeToMinutes,
 } from "./grid-utils";
 import { AppointmentSheet } from "./AppointmentSheet";
 import { ManualAppointmentSheet } from "./ManualAppointmentSheet";
 
-// Paleta de colores por profesional (border-left de los eventos). Se asigna de
-// forma estable por nombre para que cada profesional mantenga su color.
+// Paleta de colores por profesional — solo se usa como left-border cuando hay
+// múltiples profesionales visibles.
 const PROF_COLORS = [
   "#2563eb",
   "#0d9488",
@@ -41,23 +49,37 @@ function profColor(name: string | null): string {
   return PROF_COLORS[hash % PROF_COLORS.length];
 }
 
-// Grilla semanal interactiva. page.tsx (Server Component) resuelve auth y datos y
-// pasa solo props serializables: los días como ISO (YYYY-MM-DD) y los turnos.
-// El estado del turno seleccionado vive acá; hay un único <Sheet> compartido.
+function calcAge(birthDate: string | null): number | null {
+  if (!birthDate) return null;
+  const birth = new Date(birthDate);
+  const now = new Date();
+  let age = now.getFullYear() - birth.getFullYear();
+  const m = now.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) age--;
+  return age >= 0 ? age : null;
+}
+
+// Altura fija de cada franja de 30 min en el grid desktop.
+const SLOT_H = "1.75rem";
+
 export function CalendarGrid({
   weekDays: weekDayStrs,
   appointments,
   blocks = [],
+  availability = [],
   canCreateAppointment,
   patients,
   professionals,
+  treatmentTypes = [],
 }: {
   weekDays: string[];
   appointments: WeeklyAppointment[];
   blocks?: WeeklyBlock[];
+  availability?: AvailabilityWindow[];
   canCreateAppointment: boolean;
   patients: Pick<Patient, "id" | "full_name" | "national_id">[];
   professionals: ProfessionalForScheduling[];
+  treatmentTypes?: TreatmentTypeOption[];
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newApptOpen, setNewApptOpen] = useState(false);
@@ -65,14 +87,11 @@ export function CalendarGrid({
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const weekDays = weekDayStrs.map(parseISODate);
 
-  // Mobile: día seleccionado en el navegador de día, centrado en hoy si aplica.
   const [mobileDayIdx, setMobileDayIdx] = useState(() => {
     const todayIdx = weekDays.findIndex((d) => isToday(d));
     return todayIdx >= 0 ? todayIdx : 0;
   });
 
-  // Apertura desde "Generar turno" en la historia clínica:
-  // /calendar?nuevo=1&paciente=<id>&fecha=<YYYY-MM-DD>. Precarga el alta manual.
   useEffect(() => {
     if (!canCreateAppointment) return;
     const params = new URLSearchParams(window.location.search);
@@ -82,30 +101,24 @@ export function CalendarGrid({
         date: params.get("fecha") ?? undefined,
       });
       setNewApptOpen(true);
-      // Limpia la query para no reabrir el alta al refrescar.
       window.history.replaceState(null, "", "/calendar");
     }
   }, [canCreateAppointment]);
 
-
-  // Profesionales presentes esta semana (para los chips de filtro y la leyenda).
-  // Incluye los que solo tienen bloqueos (eventos de Google), no solo turnos.
   const profNames = useMemo(() => {
     const names = new Set<string>();
-    for (const a of appointments) {
-      if (a.professional_name) names.add(a.professional_name);
-    }
-    for (const b of blocks) {
-      if (b.professional_name) names.add(b.professional_name);
-    }
+    for (const a of appointments) if (a.professional_name) names.add(a.professional_name);
+    for (const b of blocks) if (b.professional_name) names.add(b.professional_name);
     return Array.from(names).sort();
   }, [appointments, blocks]);
+
+  // Cuando solo hay un profesional no necesitamos chips de filtro ni left-border de color.
+  const multiProf = profNames.length > 1;
 
   function toggleProf(name: string) {
     setHidden((prev) => {
       const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
+      if (next.has(name)) next.delete(name); else next.add(name);
       return next;
     });
   }
@@ -116,8 +129,35 @@ export function CalendarGrid({
   const visibleBlocks = blocks.filter(
     (b) => !b.professional_name || !hidden.has(b.professional_name)
   );
+  const visibleAvail = availability.filter(
+    (w) => !w.professional_name || !hidden.has(w.professional_name)
+  );
 
-  // Turnos del día seleccionado en mobile, ordenados por hora.
+  // Set de celdas "disponibles" (clave `${dayIdx}-${slotIdx}`): un slot está
+  // disponible si algún profesional visible tiene una franja que lo cubre ese día.
+  // Solo sombreamos cuando hay franjas configuradas — si no hay ninguna, no
+  // sombreamos nada (evita pintar toda la grilla cuando aún no se parametrizó).
+  const availableCells = useMemo(() => {
+    const set = new Set<string>();
+    for (const w of visibleAvail) {
+      const di = w.weekday - 1; // weekday 1=Lun → columna 0
+      if (di < 0 || di > 5) continue;
+      const startM = timeToMinutes(w.start_time);
+      const endM = timeToMinutes(w.end_time);
+      SLOTS.forEach((slot, si) => {
+        const slotM = slot.hour * 60 + slot.minute;
+        if (slotM >= startM && slotM < endM) set.add(`${di}-${si}`);
+      });
+    }
+    return set;
+  }, [visibleAvail]);
+
+  const hasAvailability = visibleAvail.length > 0;
+  const hasData = visibleAppts.length > 0 || visibleBlocks.length > 0;
+  // Mostramos la grilla horaria si hay turnos/bloqueos O si hay franjas
+  // configuradas (para ver el horario sombreado aunque la semana esté vacía).
+  const showGrid = hasData || hasAvailability;
+
   const mobileDayAppts = useMemo(
     () =>
       visibleAppts
@@ -126,7 +166,6 @@ export function CalendarGrid({
     [visibleAppts, mobileDayIdx, weekDays]
   );
 
-  // Bloqueos del día seleccionado en mobile, ordenados por hora.
   const mobileDayBlocks = useMemo(
     () =>
       visibleBlocks
@@ -139,12 +178,12 @@ export function CalendarGrid({
     <>
       {/* Barra de filtros + Nuevo turno */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        {profNames.length > 0 && (
+        {multiProf && (
           <span className="mr-1 text-[11px] font-semibold uppercase tracking-[.06em] text-slate-400">
             Profesionales
           </span>
         )}
-        {profNames.map((name) => {
+        {multiProf && profNames.map((name) => {
           const color = profColor(name);
           const off = hidden.has(name);
           return (
@@ -179,7 +218,7 @@ export function CalendarGrid({
         )}
       </div>
 
-      {/* ── Vista MOBILE: navegador de día + lista de turnos ───────────────── */}
+      {/* ── Vista MOBILE ──────────────────────────────────────────────────── */}
       <div className="md:hidden overflow-hidden rounded-card border border-border bg-white shadow-card">
         {/* Selector de día */}
         <div className="flex items-center border-b border-border bg-[#fbfcfe]">
@@ -192,7 +231,6 @@ export function CalendarGrid({
           >
             <ChevronLeft className="h-4 w-4" strokeWidth={2} />
           </button>
-
           <div className="flex flex-1 items-center justify-around px-1">
             {weekDays.map((day, i) => {
               const today = isToday(day);
@@ -206,31 +244,18 @@ export function CalendarGrid({
                     active ? "bg-primary/10" : "hover:bg-slate-50"
                   }`}
                 >
-                  <span
-                    className={`text-[10px] font-semibold uppercase tracking-wide ${
-                      today ? "text-primary" : "text-slate-400"
-                    }`}
-                  >
+                  <span className={`text-[10px] font-semibold uppercase tracking-wide ${today ? "text-primary" : "text-slate-400"}`}>
                     {DAY_LABELS[i].slice(0, 2)}
                   </span>
-                  <span
-                    className={`mt-0.5 flex h-6 w-6 items-center justify-center rounded-full text-[13px] font-bold ${
-                      today && active
-                        ? "bg-primary text-white"
-                        : today
-                        ? "text-primary"
-                        : active
-                        ? "text-foreground"
-                        : "text-slate-400"
-                    }`}
-                  >
+                  <span className={`mt-0.5 flex h-6 w-6 items-center justify-center rounded-full text-[13px] font-bold ${
+                    today && active ? "bg-primary text-white" : today ? "text-primary" : active ? "text-foreground" : "text-slate-400"
+                  }`}>
                     {day.getDate()}
                   </span>
                 </button>
               );
             })}
           </div>
-
           <button
             type="button"
             onClick={() => setMobileDayIdx((i) => Math.min(5, i + 1))}
@@ -242,7 +267,7 @@ export function CalendarGrid({
           </button>
         </div>
 
-        {/* Lista de turnos + bloqueos del día */}
+        {/* Lista de turnos */}
         {mobileDayAppts.length === 0 && mobileDayBlocks.length === 0 ? (
           <div className="py-8 text-center text-[13px] font-medium text-slate-400">
             {appointments.length === 0 && blocks.length === 0
@@ -252,33 +277,29 @@ export function CalendarGrid({
         ) : (
           <div className="divide-y divide-[#eef2f7]">
             {mobileDayAppts.map((a) => {
-              const color = profColor(a.professional_name);
+              const age = calcAge(a.patient_birth_date);
+              const color = multiProf ? profColor(a.professional_name) : "var(--color-primary)";
               return (
                 <button
                   key={a.id}
                   type="button"
                   onClick={() => setSelectedId(a.id)}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50 active:bg-slate-100"
+                  className="flex w-full items-center gap-3 px-4 py-[10px] text-left transition hover:bg-slate-50 active:bg-slate-100"
                 >
-                  <div
-                    className="h-8 w-[3px] shrink-0 rounded-full"
-                    style={{ background: color }}
-                  />
-                  <div className="w-[52px] shrink-0 text-right">
-                    <div className="font-mono text-[12.5px] font-bold text-slate-700">
-                      {formatTime(a.start_at)}
-                    </div>
-                    <div className="text-[10px] text-slate-400">
-                      {formatDuration(a.start_at, a.end_at)}
-                    </div>
+                  <div className="h-8 w-[3px] shrink-0 rounded-full" style={{ background: color }} />
+                  <div className="w-[48px] shrink-0 text-right">
+                    <div className="font-mono text-[12px] font-bold text-slate-700">{formatTime(a.start_at)}</div>
+                    <div className="text-[10px] text-slate-400">{formatDuration(a.start_at, a.end_at)}</div>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13.5px] font-semibold text-foreground">
+                    <div className="truncate text-[13px] font-semibold text-foreground">
                       {a.patient_name}
+                      {age !== null && <span className="ml-1 font-normal text-slate-400 text-[11px]">{age}a</span>}
                     </div>
-                    {(a.treatment_label || a.professional_name) && (
+                    {/* Mostrar doctor solo en vista multi-profesional */}
+                    {(a.treatment_label || (multiProf && a.professional_name)) && (
                       <div className="truncate text-[11px] text-slate-400">
-                        {[a.treatment_label, a.professional_name]
+                        {[a.treatment_label, multiProf ? a.professional_name : null]
                           .filter(Boolean)
                           .join(" · ")}
                       </div>
@@ -289,32 +310,17 @@ export function CalendarGrid({
               );
             })}
 
-            {/* Bloqueos (eventos de Google / manuales) — grises, no clickeables */}
             {mobileDayBlocks.map((b) => (
-              <div
-                key={b.id}
-                className="flex w-full items-center gap-3 bg-slate-50/60 px-4 py-3 text-left"
-              >
+              <div key={b.id} className="flex w-full items-center gap-3 bg-slate-50/60 px-4 py-[10px]">
                 <div className="h-8 w-[3px] shrink-0 rounded-full bg-slate-300" />
-                <div className="w-[52px] shrink-0 text-right">
-                  <div className="font-mono text-[12.5px] font-bold text-slate-500">
-                    {formatTime(b.start_at)}
-                  </div>
-                  <div className="text-[10px] text-slate-400">
-                    {formatDuration(b.start_at, b.end_at)}
-                  </div>
+                <div className="w-[48px] shrink-0 text-right">
+                  <div className="font-mono text-[12px] font-bold text-slate-500">{formatTime(b.start_at)}</div>
+                  <div className="text-[10px] text-slate-400">{formatDuration(b.start_at, b.end_at)}</div>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] font-semibold text-slate-500">
-                    {b.reason || "Ocupado"}
-                  </div>
+                  <div className="truncate text-[13px] font-semibold text-slate-500">{b.reason || "Ocupado"}</div>
                   <div className="truncate text-[11px] text-slate-400">
-                    {[
-                      b.source === "google_calendar" ? "Google Calendar" : "Bloqueo",
-                      b.professional_name,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
+                    {b.source === "google_calendar" ? "Google Calendar" : "Bloqueo"}
                   </div>
                 </div>
               </div>
@@ -323,51 +329,49 @@ export function CalendarGrid({
         )}
       </div>
 
-      {/* ── Vista DESKTOP: grilla semanal ──────────────────────────────────── */}
+      {/* ── Vista DESKTOP: grilla con filas de altura fija ─────────────────── */}
       <div className="hidden md:block overflow-hidden rounded-card border border-border bg-white shadow-card">
         <div className="overflow-x-auto">
           <div
             className="grid min-w-[640px]"
-            style={{ gridTemplateColumns: "3.625rem repeat(6, 1fr)" }}
+            style={{
+              gridTemplateColumns: "3.25rem repeat(6, 1fr)",
+              gridTemplateRows: showGrid
+                ? `auto repeat(${SLOTS.length}, ${SLOT_H})`
+                : "auto auto",
+            }}
           >
-            {/* Header row */}
-            <div className="border-b border-border bg-[#fbfcfe]" />
+            {/* ── Header (posición explícita: fila 1) ── */}
+            <div
+              className="border-b border-border bg-[#fbfcfe]"
+              style={{ gridRow: 1, gridColumn: 1 }}
+            />
             {weekDays.map((day, i) => {
               const today = isToday(day);
               return (
                 <div
                   key={i}
-                  className={`border-b border-l border-[#eef2f7] px-2 py-[10px] text-center ${
-                    today ? "bg-primary/10" : "bg-[#fbfcfe]"
-                  }`}
+                  style={{ gridRow: 1, gridColumn: i + 2 }}
+                  className={`border-b border-l border-[#eef2f7] px-2 py-[8px] text-center ${today ? "bg-primary/10" : "bg-[#fbfcfe]"}`}
                 >
-                  <p
-                    className={`text-[11px] font-semibold uppercase tracking-wide ${
-                      today ? "text-primary" : "text-muted-foreground"
-                    }`}
-                  >
+                  <p className={`text-[10.5px] font-semibold uppercase tracking-wide ${today ? "text-primary" : "text-muted-foreground"}`}>
                     {DAY_LABELS[i]}
                   </p>
-                  <p
-                    className={`mt-[2px] text-[13px] ${
-                      today ? "font-bold text-primary" : "text-slate-400"
-                    }`}
-                  >
+                  <p className={`mt-[1px] text-[12px] ${today ? "font-bold text-primary" : "text-slate-400"}`}>
                     {formatDayDate(day)}
                   </p>
                 </div>
               );
             })}
 
-            {/* Estado vacío */}
-            {visibleAppts.length === 0 && visibleBlocks.length === 0 && (
+            {/* ── Estado vacío ── */}
+            {!showGrid && (
               <React.Fragment>
-                <div className="border-b border-[#eef2f7] py-3 pr-2 text-right">
-                  <span className="font-mono text-[11px] text-slate-400">
-                    08:00
-                  </span>
-                </div>
-                <div className="col-span-6 border-b border-l border-[#eef2f7] px-4 py-10 text-center text-[13.5px] font-medium text-slate-400">
+                <div className="border-b border-[#eef2f7]" style={{ gridRow: 2, gridColumn: 1 }} />
+                <div
+                  className="border-b border-l border-[#eef2f7] px-4 py-10 text-center text-[13px] font-medium text-slate-400"
+                  style={{ gridRow: 2, gridColumn: "2 / span 6" }}
+                >
                   {appointments.length === 0 && blocks.length === 0
                     ? "No hay turnos confirmados en esta semana."
                     : "Ningún profesional visible. Activá un chip para ver sus turnos."}
@@ -375,140 +379,167 @@ export function CalendarGrid({
               </React.Fragment>
             )}
 
-            {/* Filas de franjas horarias */}
-            {(visibleAppts.length > 0 || visibleBlocks.length > 0) &&
-              SLOTS.map((slot) => (
-                <React.Fragment key={`${slot.hour}-${slot.minute}`}>
-                  <div
-                    className={`border-b border-[#eef2f7] pr-2 text-right ${
-                      slot.minute === 0 ? "pb-0 pt-[6px]" : "pb-[6px] pt-0"
-                    }`}
-                  >
-                    {slot.minute === 0 && (
-                      <span className="font-mono text-[11px] text-slate-400">
-                        {formatSlot(slot)}
-                      </span>
-                    )}
-                  </div>
+            {/* ── Celdas de fondo (bordes, hoy, sombreado fuera de horario) ──
+                 Posición EXPLÍCITA en el grid para que los turnos (que se ubican
+                 con gridRow/gridColumn) no desplacen las etiquetas de hora. */}
+            {showGrid && SLOTS.map((slot, si) => (
+              <React.Fragment key={`${slot.hour}-${slot.minute}`}>
+                {/* Etiqueta de hora (columna 1) */}
+                <div
+                  className="relative border-b border-[#eef2f7] pr-1.5"
+                  style={{ gridRow: si + 2, gridColumn: 1 }}
+                >
+                  {slot.minute === 0 && (
+                    <span className="absolute right-[5px] top-[3px] font-mono text-[9.5px] leading-none text-slate-400">
+                      {formatSlot(slot)}
+                    </span>
+                  )}
+                </div>
+                {/* Celdas de cada día */}
+                {weekDays.map((day, di) => {
+                  const shaded = hasAvailability && !availableCells.has(`${di}-${si}`);
+                  return (
+                    <div
+                      key={di}
+                      style={{
+                        gridRow: si + 2,
+                        gridColumn: di + 2,
+                        ...(shaded
+                          ? {
+                              backgroundImage:
+                                "repeating-linear-gradient(45deg, rgba(100,116,139,0.09), rgba(100,116,139,0.09) 5px, transparent 5px, transparent 10px)",
+                            }
+                          : null),
+                      }}
+                      className={`border-b border-l border-[#eef2f7] ${
+                        isToday(day) ? "bg-primary/[.03]" : shaded ? "bg-slate-50/40" : ""
+                      }`}
+                    />
+                  );
+                })}
+              </React.Fragment>
+            ))}
 
-                  {weekDays.map((day, di) => {
-                    const cellAppts = appointmentsForSlot(
-                      visibleAppts,
-                      day,
-                      slot.hour,
-                      slot.minute
-                    );
-                    const cellBlocks = blocksForSlot(
-                      visibleBlocks,
-                      day,
-                      slot.hour,
-                      slot.minute
-                    );
-                    return (
-                      <div
-                        key={di}
-                        className={`min-h-[1.375rem] space-y-[2px] border-b border-l border-[#eef2f7] p-[2px] ${
-                          isToday(day) ? "bg-primary/[.035]" : ""
-                        }`}
-                      >
-                        {cellBlocks.map((b) => (
-                          <div
-                            key={b.id}
-                            title={`${formatTime(b.start_at)}–${formatTime(b.end_at)} · ${
-                              b.reason || "Ocupado"
-                            }${b.professional_name ? ` · ${b.professional_name}` : ""}`}
-                            className="w-full space-y-[1px] rounded-md border border-slate-200 border-l-[3px] border-l-slate-300 bg-slate-100 px-[6px] py-[3px] text-left"
-                          >
-                            <p className="font-mono text-[9px] text-slate-500">
-                              {formatTime(b.start_at)} ·{" "}
-                              {formatDuration(b.start_at, b.end_at)}
-                            </p>
-                            <p className="truncate text-[11.5px] font-semibold text-slate-500">
-                              {b.reason || "Ocupado"}
-                            </p>
-                            {(b.source === "google_calendar" || b.professional_name) && (
-                              <p className="truncate text-[9.5px] text-slate-400">
-                                {[
-                                  b.source === "google_calendar" ? "Google Calendar" : null,
-                                  b.professional_name,
-                                ]
-                                  .filter(Boolean)
-                                  .join(" · ")}
-                              </p>
-                            )}
-                          </div>
-                        ))}
-                        {cellAppts.map((a) => {
-                          const color = profColor(a.professional_name);
-                          return (
-                            <button
-                              key={a.id}
-                              type="button"
-                              onClick={() => setSelectedId(a.id)}
-                              style={{ borderLeftColor: color }}
-                              className="w-full space-y-[1px] rounded-md border border-status-confirmado-border border-l-[3px] bg-status-confirmado-bg px-[6px] py-[3px] text-left transition-shadow hover:shadow-[0_5px_14px_rgba(15,23,42,.13)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                            >
-                              <p className="font-mono text-[9px] text-status-confirmado-fg">
-                                {formatTime(a.start_at)} ·{" "}
-                                {formatDuration(a.start_at, a.end_at)}
-                              </p>
-                              <p className="truncate text-[11.5px] font-semibold text-status-confirmado-fg">
-                                {a.patient_name}
-                              </p>
-                              {(a.treatment_label || a.professional_name) && (
-                                <p className="truncate text-[9.5px] text-status-confirmado-fg/70">
-                                  {[a.treatment_label, a.professional_name]
-                                    .filter(Boolean)
-                                    .join(" · ")}
-                                </p>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
-                </React.Fragment>
-              ))}
+            {/* ── Bloqueos: explícitamente posicionados en el grid, con span real ── */}
+            {showGrid && visibleBlocks.map((b) => {
+              const si = getSlotIndex(b.start_at);
+              const span = getSlotSpan(b.start_at, b.end_at);
+              const di = getDayIndex(b.start_at, weekDays);
+              if (si < 0 || di < 0) return null;
+              return (
+                <div
+                  key={b.id}
+                  className="relative z-10 pointer-events-none"
+                  style={{
+                    gridRow: `${si + 2} / span ${span}`,
+                    gridColumn: di + 2,
+                  }}
+                >
+                  <div
+                    title={`${formatTime(b.start_at)}–${formatTime(b.end_at)} · ${b.reason || "Ocupado"}`}
+                    className="pointer-events-auto absolute inset-[1px] flex items-start overflow-hidden rounded-[3px] border border-slate-200 border-l-[2px] border-l-slate-300 bg-slate-100 px-[4px] py-[2px]"
+                  >
+                    <p className="truncate font-mono text-[8.5px] text-slate-400">
+                      {b.reason || "Ocupado"}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* ── Turnos: explícitamente posicionados en el grid, con span real ── */}
+            {showGrid && visibleAppts.map((a) => {
+              const si = getSlotIndex(a.start_at);
+              const span = getSlotSpan(a.start_at, a.end_at);
+              const di = getDayIndex(a.start_at, weekDays);
+              if (si < 0 || di < 0) return null;
+              const age = calcAge(a.patient_birth_date);
+              const borderColor = multiProf ? profColor(a.professional_name) : undefined;
+              return (
+                <div
+                  key={a.id}
+                  className="relative z-20 pointer-events-none"
+                  style={{
+                    gridRow: `${si + 2} / span ${span}`,
+                    gridColumn: di + 2,
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setSelectedId(a.id)}
+                    className="pointer-events-auto absolute inset-[1px] flex flex-col justify-start overflow-hidden rounded-[3px] border border-status-confirmado-border border-l-[2px] bg-status-confirmado-bg px-[4px] py-[2px] text-left transition-shadow hover:shadow-[0_2px_8px_rgba(15,23,42,.12)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                    style={{ borderLeftColor: borderColor }}
+                  >
+                    <p className="truncate font-mono text-[8.5px] leading-tight text-status-confirmado-fg/70">
+                      {formatTime(a.start_at)}
+                    </p>
+                    <p className="truncate text-[10px] font-semibold leading-tight text-status-confirmado-fg">
+                      {a.patient_name}
+                      {age !== null && (
+                        <span className="ml-1 font-normal text-[8.5px] opacity-70">{age}a</span>
+                      )}
+                    </p>
+                    {(a.reason ?? a.treatment_label) && (
+                      <p className="truncate text-[8px] leading-tight text-status-confirmado-fg/60">
+                        {a.reason ?? a.treatment_label}
+                      </p>
+                    )}
+                    {multiProf && a.professional_name && (
+                      <p className="truncate text-[8px] leading-tight text-status-confirmado-fg/60">
+                        {a.professional_name}
+                      </p>
+                    )}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
 
       {/* Leyenda (solo desktop) */}
-      <div className="mt-3 hidden flex-wrap items-center gap-5 md:flex">
-        <div className="flex items-center gap-[7px] text-[12.5px] font-medium text-muted-foreground">
-          <span className="h-[10px] w-[10px] rounded-[3px] border border-status-confirmado-border bg-status-confirmado-bg" />
+      <div className="mt-2 hidden flex-wrap items-center gap-4 md:flex">
+        <div className="flex items-center gap-[6px] text-[11.5px] font-medium text-muted-foreground">
+          <span className="h-[9px] w-[9px] rounded-[2px] border border-status-confirmado-border bg-status-confirmado-bg" />
           Confirmado
         </div>
         {visibleBlocks.length > 0 && (
-          <div className="flex items-center gap-[7px] text-[12.5px] font-medium text-muted-foreground">
-            <span className="h-[10px] w-[10px] rounded-[3px] border border-slate-200 bg-slate-100" />
+          <div className="flex items-center gap-[6px] text-[11.5px] font-medium text-muted-foreground">
+            <span className="h-[9px] w-[9px] rounded-[2px] border border-slate-200 bg-slate-100" />
             Ocupado (Google)
           </div>
         )}
-        {profNames.length > 0 && <div className="flex-1" />}
-        <div className="flex flex-wrap items-center gap-[14px]">
-          {profNames.map((name) => (
-            <div
-              key={name}
-              className="flex items-center gap-[6px] text-[12.5px] font-medium text-muted-foreground"
-            >
-              <span
-                className="h-[3px] w-[11px] rounded-[2px]"
-                style={{ background: profColor(name) }}
-              />
-              {name}
+        {hasAvailability && (
+          <div className="flex items-center gap-[6px] text-[11.5px] font-medium text-muted-foreground">
+            <span
+              className="h-[9px] w-[9px] rounded-[2px] border border-slate-200"
+              style={{
+                backgroundImage:
+                  "repeating-linear-gradient(45deg, rgba(100,116,139,0.30), rgba(100,116,139,0.30) 2px, transparent 2px, transparent 4px)",
+              }}
+            />
+            Fuera de horario
+          </div>
+        )}
+        {multiProf && (
+          <>
+            <div className="flex-1" />
+            <div className="flex flex-wrap items-center gap-3">
+              {profNames.map((name) => (
+                <div key={name} className="flex items-center gap-[5px] text-[11.5px] font-medium text-muted-foreground">
+                  <span className="h-[3px] w-[10px] rounded-full" style={{ background: profColor(name) }} />
+                  {name}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </>
+        )}
       </div>
 
       <AppointmentSheet
         appointmentId={selectedId}
         open={selectedId !== null}
-        onOpenChange={(o) => {
-          if (!o) setSelectedId(null);
-        }}
+        onOpenChange={(o) => { if (!o) setSelectedId(null); }}
       />
 
       <ManualAppointmentSheet
@@ -516,6 +547,7 @@ export function CalendarGrid({
         onOpenChange={setNewApptOpen}
         patients={patients}
         professionals={professionals}
+        treatmentTypes={treatmentTypes}
         initialPatientId={prefill.patientId}
         initialDate={prefill.date}
       />

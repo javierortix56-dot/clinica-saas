@@ -90,6 +90,43 @@ export function formatDuration(startIso: string, endIso: string): string {
   return `${mins} min`;
 }
 
+// ─── Grid placement helpers (desktop) ────────────────────────────────────────
+
+// Índice 0-based en SLOTS para un ISO timestamp dado.
+// Devuelve -1 si está fuera del rango visible (antes de 08:00 o después de 19:30).
+export function getSlotIndex(isoStart: string): number {
+  const local = new Date(
+    new Date(isoStart).toLocaleString("en-US", { timeZone: TZ })
+  );
+  const h = local.getHours();
+  const m = Math.floor(local.getMinutes() / 30) * 30;
+  const firstHour = SLOTS[0].hour;
+  const idx = (h - firstHour) * 2 + (m === 30 ? 1 : 0);
+  if (idx < 0 || idx >= SLOTS.length) return -1;
+  return idx;
+}
+
+// Número de franjas de 30 min que ocupa el turno (mínimo 1).
+export function getSlotSpan(startIso: string, endIso: string): number {
+  const mins = Math.round(
+    (new Date(endIso).getTime() - new Date(startIso).getTime()) / 60000
+  );
+  return Math.max(1, Math.ceil(mins / 30));
+}
+
+// "HH:MM:SS" o "HH:MM" → minutos desde medianoche.
+export function timeToMinutes(t: string): number {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + (m || 0);
+}
+
+// Índice 0-based del día en la semana. Devuelve -1 si no corresponde a ningún día visible.
+export function getDayIndex(isoStart: string, weekDays: Date[]): number {
+  const localStr = new Date(isoStart).toLocaleString("en-US", { timeZone: TZ });
+  const local = new Date(localStr);
+  return weekDays.findIndex((d) => d.toDateString() === local.toDateString());
+}
+
 // ─── Cell filtering ──────────────────────────────────────────────────────────
 
 // Localiza el start_at en Buenos Aires, lo trunca al slot de 30 min más cercano

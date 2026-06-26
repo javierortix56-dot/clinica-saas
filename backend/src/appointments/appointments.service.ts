@@ -12,6 +12,7 @@ import type { AuthUser } from '../auth/auth-user.interface';
 import type { PatientUser } from '../auth/patient-user.interface';
 import { GoogleCalendarEventService } from '../google-calendar/google-calendar-event.service';
 import { CreateManualAppointmentDto } from './dto/create-manual-appointment.dto';
+import { RescheduleAppointmentDto } from './dto/reschedule-appointment.dto';
 
 export interface ConfirmAppointmentResult {
   id: string;
@@ -239,6 +240,7 @@ export class AppointmentsService {
               end_at: endAt,
               status: 'confirmed',
               origin: 'staff',
+              ...(dto.reason ? { reason: dto.reason.trim() } : {}),
             },
             select: SELECT,
           }),
@@ -379,6 +381,64 @@ export class AppointmentsService {
       where: { id: appointmentId, clinic_id: user.clinicId },
       select: SELECT,
     });
+
+    return this.toResult(after);
+  }
+
+  /**
+   * Reprograma un turno: actualiza start_at y end_at manteniéndolo confirmed.
+   * Solo se puede reprogramar un turno en estado confirmed o proposed. Actualiza
+   * el evento de Google Calendar del profesional de forma asincrónica.
+   */
+  async reschedule(
+    appointmentId: string,
+    dto: RescheduleAppointmentDto,
+    user: AuthUser,
+  ): Promise<ConfirmAppointmentResult> {
+    const startAt = new Date(dto.startAt);
+    const endAt = new Date(dto.endAt);
+    if (endAt.getTime() <= startAt.getTime()) {
+      throw new BadRequestException(
+        'El horario de fin debe ser posterior al de inicio.',
+      );
+    }
+
+    const appt = await this.prisma.appointments.findFirst({
+      where: { id: appointmentId, clinic_id: user.clinicId, deleted_at: null },
+      select: SELECT,
+    });
+    if (!appt) {
+      throw new NotFoundException('Turno no encontrado.');
+    }
+    if (appt.status !== 'confirmed' && appt.status !== 'proposed') {
+      throw new ConflictException(
+        `No se puede reprogramar un turno en estado "${appt.status}".`,
+      );
+    }
+
+    try {
+      await this.prisma.runAsActor(
+        { actorId: user.userId, source: ActorSource.Staff },
+        (tx) =>
+          tx.appointments.updateMany({
+            where: { id: appointmentId, clinic_id: user.clinicId, deleted_at: null },
+            data: { start_at: startAt, end_at: endAt },
+          }),
+      );
+    } catch (err) {
+      throw this.mapManualWriteError(err);
+    }
+
+    const after = await this.prisma.appointments.findFirstOrThrow({
+      where: { id: appointmentId, clinic_id: user.clinicId },
+      select: SELECT,
+    });
+
+    void this.gcal.upsertEvent(appointmentId).catch((err: unknown) =>
+      this.logger.error(
+        `GCal upsert falló al reprogramar turno ${appointmentId}: ${String(err)}`,
+      ),
+    );
 
     return this.toResult(after);
   }

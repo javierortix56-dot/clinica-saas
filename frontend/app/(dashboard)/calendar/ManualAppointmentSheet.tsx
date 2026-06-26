@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import type { Patient } from "@clinica/shared";
-import type { ProfessionalForScheduling } from "@/lib/supabase/server";
+import type { ProfessionalForScheduling, TreatmentTypeOption } from "@/lib/supabase/server";
 import {
   Sheet,
   SheetContent,
@@ -15,11 +15,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { createManualAppointment } from "./actions";
 
+const INPUT =
+  "w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400";
+
 export function ManualAppointmentSheet({
   open,
   onOpenChange,
   patients,
   professionals,
+  treatmentTypes = [],
   initialPatientId,
   initialDate,
 }: {
@@ -27,6 +31,7 @@ export function ManualAppointmentSheet({
   onOpenChange: (open: boolean) => void;
   patients: Pick<Patient, "id" | "full_name" | "national_id">[];
   professionals: ProfessionalForScheduling[];
+  treatmentTypes?: TreatmentTypeOption[];
   initialPatientId?: string;
   initialDate?: string;
 }) {
@@ -72,7 +77,7 @@ export function ManualAppointmentSheet({
               placeholder="Buscar por nombre o DNI…"
               value={patientSearch}
               onChange={(e) => setPatientSearch(e.target.value)}
-              className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400"
+              className={INPUT}
             />
             <select
               name="patient_id"
@@ -90,20 +95,48 @@ export function ManualAppointmentSheet({
           </div>
 
           {/* Profesional */}
+          {professionals.length === 1 ? (
+            <>
+              <input type="hidden" name="professional_id" value={professionals[0].id} />
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Profesional</label>
+                <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                  {professionals[0].name}
+                </p>
+              </div>
+            </>
+          ) : (
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-slate-700">Profesional</label>
+              <select name="professional_id" required className={INPUT}>
+                <option value="">— Seleccionar —</option>
+                {professionals.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Motivo de consulta */}
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">Profesional</label>
-            <select
-              name="professional_id"
-              required
-              className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400"
-            >
-              <option value="">— Seleccionar —</option>
-              {professionals.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+            <label className="text-sm font-medium text-slate-700">
+              Motivo <span className="font-normal text-slate-400">(opcional)</span>
+            </label>
+            <input
+              type="text"
+              name="reason"
+              list="treatment-types-list"
+              placeholder="Valoración, Diseño de sonrisa…"
+              maxLength={200}
+              className={INPUT}
+            />
+            {treatmentTypes.length > 0 && (
+              <datalist id="treatment-types-list">
+                {treatmentTypes.map((t) => (
+                  <option key={t.id} value={t.name} />
+                ))}
+              </datalist>
+            )}
           </div>
 
           {/* Fecha */}
@@ -115,7 +148,7 @@ export function ManualAppointmentSheet({
               required
               defaultValue={initialDate}
               min={new Date().toISOString().slice(0, 10)}
-              className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400"
+              className={INPUT}
             />
           </div>
 
@@ -123,23 +156,11 @@ export function ManualAppointmentSheet({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-slate-700">Inicio</label>
-              <input
-                type="time"
-                name="start_time"
-                required
-                defaultValue="09:00"
-                className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400"
-              />
+              <input type="time" name="start_time" required defaultValue="09:00" className={INPUT} />
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-slate-700">Fin</label>
-              <input
-                type="time"
-                name="end_time"
-                required
-                defaultValue="10:00"
-                className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400"
-              />
+              <input type="time" name="end_time" required defaultValue="10:00" className={INPUT} />
             </div>
           </div>
 

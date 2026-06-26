@@ -1,4 +1,4 @@
-import { IsISO8601, IsUUID } from 'class-validator';
+import { IsISO8601, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 
 /**
  * Cuerpo de POST /appointments/manual — alta manual de turno por el staff.
@@ -19,4 +19,10 @@ export class CreateManualAppointmentDto {
 
   @IsISO8601()
   endAt!: string;
+
+  /** Motivo de consulta: texto libre o preset de treatment_types. Opcional. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  reason?: string;
 }

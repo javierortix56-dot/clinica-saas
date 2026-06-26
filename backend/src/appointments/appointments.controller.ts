@@ -20,6 +20,7 @@ import {
 } from './appointments.service';
 import { CreateManualAppointmentDto } from './dto/create-manual-appointment.dto';
 import { UpdateAppointmentStatusDto } from './dto/update-appointment-status.dto';
+import { RescheduleAppointmentDto } from './dto/reschedule-appointment.dto';
 
 /**
  * Endpoints de escritura de turnos para el staff. Protegidos por JWT de
@@ -76,6 +77,22 @@ export class AppointmentsController {
     @CurrentUser() user: AuthUser,
   ): Promise<ConfirmAppointmentResult> {
     return this.appointments.updateStatus(id, dto.status, user);
+  }
+
+  /**
+   * Reprograma un turno (confirmed/proposed): actualiza start_at y end_at,
+   * mantiene el estado y actualiza el evento de Google Calendar.
+   */
+  @Patch(':id/reschedule')
+  @HttpCode(200)
+  @Roles('admin', 'reception', 'doctor')
+  reschedule(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    dto: RescheduleAppointmentDto,
+    @CurrentUser() user: AuthUser,
+  ): Promise<ConfirmAppointmentResult> {
+    return this.appointments.reschedule(id, dto, user);
   }
 
   @Post('manual')

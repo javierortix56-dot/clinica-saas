@@ -187,6 +187,8 @@ export interface WeeklyAppointment {
   start_at: string;
   end_at: string;
   patient_name: string;
+  patient_birth_date: string | null;
+  reason: string | null;
   treatment_label: string | null;
   professional_name: string | null;
 }
@@ -241,7 +243,8 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
     id: string;
     start_at: string;
     end_at: string;
-    patients: { full_name: string } | null;
+    reason: string | null;
+    patients: { full_name: string; birth_date: string | null } | null;
     treatments: { treatment_types: { name: string } | null } | null;
     treatment_phase_templates: { name: string } | null;
     professionals: {
@@ -256,8 +259,8 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
   let query = supabase
     .from("appointments")
     .select(
-      `id, start_at, end_at,
-       patients ( full_name ),
+      `id, start_at, end_at, reason,
+       patients ( full_name, birth_date ),
        treatments ( treatment_types ( name ) ),
        treatment_phase_templates ( name ),
        professionals ( staff_members ( full_name, is_active, deleted_at ) )`
@@ -289,6 +292,8 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
       start_at: row.start_at,
       end_at: row.end_at,
       patient_name: row.patients?.full_name ?? "Paciente",
+      patient_birth_date: row.patients?.birth_date ?? null,
+      reason: row.reason ?? null,
       treatment_label:
         row.treatments?.treatment_types?.name ??
         row.treatment_phase_templates?.name ??
@@ -372,6 +377,84 @@ export async function getWeeklyBlocks(refDate?: Date): Promise<WeeklyBlock[]> {
       source: row.source,
       professional_name: activeProf,
     };
+  });
+}
+
+// Franja horaria recurrente en la que un profesional atiende (de
+// professional_availability). weekday 1=Lun … 6=Sáb; time como "HH:MM:SS".
+// Se usa en la grilla para sombrear las horas FUERA de las franjas configuradas.
+export interface AvailabilityWindow {
+  professional_name: string | null;
+  weekday: number;
+  start_time: string;
+  end_time: string;
+}
+
+// Lee las franjas de disponibilidad de los profesionales. Doctores: solo las
+// propias (así el sombreado de la grilla refleja exactamente su horario).
+// Admin/recepción: las de todos los profesionales activos.
+export async function getWeeklyAvailability(): Promise<AvailabilityWindow[]> {
+  const supabase = createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: { session } } = await supabase.auth.getSession();
+  let role: string | null = null;
+  if (session) {
+    try {
+      role = (JSON.parse(Buffer.from(session.access_token.split(".")[1], "base64").toString("utf8")) as { user_role?: string }).user_role ?? null;
+    } catch {}
+  }
+  const isDoctor = role === "doctor" || role === "professional";
+
+  type AvailRow = {
+    weekday: number;
+    start_time: string;
+    end_time: string;
+    professionals: {
+      staff_members: {
+        full_name: string;
+        is_active: boolean;
+        deleted_at: string | null;
+      } | null;
+    } | null;
+  };
+
+  let query = supabase
+    .from("professional_availability")
+    .select(
+      `weekday, start_time, end_time,
+       professionals ( staff_members ( full_name, is_active, deleted_at ) )`
+    );
+
+  if (isDoctor) {
+    const { data: prof } = await supabase
+      .from("professionals")
+      .select("id, staff_members!inner(auth_user_id)")
+      .eq("staff_members.auth_user_id", user.id)
+      .single();
+    if (!prof) return [];
+    query = query.eq("professional_id", prof.id);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(`No se pudo cargar la disponibilidad: ${error.message}`);
+
+  return ((data ?? []) as unknown as AvailRow[]).flatMap((row) => {
+    const sm = row.professionals?.staff_members;
+    // Ignorar franjas de profesionales borrados/inactivos (igual que turnos).
+    if (!sm || !sm.is_active || sm.deleted_at !== null) return [];
+    return [
+      {
+        professional_name: sm.full_name,
+        weekday: row.weekday,
+        start_time: row.start_time,
+        end_time: row.end_time,
+      },
+    ];
   });
 }
 
@@ -902,6 +985,24 @@ export async function getPatientSession(): Promise<{
     patientId = null;
   }
   return { hasSession: true, patientId };
+}
+
+/** Tipo de tratamiento para el combo de motivo en el form de nuevo turno. */
+export interface TreatmentTypeOption {
+  id: string;
+  name: string;
+}
+
+/** Lista de tipos de tratamiento activos — para el combo de motivo de consulta. */
+export async function getTreatmentTypeOptions(): Promise<TreatmentTypeOption[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("treatment_types")
+    .select("id, name")
+    .is("deleted_at", null)
+    .eq("is_active", true)
+    .order("name", { ascending: true });
+  return ((data ?? []) as { id: string; name: string }[]);
 }
 
 export interface ProfessionalForScheduling {
