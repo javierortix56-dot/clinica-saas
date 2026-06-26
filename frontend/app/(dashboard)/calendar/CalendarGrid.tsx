@@ -21,8 +21,8 @@ import {
 import { AppointmentSheet } from "./AppointmentSheet";
 import { ManualAppointmentSheet } from "./ManualAppointmentSheet";
 
-// Paleta de colores por profesional (border-left de los eventos). Se asigna de
-// forma estable por nombre para que cada profesional mantenga su color.
+// Paleta de colores por profesional — solo se usa como left-border cuando hay
+// múltiples profesionales visibles.
 const PROF_COLORS = [
   "#2563eb",
   "#0d9488",
@@ -41,9 +41,19 @@ function profColor(name: string | null): string {
   return PROF_COLORS[hash % PROF_COLORS.length];
 }
 
-// Grilla semanal interactiva. page.tsx (Server Component) resuelve auth y datos y
-// pasa solo props serializables: los días como ISO (YYYY-MM-DD) y los turnos.
-// El estado del turno seleccionado vive acá; hay un único <Sheet> compartido.
+function calcAge(birthDate: string | null): number | null {
+  if (!birthDate) return null;
+  const birth = new Date(birthDate);
+  const now = new Date();
+  let age = now.getFullYear() - birth.getFullYear();
+  const m = now.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) age--;
+  return age >= 0 ? age : null;
+}
+
+// Altura fija de cada franja de 30 min en el grid desktop.
+const SLOT_H = "1.75rem";
+
 export function CalendarGrid({
   weekDays: weekDayStrs,
   appointments,
@@ -65,14 +75,11 @@ export function CalendarGrid({
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const weekDays = weekDayStrs.map(parseISODate);
 
-  // Mobile: día seleccionado en el navegador de día, centrado en hoy si aplica.
   const [mobileDayIdx, setMobileDayIdx] = useState(() => {
     const todayIdx = weekDays.findIndex((d) => isToday(d));
     return todayIdx >= 0 ? todayIdx : 0;
   });
 
-  // Apertura desde "Generar turno" en la historia clínica:
-  // /calendar?nuevo=1&paciente=<id>&fecha=<YYYY-MM-DD>. Precarga el alta manual.
   useEffect(() => {
     if (!canCreateAppointment) return;
     const params = new URLSearchParams(window.location.search);
@@ -82,30 +89,24 @@ export function CalendarGrid({
         date: params.get("fecha") ?? undefined,
       });
       setNewApptOpen(true);
-      // Limpia la query para no reabrir el alta al refrescar.
       window.history.replaceState(null, "", "/calendar");
     }
   }, [canCreateAppointment]);
 
-
-  // Profesionales presentes esta semana (para los chips de filtro y la leyenda).
-  // Incluye los que solo tienen bloqueos (eventos de Google), no solo turnos.
   const profNames = useMemo(() => {
     const names = new Set<string>();
-    for (const a of appointments) {
-      if (a.professional_name) names.add(a.professional_name);
-    }
-    for (const b of blocks) {
-      if (b.professional_name) names.add(b.professional_name);
-    }
+    for (const a of appointments) if (a.professional_name) names.add(a.professional_name);
+    for (const b of blocks) if (b.professional_name) names.add(b.professional_name);
     return Array.from(names).sort();
   }, [appointments, blocks]);
+
+  // Cuando solo hay un profesional no necesitamos chips de filtro ni left-border de color.
+  const multiProf = profNames.length > 1;
 
   function toggleProf(name: string) {
     setHidden((prev) => {
       const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
+      if (next.has(name)) next.delete(name); else next.add(name);
       return next;
     });
   }
@@ -116,8 +117,8 @@ export function CalendarGrid({
   const visibleBlocks = blocks.filter(
     (b) => !b.professional_name || !hidden.has(b.professional_name)
   );
+  const hasData = visibleAppts.length > 0 || visibleBlocks.length > 0;
 
-  // Turnos del día seleccionado en mobile, ordenados por hora.
   const mobileDayAppts = useMemo(
     () =>
       visibleAppts
@@ -126,7 +127,6 @@ export function CalendarGrid({
     [visibleAppts, mobileDayIdx, weekDays]
   );
 
-  // Bloqueos del día seleccionado en mobile, ordenados por hora.
   const mobileDayBlocks = useMemo(
     () =>
       visibleBlocks
@@ -139,12 +139,12 @@ export function CalendarGrid({
     <>
       {/* Barra de filtros + Nuevo turno */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        {profNames.length > 0 && (
+        {multiProf && (
           <span className="mr-1 text-[11px] font-semibold uppercase tracking-[.06em] text-slate-400">
             Profesionales
           </span>
         )}
-        {profNames.map((name) => {
+        {multiProf && profNames.map((name) => {
           const color = profColor(name);
           const off = hidden.has(name);
           return (
@@ -179,7 +179,7 @@ export function CalendarGrid({
         )}
       </div>
 
-      {/* ── Vista MOBILE: navegador de día + lista de turnos ───────────────── */}
+      {/* ── Vista MOBILE ──────────────────────────────────────────────────── */}
       <div className="md:hidden overflow-hidden rounded-card border border-border bg-white shadow-card">
         {/* Selector de día */}
         <div className="flex items-center border-b border-border bg-[#fbfcfe]">
@@ -192,7 +192,6 @@ export function CalendarGrid({
           >
             <ChevronLeft className="h-4 w-4" strokeWidth={2} />
           </button>
-
           <div className="flex flex-1 items-center justify-around px-1">
             {weekDays.map((day, i) => {
               const today = isToday(day);
@@ -206,31 +205,18 @@ export function CalendarGrid({
                     active ? "bg-primary/10" : "hover:bg-slate-50"
                   }`}
                 >
-                  <span
-                    className={`text-[10px] font-semibold uppercase tracking-wide ${
-                      today ? "text-primary" : "text-slate-400"
-                    }`}
-                  >
+                  <span className={`text-[10px] font-semibold uppercase tracking-wide ${today ? "text-primary" : "text-slate-400"}`}>
                     {DAY_LABELS[i].slice(0, 2)}
                   </span>
-                  <span
-                    className={`mt-0.5 flex h-6 w-6 items-center justify-center rounded-full text-[13px] font-bold ${
-                      today && active
-                        ? "bg-primary text-white"
-                        : today
-                        ? "text-primary"
-                        : active
-                        ? "text-foreground"
-                        : "text-slate-400"
-                    }`}
-                  >
+                  <span className={`mt-0.5 flex h-6 w-6 items-center justify-center rounded-full text-[13px] font-bold ${
+                    today && active ? "bg-primary text-white" : today ? "text-primary" : active ? "text-foreground" : "text-slate-400"
+                  }`}>
                     {day.getDate()}
                   </span>
                 </button>
               );
             })}
           </div>
-
           <button
             type="button"
             onClick={() => setMobileDayIdx((i) => Math.min(5, i + 1))}
@@ -242,7 +228,7 @@ export function CalendarGrid({
           </button>
         </div>
 
-        {/* Lista de turnos + bloqueos del día */}
+        {/* Lista de turnos */}
         {mobileDayAppts.length === 0 && mobileDayBlocks.length === 0 ? (
           <div className="py-8 text-center text-[13px] font-medium text-slate-400">
             {appointments.length === 0 && blocks.length === 0
@@ -252,33 +238,29 @@ export function CalendarGrid({
         ) : (
           <div className="divide-y divide-[#eef2f7]">
             {mobileDayAppts.map((a) => {
-              const color = profColor(a.professional_name);
+              const age = calcAge(a.patient_birth_date);
+              const color = multiProf ? profColor(a.professional_name) : "var(--color-primary)";
               return (
                 <button
                   key={a.id}
                   type="button"
                   onClick={() => setSelectedId(a.id)}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50 active:bg-slate-100"
+                  className="flex w-full items-center gap-3 px-4 py-[10px] text-left transition hover:bg-slate-50 active:bg-slate-100"
                 >
-                  <div
-                    className="h-8 w-[3px] shrink-0 rounded-full"
-                    style={{ background: color }}
-                  />
-                  <div className="w-[52px] shrink-0 text-right">
-                    <div className="font-mono text-[12.5px] font-bold text-slate-700">
-                      {formatTime(a.start_at)}
-                    </div>
-                    <div className="text-[10px] text-slate-400">
-                      {formatDuration(a.start_at, a.end_at)}
-                    </div>
+                  <div className="h-8 w-[3px] shrink-0 rounded-full" style={{ background: color }} />
+                  <div className="w-[48px] shrink-0 text-right">
+                    <div className="font-mono text-[12px] font-bold text-slate-700">{formatTime(a.start_at)}</div>
+                    <div className="text-[10px] text-slate-400">{formatDuration(a.start_at, a.end_at)}</div>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13.5px] font-semibold text-foreground">
+                    <div className="truncate text-[13px] font-semibold text-foreground">
                       {a.patient_name}
+                      {age !== null && <span className="ml-1 font-normal text-slate-400 text-[11px]">{age}a</span>}
                     </div>
-                    {(a.treatment_label || a.professional_name) && (
+                    {/* Mostrar doctor solo en vista multi-profesional */}
+                    {(a.treatment_label || (multiProf && a.professional_name)) && (
                       <div className="truncate text-[11px] text-slate-400">
-                        {[a.treatment_label, a.professional_name]
+                        {[a.treatment_label, multiProf ? a.professional_name : null]
                           .filter(Boolean)
                           .join(" · ")}
                       </div>
@@ -289,32 +271,17 @@ export function CalendarGrid({
               );
             })}
 
-            {/* Bloqueos (eventos de Google / manuales) — grises, no clickeables */}
             {mobileDayBlocks.map((b) => (
-              <div
-                key={b.id}
-                className="flex w-full items-center gap-3 bg-slate-50/60 px-4 py-3 text-left"
-              >
+              <div key={b.id} className="flex w-full items-center gap-3 bg-slate-50/60 px-4 py-[10px]">
                 <div className="h-8 w-[3px] shrink-0 rounded-full bg-slate-300" />
-                <div className="w-[52px] shrink-0 text-right">
-                  <div className="font-mono text-[12.5px] font-bold text-slate-500">
-                    {formatTime(b.start_at)}
-                  </div>
-                  <div className="text-[10px] text-slate-400">
-                    {formatDuration(b.start_at, b.end_at)}
-                  </div>
+                <div className="w-[48px] shrink-0 text-right">
+                  <div className="font-mono text-[12px] font-bold text-slate-500">{formatTime(b.start_at)}</div>
+                  <div className="text-[10px] text-slate-400">{formatDuration(b.start_at, b.end_at)}</div>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] font-semibold text-slate-500">
-                    {b.reason || "Ocupado"}
-                  </div>
+                  <div className="truncate text-[13px] font-semibold text-slate-500">{b.reason || "Ocupado"}</div>
                   <div className="truncate text-[11px] text-slate-400">
-                    {[
-                      b.source === "google_calendar" ? "Google Calendar" : "Bloqueo",
-                      b.professional_name,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
+                    {b.source === "google_calendar" ? "Google Calendar" : "Bloqueo"}
                   </div>
                 </div>
               </div>
@@ -323,36 +290,32 @@ export function CalendarGrid({
         )}
       </div>
 
-      {/* ── Vista DESKTOP: grilla semanal ──────────────────────────────────── */}
+      {/* ── Vista DESKTOP: grilla con filas de altura fija ─────────────────── */}
       <div className="hidden md:block overflow-hidden rounded-card border border-border bg-white shadow-card">
         <div className="overflow-x-auto">
           <div
             className="grid min-w-[640px]"
-            style={{ gridTemplateColumns: "3.625rem repeat(6, 1fr)" }}
+            style={{
+              gridTemplateColumns: "3.25rem repeat(6, 1fr)",
+              // Primera fila (header) auto; el resto fijo = SLOT_H por franja de 30 min.
+              gridTemplateRows: hasData
+                ? `auto repeat(${SLOTS.length}, ${SLOT_H})`
+                : "auto auto",
+            }}
           >
-            {/* Header row */}
+            {/* Header */}
             <div className="border-b border-border bg-[#fbfcfe]" />
             {weekDays.map((day, i) => {
               const today = isToday(day);
               return (
                 <div
                   key={i}
-                  className={`border-b border-l border-[#eef2f7] px-2 py-[10px] text-center ${
-                    today ? "bg-primary/10" : "bg-[#fbfcfe]"
-                  }`}
+                  className={`border-b border-l border-[#eef2f7] px-2 py-[8px] text-center ${today ? "bg-primary/10" : "bg-[#fbfcfe]"}`}
                 >
-                  <p
-                    className={`text-[11px] font-semibold uppercase tracking-wide ${
-                      today ? "text-primary" : "text-muted-foreground"
-                    }`}
-                  >
+                  <p className={`text-[10.5px] font-semibold uppercase tracking-wide ${today ? "text-primary" : "text-muted-foreground"}`}>
                     {DAY_LABELS[i]}
                   </p>
-                  <p
-                    className={`mt-[2px] text-[13px] ${
-                      today ? "font-bold text-primary" : "text-slate-400"
-                    }`}
-                  >
+                  <p className={`mt-[1px] text-[12px] ${today ? "font-bold text-primary" : "text-slate-400"}`}>
                     {formatDayDate(day)}
                   </p>
                 </div>
@@ -360,14 +323,10 @@ export function CalendarGrid({
             })}
 
             {/* Estado vacío */}
-            {visibleAppts.length === 0 && visibleBlocks.length === 0 && (
+            {!hasData && (
               <React.Fragment>
-                <div className="border-b border-[#eef2f7] py-3 pr-2 text-right">
-                  <span className="font-mono text-[11px] text-slate-400">
-                    08:00
-                  </span>
-                </div>
-                <div className="col-span-6 border-b border-l border-[#eef2f7] px-4 py-10 text-center text-[13.5px] font-medium text-slate-400">
+                <div className="border-b border-[#eef2f7]" />
+                <div className="col-span-6 border-b border-l border-[#eef2f7] px-4 py-10 text-center text-[13px] font-medium text-slate-400">
                   {appointments.length === 0 && blocks.length === 0
                     ? "No hay turnos confirmados en esta semana."
                     : "Ningún profesional visible. Activá un chip para ver sus turnos."}
@@ -375,140 +334,114 @@ export function CalendarGrid({
               </React.Fragment>
             )}
 
-            {/* Filas de franjas horarias */}
-            {(visibleAppts.length > 0 || visibleBlocks.length > 0) &&
-              SLOTS.map((slot) => (
-                <React.Fragment key={`${slot.hour}-${slot.minute}`}>
-                  <div
-                    className={`border-b border-[#eef2f7] pr-2 text-right ${
-                      slot.minute === 0 ? "pb-0 pt-[6px]" : "pb-[6px] pt-0"
-                    }`}
-                  >
-                    {slot.minute === 0 && (
-                      <span className="font-mono text-[11px] text-slate-400">
-                        {formatSlot(slot)}
-                      </span>
-                    )}
-                  </div>
+            {/* Filas de slots — altura fija por gridTemplateRows */}
+            {hasData && SLOTS.map((slot) => (
+              <React.Fragment key={`${slot.hour}-${slot.minute}`}>
+                {/* Columna de horas */}
+                <div className="relative border-b border-[#eef2f7] pr-1.5">
+                  {slot.minute === 0 && (
+                    <span className="absolute right-[5px] top-[3px] font-mono text-[9.5px] leading-none text-slate-400">
+                      {formatSlot(slot)}
+                    </span>
+                  )}
+                </div>
 
-                  {weekDays.map((day, di) => {
-                    const cellAppts = appointmentsForSlot(
-                      visibleAppts,
-                      day,
-                      slot.hour,
-                      slot.minute
-                    );
-                    const cellBlocks = blocksForSlot(
-                      visibleBlocks,
-                      day,
-                      slot.hour,
-                      slot.minute
-                    );
-                    return (
-                      <div
-                        key={di}
-                        className={`min-h-[1.375rem] space-y-[2px] border-b border-l border-[#eef2f7] p-[2px] ${
-                          isToday(day) ? "bg-primary/[.035]" : ""
-                        }`}
-                      >
-                        {cellBlocks.map((b) => (
-                          <div
-                            key={b.id}
-                            title={`${formatTime(b.start_at)}–${formatTime(b.end_at)} · ${
-                              b.reason || "Ocupado"
-                            }${b.professional_name ? ` · ${b.professional_name}` : ""}`}
-                            className="w-full space-y-[1px] rounded-md border border-slate-200 border-l-[3px] border-l-slate-300 bg-slate-100 px-[6px] py-[3px] text-left"
+                {/* Celdas de cada día */}
+                {weekDays.map((day, di) => {
+                  const cellAppts = appointmentsForSlot(visibleAppts, day, slot.hour, slot.minute);
+                  const cellBlocks = blocksForSlot(visibleBlocks, day, slot.hour, slot.minute);
+                  return (
+                    <div
+                      key={di}
+                      className={`relative border-b border-l border-[#eef2f7] overflow-hidden ${
+                        isToday(day) ? "bg-primary/[.03]" : ""
+                      }`}
+                    >
+                      {/* Bloqueos de Google / manuales */}
+                      {cellBlocks.map((b) => (
+                        <div
+                          key={b.id}
+                          title={`${formatTime(b.start_at)}–${formatTime(b.end_at)} · ${b.reason || "Ocupado"}`}
+                          className="absolute inset-[1px] z-10 flex items-center gap-[3px] overflow-hidden rounded-[3px] border border-slate-200 border-l-[2px] border-l-slate-300 bg-slate-100 px-[4px]"
+                        >
+                          <p className="truncate font-mono text-[8.5px] text-slate-400">
+                            {b.reason || "Ocupado"}
+                          </p>
+                        </div>
+                      ))}
+
+                      {/* Turnos confirmados */}
+                      {cellAppts.map((a, ai) => {
+                        const age = calcAge(a.patient_birth_date);
+                        const borderColor = multiProf ? profColor(a.professional_name) : undefined;
+                        return (
+                          <button
+                            key={a.id}
+                            type="button"
+                            onClick={() => setSelectedId(a.id)}
+                            className="absolute inset-[1px] z-10 flex flex-col justify-center overflow-hidden rounded-[3px] border border-status-confirmado-border border-l-[2px] bg-status-confirmado-bg px-[4px] text-left transition-shadow hover:shadow-[0_2px_8px_rgba(15,23,42,.12)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                            style={{
+                              top: `calc(${ai} * 2px + 1px)`,
+                              borderLeftColor: borderColor,
+                            }}
                           >
-                            <p className="font-mono text-[9px] text-slate-500">
-                              {formatTime(b.start_at)} ·{" "}
-                              {formatDuration(b.start_at, b.end_at)}
+                            <p className="truncate font-mono text-[8.5px] leading-tight text-status-confirmado-fg/70">
+                              {formatTime(a.start_at)} · {formatDuration(a.start_at, a.end_at)}
                             </p>
-                            <p className="truncate text-[11.5px] font-semibold text-slate-500">
-                              {b.reason || "Ocupado"}
+                            <p className="truncate text-[10px] font-semibold leading-tight text-status-confirmado-fg">
+                              {a.patient_name}
+                              {age !== null && (
+                                <span className="ml-1 font-normal text-[8.5px] opacity-70">{age}a</span>
+                              )}
                             </p>
-                            {(b.source === "google_calendar" || b.professional_name) && (
-                              <p className="truncate text-[9.5px] text-slate-400">
-                                {[
-                                  b.source === "google_calendar" ? "Google Calendar" : null,
-                                  b.professional_name,
-                                ]
-                                  .filter(Boolean)
-                                  .join(" · ")}
+                            {multiProf && a.professional_name && (
+                              <p className="truncate text-[8px] leading-tight text-status-confirmado-fg/60">
+                                {a.professional_name}
                               </p>
                             )}
-                          </div>
-                        ))}
-                        {cellAppts.map((a) => {
-                          const color = profColor(a.professional_name);
-                          return (
-                            <button
-                              key={a.id}
-                              type="button"
-                              onClick={() => setSelectedId(a.id)}
-                              style={{ borderLeftColor: color }}
-                              className="w-full space-y-[1px] rounded-md border border-status-confirmado-border border-l-[3px] bg-status-confirmado-bg px-[6px] py-[3px] text-left transition-shadow hover:shadow-[0_5px_14px_rgba(15,23,42,.13)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                            >
-                              <p className="font-mono text-[9px] text-status-confirmado-fg">
-                                {formatTime(a.start_at)} ·{" "}
-                                {formatDuration(a.start_at, a.end_at)}
-                              </p>
-                              <p className="truncate text-[11.5px] font-semibold text-status-confirmado-fg">
-                                {a.patient_name}
-                              </p>
-                              {(a.treatment_label || a.professional_name) && (
-                                <p className="truncate text-[9.5px] text-status-confirmado-fg/70">
-                                  {[a.treatment_label, a.professional_name]
-                                    .filter(Boolean)
-                                    .join(" · ")}
-                                </p>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
-                </React.Fragment>
-              ))}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </React.Fragment>
+            ))}
           </div>
         </div>
       </div>
 
       {/* Leyenda (solo desktop) */}
-      <div className="mt-3 hidden flex-wrap items-center gap-5 md:flex">
-        <div className="flex items-center gap-[7px] text-[12.5px] font-medium text-muted-foreground">
-          <span className="h-[10px] w-[10px] rounded-[3px] border border-status-confirmado-border bg-status-confirmado-bg" />
+      <div className="mt-2 hidden flex-wrap items-center gap-4 md:flex">
+        <div className="flex items-center gap-[6px] text-[11.5px] font-medium text-muted-foreground">
+          <span className="h-[9px] w-[9px] rounded-[2px] border border-status-confirmado-border bg-status-confirmado-bg" />
           Confirmado
         </div>
         {visibleBlocks.length > 0 && (
-          <div className="flex items-center gap-[7px] text-[12.5px] font-medium text-muted-foreground">
-            <span className="h-[10px] w-[10px] rounded-[3px] border border-slate-200 bg-slate-100" />
+          <div className="flex items-center gap-[6px] text-[11.5px] font-medium text-muted-foreground">
+            <span className="h-[9px] w-[9px] rounded-[2px] border border-slate-200 bg-slate-100" />
             Ocupado (Google)
           </div>
         )}
-        {profNames.length > 0 && <div className="flex-1" />}
-        <div className="flex flex-wrap items-center gap-[14px]">
-          {profNames.map((name) => (
-            <div
-              key={name}
-              className="flex items-center gap-[6px] text-[12.5px] font-medium text-muted-foreground"
-            >
-              <span
-                className="h-[3px] w-[11px] rounded-[2px]"
-                style={{ background: profColor(name) }}
-              />
-              {name}
+        {multiProf && (
+          <>
+            <div className="flex-1" />
+            <div className="flex flex-wrap items-center gap-3">
+              {profNames.map((name) => (
+                <div key={name} className="flex items-center gap-[5px] text-[11.5px] font-medium text-muted-foreground">
+                  <span className="h-[3px] w-[10px] rounded-full" style={{ background: profColor(name) }} />
+                  {name}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </>
+        )}
       </div>
 
       <AppointmentSheet
         appointmentId={selectedId}
         open={selectedId !== null}
-        onOpenChange={(o) => {
-          if (!o) setSelectedId(null);
-        }}
+        onOpenChange={(o) => { if (!o) setSelectedId(null); }}
       />
 
       <ManualAppointmentSheet

@@ -89,22 +89,34 @@ export function ManualAppointmentSheet({
             </select>
           </div>
 
-          {/* Profesional */}
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">Profesional</label>
-            <select
-              name="professional_id"
-              required
-              className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400"
-            >
-              <option value="">— Seleccionar —</option>
-              {professionals.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Profesional: selector solo cuando hay múltiples; si hay uno, se asigna automáticamente */}
+          {professionals.length === 1 ? (
+            <>
+              <input type="hidden" name="professional_id" value={professionals[0].id} />
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Profesional</label>
+                <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                  {professionals[0].name}
+                </p>
+              </div>
+            </>
+          ) : (
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-slate-700">Profesional</label>
+              <select
+                name="professional_id"
+                required
+                className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400"
+              >
+                <option value="">— Seleccionar —</option>
+                {professionals.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Fecha */}
           <div className="space-y-1.5">

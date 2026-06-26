@@ -187,6 +187,7 @@ export interface WeeklyAppointment {
   start_at: string;
   end_at: string;
   patient_name: string;
+  patient_birth_date: string | null;
   treatment_label: string | null;
   professional_name: string | null;
 }
@@ -241,7 +242,7 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
     id: string;
     start_at: string;
     end_at: string;
-    patients: { full_name: string } | null;
+    patients: { full_name: string; birth_date: string | null } | null;
     treatments: { treatment_types: { name: string } | null } | null;
     treatment_phase_templates: { name: string } | null;
     professionals: {
@@ -257,7 +258,7 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
     .from("appointments")
     .select(
       `id, start_at, end_at,
-       patients ( full_name ),
+       patients ( full_name, birth_date ),
        treatments ( treatment_types ( name ) ),
        treatment_phase_templates ( name ),
        professionals ( staff_members ( full_name, is_active, deleted_at ) )`
@@ -289,6 +290,7 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
       start_at: row.start_at,
       end_at: row.end_at,
       patient_name: row.patients?.full_name ?? "Paciente",
+      patient_birth_date: row.patients?.birth_date ?? null,
       treatment_label:
         row.treatments?.treatment_types?.name ??
         row.treatment_phase_templates?.name ??
