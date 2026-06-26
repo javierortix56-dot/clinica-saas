@@ -4,10 +4,12 @@ import { CheckCircle2, Clock, Activity, ChevronLeft, ChevronRight } from "lucide
 import {
   getWeeklyAppointments,
   getWeeklyBlocks,
+  getWeeklyAvailability,
   getSessionAuth,
   isDoctorRole,
   getPatients,
   getProfessionalsForScheduling,
+  getTreatmentTypeOptions,
 } from "@/lib/supabase/server";
 import { CalendarGrid } from "./CalendarGrid";
 import {
@@ -22,6 +24,18 @@ import {
 export const dynamic = "force-dynamic";
 
 // Todos los roles autenticados tienen acceso. Guard de sesión en middleware.ts.
+
+// Envuelve un fetch de datos: deja pasar señales de Next.js (redirect/not-found)
+// pero convierte errores de BD en un valor por defecto para que la página
+// no crashee si falta una columna o tabla todavía no migrada.
+function safeData<T>(promise: Promise<T>, fallback: T): Promise<T> {
+  return promise.catch((e: unknown) => {
+    // Next.js redirect() y notFound() lanzan objetos con `digest`. Dejarlos pasar.
+    if (e && typeof e === "object" && "digest" in e) throw e;
+    console.error("[calendar] data-fetch error:", e);
+    return fallback;
+  });
+}
 
 export default async function CalendarPage({
   searchParams,
@@ -45,11 +59,13 @@ export default async function CalendarPage({
   const { role } = await getSessionAuth();
   const canCreateAppointment = role === "admin" || role === "reception" || role === "doctor";
 
-  const [appointments, blocks, patients, professionals] = await Promise.all([
-    getWeeklyAppointments(displayedMonday),
-    getWeeklyBlocks(displayedMonday),
-    canCreateAppointment ? getPatients() : Promise.resolve([]),
-    canCreateAppointment ? getProfessionalsForScheduling() : Promise.resolve([]),
+  const [appointments, blocks, availability, patients, professionals, treatmentTypes] = await Promise.all([
+    safeData(getWeeklyAppointments(displayedMonday), []),
+    safeData(getWeeklyBlocks(displayedMonday), []),
+    safeData(getWeeklyAvailability(), []),
+    canCreateAppointment ? safeData(getPatients(), []) : Promise.resolve([]),
+    canCreateAppointment ? safeData(getProfessionalsForScheduling(), []) : Promise.resolve([]),
+    canCreateAppointment ? safeData(getTreatmentTypeOptions(), []) : Promise.resolve([]),
   ]);
   const weekDays = getWeekDays(displayedMonday);
 
@@ -174,9 +190,11 @@ export default async function CalendarPage({
         weekDays={weekDays.map(toISODate)}
         appointments={appointments}
         blocks={blocks}
+        availability={availability}
         canCreateAppointment={canCreateAppointment}
         patients={patients.map((p) => ({ id: p.id, full_name: p.full_name, national_id: p.national_id }))}
         professionals={professionals}
+        treatmentTypes={treatmentTypes}
       />
     </div>
   );
