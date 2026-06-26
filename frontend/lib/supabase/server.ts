@@ -377,6 +377,84 @@ export async function getWeeklyBlocks(refDate?: Date): Promise<WeeklyBlock[]> {
   });
 }
 
+// Franja horaria recurrente en la que un profesional atiende (de
+// professional_availability). weekday 1=Lun … 6=Sáb; time como "HH:MM:SS".
+// Se usa en la grilla para sombrear las horas FUERA de las franjas configuradas.
+export interface AvailabilityWindow {
+  professional_name: string | null;
+  weekday: number;
+  start_time: string;
+  end_time: string;
+}
+
+// Lee las franjas de disponibilidad de los profesionales. Doctores: solo las
+// propias (así el sombreado de la grilla refleja exactamente su horario).
+// Admin/recepción: las de todos los profesionales activos.
+export async function getWeeklyAvailability(): Promise<AvailabilityWindow[]> {
+  const supabase = createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: { session } } = await supabase.auth.getSession();
+  let role: string | null = null;
+  if (session) {
+    try {
+      role = (JSON.parse(Buffer.from(session.access_token.split(".")[1], "base64").toString("utf8")) as { user_role?: string }).user_role ?? null;
+    } catch {}
+  }
+  const isDoctor = role === "doctor" || role === "professional";
+
+  type AvailRow = {
+    weekday: number;
+    start_time: string;
+    end_time: string;
+    professionals: {
+      staff_members: {
+        full_name: string;
+        is_active: boolean;
+        deleted_at: string | null;
+      } | null;
+    } | null;
+  };
+
+  let query = supabase
+    .from("professional_availability")
+    .select(
+      `weekday, start_time, end_time,
+       professionals ( staff_members ( full_name, is_active, deleted_at ) )`
+    );
+
+  if (isDoctor) {
+    const { data: prof } = await supabase
+      .from("professionals")
+      .select("id, staff_members!inner(auth_user_id)")
+      .eq("staff_members.auth_user_id", user.id)
+      .single();
+    if (!prof) return [];
+    query = query.eq("professional_id", prof.id);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(`No se pudo cargar la disponibilidad: ${error.message}`);
+
+  return ((data ?? []) as unknown as AvailRow[]).flatMap((row) => {
+    const sm = row.professionals?.staff_members;
+    // Ignorar franjas de profesionales borrados/inactivos (igual que turnos).
+    if (!sm || !sm.is_active || sm.deleted_at !== null) return [];
+    return [
+      {
+        professional_name: sm.full_name,
+        weekday: row.weekday,
+        start_time: row.start_time,
+        end_time: row.end_time,
+      },
+    ];
+  });
+}
+
 // Devuelve un paciente por ID, o null si no existe (o RLS lo oculta).
 export async function getPatientById(id: string): Promise<Patient | null> {
   const supabase = createClient();

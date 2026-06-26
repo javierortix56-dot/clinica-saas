@@ -3,7 +3,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 
-import type { WeeklyAppointment, WeeklyBlock, ProfessionalForScheduling } from "@/lib/supabase/server";
+import type {
+  WeeklyAppointment,
+  WeeklyBlock,
+  AvailabilityWindow,
+  ProfessionalForScheduling,
+} from "@/lib/supabase/server";
 import type { Patient } from "@clinica/shared";
 import {
   DAY_LABELS,
@@ -18,6 +23,7 @@ import {
   isSameLocalDay,
   isToday,
   parseISODate,
+  timeToMinutes,
 } from "./grid-utils";
 import { AppointmentSheet } from "./AppointmentSheet";
 import { ManualAppointmentSheet } from "./ManualAppointmentSheet";
@@ -59,6 +65,7 @@ export function CalendarGrid({
   weekDays: weekDayStrs,
   appointments,
   blocks = [],
+  availability = [],
   canCreateAppointment,
   patients,
   professionals,
@@ -66,6 +73,7 @@ export function CalendarGrid({
   weekDays: string[];
   appointments: WeeklyAppointment[];
   blocks?: WeeklyBlock[];
+  availability?: AvailabilityWindow[];
   canCreateAppointment: boolean;
   patients: Pick<Patient, "id" | "full_name" | "national_id">[];
   professionals: ProfessionalForScheduling[];
@@ -118,7 +126,34 @@ export function CalendarGrid({
   const visibleBlocks = blocks.filter(
     (b) => !b.professional_name || !hidden.has(b.professional_name)
   );
+  const visibleAvail = availability.filter(
+    (w) => !w.professional_name || !hidden.has(w.professional_name)
+  );
+
+  // Set de celdas "disponibles" (clave `${dayIdx}-${slotIdx}`): un slot está
+  // disponible si algún profesional visible tiene una franja que lo cubre ese día.
+  // Solo sombreamos cuando hay franjas configuradas — si no hay ninguna, no
+  // sombreamos nada (evita pintar toda la grilla cuando aún no se parametrizó).
+  const availableCells = useMemo(() => {
+    const set = new Set<string>();
+    for (const w of visibleAvail) {
+      const di = w.weekday - 1; // weekday 1=Lun → columna 0
+      if (di < 0 || di > 5) continue;
+      const startM = timeToMinutes(w.start_time);
+      const endM = timeToMinutes(w.end_time);
+      SLOTS.forEach((slot, si) => {
+        const slotM = slot.hour * 60 + slot.minute;
+        if (slotM >= startM && slotM < endM) set.add(`${di}-${si}`);
+      });
+    }
+    return set;
+  }, [visibleAvail]);
+
+  const hasAvailability = visibleAvail.length > 0;
   const hasData = visibleAppts.length > 0 || visibleBlocks.length > 0;
+  // Mostramos la grilla horaria si hay turnos/bloqueos O si hay franjas
+  // configuradas (para ver el horario sombreado aunque la semana esté vacía).
+  const showGrid = hasData || hasAvailability;
 
   const mobileDayAppts = useMemo(
     () =>
@@ -298,18 +333,22 @@ export function CalendarGrid({
             className="grid min-w-[640px]"
             style={{
               gridTemplateColumns: "3.25rem repeat(6, 1fr)",
-              gridTemplateRows: hasData
+              gridTemplateRows: showGrid
                 ? `auto repeat(${SLOTS.length}, ${SLOT_H})`
                 : "auto auto",
             }}
           >
-            {/* ── Header ── */}
-            <div className="border-b border-border bg-[#fbfcfe]" />
+            {/* ── Header (posición explícita: fila 1) ── */}
+            <div
+              className="border-b border-border bg-[#fbfcfe]"
+              style={{ gridRow: 1, gridColumn: 1 }}
+            />
             {weekDays.map((day, i) => {
               const today = isToday(day);
               return (
                 <div
                   key={i}
+                  style={{ gridRow: 1, gridColumn: i + 2 }}
                   className={`border-b border-l border-[#eef2f7] px-2 py-[8px] text-center ${today ? "bg-primary/10" : "bg-[#fbfcfe]"}`}
                 >
                   <p className={`text-[10.5px] font-semibold uppercase tracking-wide ${today ? "text-primary" : "text-muted-foreground"}`}>
@@ -323,10 +362,13 @@ export function CalendarGrid({
             })}
 
             {/* ── Estado vacío ── */}
-            {!hasData && (
+            {!showGrid && (
               <React.Fragment>
-                <div className="border-b border-[#eef2f7]" />
-                <div className="col-span-6 border-b border-l border-[#eef2f7] px-4 py-10 text-center text-[13px] font-medium text-slate-400">
+                <div className="border-b border-[#eef2f7]" style={{ gridRow: 2, gridColumn: 1 }} />
+                <div
+                  className="border-b border-l border-[#eef2f7] px-4 py-10 text-center text-[13px] font-medium text-slate-400"
+                  style={{ gridRow: 2, gridColumn: "2 / span 6" }}
+                >
                   {appointments.length === 0 && blocks.length === 0
                     ? "No hay turnos confirmados en esta semana."
                     : "Ningún profesional visible. Activá un chip para ver sus turnos."}
@@ -334,27 +376,49 @@ export function CalendarGrid({
               </React.Fragment>
             )}
 
-            {/* ── Celdas de fondo (bordes, color de hoy) — sin overflow-hidden ── */}
-            {hasData && SLOTS.map((slot) => (
+            {/* ── Celdas de fondo (bordes, hoy, sombreado fuera de horario) ──
+                 Posición EXPLÍCITA en el grid para que los turnos (que se ubican
+                 con gridRow/gridColumn) no desplacen las etiquetas de hora. */}
+            {showGrid && SLOTS.map((slot, si) => (
               <React.Fragment key={`${slot.hour}-${slot.minute}`}>
-                <div className="relative border-b border-[#eef2f7] pr-1.5">
+                {/* Etiqueta de hora (columna 1) */}
+                <div
+                  className="relative border-b border-[#eef2f7] pr-1.5"
+                  style={{ gridRow: si + 2, gridColumn: 1 }}
+                >
                   {slot.minute === 0 && (
                     <span className="absolute right-[5px] top-[3px] font-mono text-[9.5px] leading-none text-slate-400">
                       {formatSlot(slot)}
                     </span>
                   )}
                 </div>
-                {weekDays.map((day, di) => (
-                  <div
-                    key={di}
-                    className={`border-b border-l border-[#eef2f7] ${isToday(day) ? "bg-primary/[.03]" : ""}`}
-                  />
-                ))}
+                {/* Celdas de cada día */}
+                {weekDays.map((day, di) => {
+                  const shaded = hasAvailability && !availableCells.has(`${di}-${si}`);
+                  return (
+                    <div
+                      key={di}
+                      style={{
+                        gridRow: si + 2,
+                        gridColumn: di + 2,
+                        ...(shaded
+                          ? {
+                              backgroundImage:
+                                "repeating-linear-gradient(45deg, rgba(100,116,139,0.09), rgba(100,116,139,0.09) 5px, transparent 5px, transparent 10px)",
+                            }
+                          : null),
+                      }}
+                      className={`border-b border-l border-[#eef2f7] ${
+                        isToday(day) ? "bg-primary/[.03]" : shaded ? "bg-slate-50/40" : ""
+                      }`}
+                    />
+                  );
+                })}
               </React.Fragment>
             ))}
 
             {/* ── Bloqueos: explícitamente posicionados en el grid, con span real ── */}
-            {hasData && visibleBlocks.map((b) => {
+            {showGrid && visibleBlocks.map((b) => {
               const si = getSlotIndex(b.start_at);
               const span = getSlotSpan(b.start_at, b.end_at);
               const di = getDayIndex(b.start_at, weekDays);
@@ -381,7 +445,7 @@ export function CalendarGrid({
             })}
 
             {/* ── Turnos: explícitamente posicionados en el grid, con span real ── */}
-            {hasData && visibleAppts.map((a) => {
+            {showGrid && visibleAppts.map((a) => {
               const si = getSlotIndex(a.start_at);
               const span = getSlotSpan(a.start_at, a.end_at);
               const di = getDayIndex(a.start_at, weekDays);
@@ -435,6 +499,18 @@ export function CalendarGrid({
           <div className="flex items-center gap-[6px] text-[11.5px] font-medium text-muted-foreground">
             <span className="h-[9px] w-[9px] rounded-[2px] border border-slate-200 bg-slate-100" />
             Ocupado (Google)
+          </div>
+        )}
+        {hasAvailability && (
+          <div className="flex items-center gap-[6px] text-[11.5px] font-medium text-muted-foreground">
+            <span
+              className="h-[9px] w-[9px] rounded-[2px] border border-slate-200"
+              style={{
+                backgroundImage:
+                  "repeating-linear-gradient(45deg, rgba(100,116,139,0.30), rgba(100,116,139,0.30) 2px, transparent 2px, transparent 4px)",
+              }}
+            />
+            Fuera de horario
           </div>
         )}
         {multiProf && (

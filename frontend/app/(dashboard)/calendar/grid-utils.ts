@@ -114,6 +114,12 @@ export function getSlotSpan(startIso: string, endIso: string): number {
   return Math.max(1, Math.ceil(mins / 30));
 }
 
+// "HH:MM:SS" o "HH:MM" → minutos desde medianoche.
+export function timeToMinutes(t: string): number {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + (m || 0);
+}
+
 // Índice 0-based del día en la semana. Devuelve -1 si no corresponde a ningún día visible.
 export function getDayIndex(isoStart: string, weekDays: Date[]): number {
   const localStr = new Date(isoStart).toLocaleString("en-US", { timeZone: TZ });
