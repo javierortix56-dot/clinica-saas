@@ -8,12 +8,13 @@ import type { Patient } from "@clinica/shared";
 import {
   DAY_LABELS,
   SLOTS,
-  appointmentsForSlot,
-  blocksForSlot,
   formatDayDate,
   formatDuration,
   formatSlot,
   formatTime,
+  getDayIndex,
+  getSlotIndex,
+  getSlotSpan,
   isSameLocalDay,
   isToday,
   parseISODate,
@@ -297,13 +298,12 @@ export function CalendarGrid({
             className="grid min-w-[640px]"
             style={{
               gridTemplateColumns: "3.25rem repeat(6, 1fr)",
-              // Primera fila (header) auto; el resto fijo = SLOT_H por franja de 30 min.
               gridTemplateRows: hasData
                 ? `auto repeat(${SLOTS.length}, ${SLOT_H})`
                 : "auto auto",
             }}
           >
-            {/* Header */}
+            {/* ── Header ── */}
             <div className="border-b border-border bg-[#fbfcfe]" />
             {weekDays.map((day, i) => {
               const today = isToday(day);
@@ -322,7 +322,7 @@ export function CalendarGrid({
               );
             })}
 
-            {/* Estado vacío */}
+            {/* ── Estado vacío ── */}
             {!hasData && (
               <React.Fragment>
                 <div className="border-b border-[#eef2f7]" />
@@ -334,10 +334,9 @@ export function CalendarGrid({
               </React.Fragment>
             )}
 
-            {/* Filas de slots — altura fija por gridTemplateRows */}
+            {/* ── Celdas de fondo (bordes, color de hoy) — sin overflow-hidden ── */}
             {hasData && SLOTS.map((slot) => (
               <React.Fragment key={`${slot.hour}-${slot.minute}`}>
-                {/* Columna de horas */}
                 <div className="relative border-b border-[#eef2f7] pr-1.5">
                   {slot.minute === 0 && (
                     <span className="absolute right-[5px] top-[3px] font-mono text-[9.5px] leading-none text-slate-400">
@@ -345,68 +344,83 @@ export function CalendarGrid({
                     </span>
                   )}
                 </div>
-
-                {/* Celdas de cada día */}
-                {weekDays.map((day, di) => {
-                  const cellAppts = appointmentsForSlot(visibleAppts, day, slot.hour, slot.minute);
-                  const cellBlocks = blocksForSlot(visibleBlocks, day, slot.hour, slot.minute);
-                  return (
-                    <div
-                      key={di}
-                      className={`relative border-b border-l border-[#eef2f7] overflow-hidden ${
-                        isToday(day) ? "bg-primary/[.03]" : ""
-                      }`}
-                    >
-                      {/* Bloqueos de Google / manuales */}
-                      {cellBlocks.map((b) => (
-                        <div
-                          key={b.id}
-                          title={`${formatTime(b.start_at)}–${formatTime(b.end_at)} · ${b.reason || "Ocupado"}`}
-                          className="absolute inset-[1px] z-10 flex items-center gap-[3px] overflow-hidden rounded-[3px] border border-slate-200 border-l-[2px] border-l-slate-300 bg-slate-100 px-[4px]"
-                        >
-                          <p className="truncate font-mono text-[8.5px] text-slate-400">
-                            {b.reason || "Ocupado"}
-                          </p>
-                        </div>
-                      ))}
-
-                      {/* Turnos confirmados */}
-                      {cellAppts.map((a, ai) => {
-                        const age = calcAge(a.patient_birth_date);
-                        const borderColor = multiProf ? profColor(a.professional_name) : undefined;
-                        return (
-                          <button
-                            key={a.id}
-                            type="button"
-                            onClick={() => setSelectedId(a.id)}
-                            className="absolute inset-[1px] z-10 flex flex-col justify-center overflow-hidden rounded-[3px] border border-status-confirmado-border border-l-[2px] bg-status-confirmado-bg px-[4px] text-left transition-shadow hover:shadow-[0_2px_8px_rgba(15,23,42,.12)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
-                            style={{
-                              top: `calc(${ai} * 2px + 1px)`,
-                              borderLeftColor: borderColor,
-                            }}
-                          >
-                            <p className="truncate font-mono text-[8.5px] leading-tight text-status-confirmado-fg/70">
-                              {formatTime(a.start_at)} · {formatDuration(a.start_at, a.end_at)}
-                            </p>
-                            <p className="truncate text-[10px] font-semibold leading-tight text-status-confirmado-fg">
-                              {a.patient_name}
-                              {age !== null && (
-                                <span className="ml-1 font-normal text-[8.5px] opacity-70">{age}a</span>
-                              )}
-                            </p>
-                            {multiProf && a.professional_name && (
-                              <p className="truncate text-[8px] leading-tight text-status-confirmado-fg/60">
-                                {a.professional_name}
-                              </p>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
+                {weekDays.map((day, di) => (
+                  <div
+                    key={di}
+                    className={`border-b border-l border-[#eef2f7] ${isToday(day) ? "bg-primary/[.03]" : ""}`}
+                  />
+                ))}
               </React.Fragment>
             ))}
+
+            {/* ── Bloqueos: explícitamente posicionados en el grid, con span real ── */}
+            {hasData && visibleBlocks.map((b) => {
+              const si = getSlotIndex(b.start_at);
+              const span = getSlotSpan(b.start_at, b.end_at);
+              const di = getDayIndex(b.start_at, weekDays);
+              if (si < 0 || di < 0) return null;
+              return (
+                <div
+                  key={b.id}
+                  className="relative z-10 pointer-events-none"
+                  style={{
+                    gridRow: `${si + 2} / span ${span}`,
+                    gridColumn: di + 2,
+                  }}
+                >
+                  <div
+                    title={`${formatTime(b.start_at)}–${formatTime(b.end_at)} · ${b.reason || "Ocupado"}`}
+                    className="pointer-events-auto absolute inset-[1px] flex items-start overflow-hidden rounded-[3px] border border-slate-200 border-l-[2px] border-l-slate-300 bg-slate-100 px-[4px] py-[2px]"
+                  >
+                    <p className="truncate font-mono text-[8.5px] text-slate-400">
+                      {b.reason || "Ocupado"}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* ── Turnos: explícitamente posicionados en el grid, con span real ── */}
+            {hasData && visibleAppts.map((a) => {
+              const si = getSlotIndex(a.start_at);
+              const span = getSlotSpan(a.start_at, a.end_at);
+              const di = getDayIndex(a.start_at, weekDays);
+              if (si < 0 || di < 0) return null;
+              const age = calcAge(a.patient_birth_date);
+              const borderColor = multiProf ? profColor(a.professional_name) : undefined;
+              return (
+                <div
+                  key={a.id}
+                  className="relative z-20 pointer-events-none"
+                  style={{
+                    gridRow: `${si + 2} / span ${span}`,
+                    gridColumn: di + 2,
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setSelectedId(a.id)}
+                    className="pointer-events-auto absolute inset-[1px] flex flex-col justify-start overflow-hidden rounded-[3px] border border-status-confirmado-border border-l-[2px] bg-status-confirmado-bg px-[4px] py-[2px] text-left transition-shadow hover:shadow-[0_2px_8px_rgba(15,23,42,.12)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                    style={{ borderLeftColor: borderColor }}
+                  >
+                    <p className="truncate font-mono text-[8.5px] leading-tight text-status-confirmado-fg/70">
+                      {formatTime(a.start_at)}
+                    </p>
+                    <p className="truncate text-[10px] font-semibold leading-tight text-status-confirmado-fg">
+                      {a.patient_name}
+                      {age !== null && (
+                        <span className="ml-1 font-normal text-[8.5px] opacity-70">{age}a</span>
+                      )}
+                    </p>
+                    {multiProf && a.professional_name && (
+                      <p className="truncate text-[8px] leading-tight text-status-confirmado-fg/60">
+                        {a.professional_name}
+                      </p>
+                    )}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
