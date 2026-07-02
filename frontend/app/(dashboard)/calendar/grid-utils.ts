@@ -4,7 +4,7 @@ import type { WeeklyAppointment, WeeklyBlock } from "@/lib/supabase/server";
 // — solo aritmética de fechas. Compartidos entre page.tsx (Server Component, para
 // el resumen del día) y CalendarGrid.tsx (Client Component, para la grilla).
 
-const TZ = "America/Argentina/Buenos_Aires";
+export const TZ = "America/Argentina/Buenos_Aires";
 
 // ─── Grid constants ───────────────────────────────────────────────────────────
 

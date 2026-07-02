@@ -48,18 +48,26 @@ Además, `getSessionAuth()` ya estaba cacheado, así que la verificación del JW
 - Los formularios usan `useTransition` con estados "Guardando…", y `sonner`
   para feedback de éxito/error.
 
-### Propuestas (no implementadas — bajo riesgo, alto pulido)
-1. **Skeletons por ruta** para las vistas pesadas (calendario y detalle de
-   paciente): hoy comparten el skeleton genérico. Uno que dibuje la grilla
-   semanal / las tarjetas de nota haría la espera más "correcta".
-2. **`useOptimistic`** en las acciones de turno (confirmar/cancelar/cambiar
-   estado) y en cancelar del portal: el estado cambiaría al instante y
-   revertiría solo si el server responde error, en vez de esperar el
-   `revalidatePath`.
-3. **Transición de vista de semana** en el calendario: al navegar `?week=`, un
-   fade sutil del grid evita el "salto" duro entre semanas.
-4. **`View Transitions API`** (Next 14 experimental / estable en 15): daría
-   transiciones nativas entre lista→detalle de paciente sin librerías.
+### Implementado en la segunda tanda
+1. ~~**Skeletons por ruta**~~ ✅ `calendar/loading.tsx` (grilla semanal fantasma)
+   y `patients/[id]/loading.tsx` (cabecera + tarjetas de nota).
+2. ~~**Feedback optimista** en las acciones de turno~~ ✅ El sheet se cierra al
+   instante y el progreso llega por `toast.promise` (loading → éxito/error);
+   la grilla solo se refresca en éxito, así un rechazo del server no deja
+   estado fantasma. Ídem cancelar del portal (botón se desactiva y se reactiva
+   si falla).
+3. ~~**Transición de vista de semana**~~ ✅ `key` por semana + `animate-fade-up`
+   en ambas vistas del calendario.
+4. **Línea de "ahora"** ✅ (extra): marcador rojo en la columna de hoy a la
+   altura de la hora actual (TZ clínica), actualizado cada 30 s, solo tras
+   hidratar (sin mismatch de SSR).
+
+### Propuestas que siguen pendientes
+- **`View Transitions API`** (Next 14 experimental / estable en 15): daría
+  transiciones nativas entre lista→detalle de paciente sin librerías.
+- **Modo oscuro**: la paleta ya vive en CSS variables de Tailwind; requiere
+  definir los tokens `dark:` y un toggle persistido (localStorage + clase en
+  `<html>`). Tarea mediana, mejor como tanda propia.
 
 ---
 
