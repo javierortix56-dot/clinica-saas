@@ -102,11 +102,16 @@ const config: Config = {
           from: { opacity: "0", transform: "translateY(7px)" },
           to: { opacity: "1", transform: "none" },
         },
+        shimmer: {
+          from: { backgroundPosition: "200% 0" },
+          to: { backgroundPosition: "-200% 0" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "fade-up": "fadeUp 0.3s ease both",
+        shimmer: "shimmer 1.6s linear infinite",
       },
     },
   },

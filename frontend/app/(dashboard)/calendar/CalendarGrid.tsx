@@ -517,7 +517,14 @@ export function CalendarGrid({
               const di = getDayIndex(a.start_at, weekDays);
               if (si < 0 || di < 0) return null;
               const age = calcAge(a.patient_birth_date);
-              const borderColor = multiProf ? profColor(a.professional_name) : undefined;
+              // Multi-profesional: además del borde izquierdo, un tinte de fondo
+              // suave con el color del profesional (sufijos hex = alpha ~8%/20%)
+              // para escanear la grilla por profesional de un vistazo.
+              const color = multiProf ? profColor(a.professional_name) : undefined;
+              // Orden importa: borderColor (4 lados) antes que borderLeftColor.
+              const profTint = color
+                ? { background: `${color}14`, borderColor: `${color}33`, borderLeftColor: color, borderLeftWidth: 2 }
+                : undefined;
               return (
                 <div
                   key={a.id}
@@ -531,7 +538,7 @@ export function CalendarGrid({
                     type="button"
                     onClick={() => setSelectedId(a.id)}
                     className="pointer-events-auto absolute inset-[1px] flex flex-col justify-start overflow-hidden rounded-[3px] border border-status-confirmado-border border-l-[2px] bg-status-confirmado-bg px-[4px] py-[2px] text-left transition-shadow hover:shadow-[0_2px_8px_rgba(15,23,42,.12)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
-                    style={{ borderLeftColor: borderColor }}
+                    style={profTint}
                   >
                     <p className="truncate font-mono text-[8.5px] leading-tight text-status-confirmado-fg/70">
                       {formatTime(a.start_at)}

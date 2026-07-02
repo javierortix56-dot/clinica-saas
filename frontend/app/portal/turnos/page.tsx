@@ -2,78 +2,9 @@ import { redirect } from "next/navigation";
 
 import { createClient, getPatientSession } from "@/lib/supabase/server";
 import { CancelButton } from "./CancelButton";
+import { ApptStatusBadge } from "@/components/ui/appt-status-badge";
 
 export const dynamic = "force-dynamic";
-
-const STATUS_CONFIG: Record<
-  string,
-  { label: string; bg: string; fg: string; border: string; dot: string }
-> = {
-  proposed: {
-    label: "Propuesto",
-    bg: "#fffbeb",
-    fg: "#b45309",
-    border: "#fde68a",
-    dot: "#f59e0b",
-  },
-  confirmed: {
-    label: "Confirmado",
-    bg: "#ecfdf5",
-    fg: "#047857",
-    border: "#a7f3d0",
-    dot: "#10b981",
-  },
-  in_progress: {
-    label: "En curso",
-    bg: "#eff6ff",
-    fg: "#1d4ed8",
-    border: "#bfdbfe",
-    dot: "#3b82f6",
-  },
-  completed: {
-    label: "Completado",
-    bg: "#eff6ff",
-    fg: "#1d4ed8",
-    border: "#bfdbfe",
-    dot: "#3b82f6",
-  },
-  cancelled: {
-    label: "Cancelado",
-    bg: "#fff1f2",
-    fg: "#be123c",
-    border: "#fecdd3",
-    dot: "#f43f5e",
-  },
-  no_show: {
-    label: "No asistió",
-    bg: "#fff1f2",
-    fg: "#be123c",
-    border: "#fecdd3",
-    dot: "#f43f5e",
-  },
-};
-
-function StatusBadge({ status }: { status: string }) {
-  const c = STATUS_CONFIG[status] ?? {
-    label: status,
-    bg: "#f1f5f9",
-    fg: "#64748b",
-    border: "#e2e8f0",
-    dot: "#94a3b8",
-  };
-  return (
-    <span
-      className="inline-flex shrink-0 items-center gap-[6px] rounded-full border px-[10px] py-[4px] text-[11.5px] font-semibold"
-      style={{ background: c.bg, color: c.fg, borderColor: c.border }}
-    >
-      <span
-        className="h-[5px] w-[5px] rounded-full"
-        style={{ background: c.dot }}
-      />
-      {c.label}
-    </span>
-  );
-}
 
 const fullFmt = new Intl.DateTimeFormat("es-AR", {
   weekday: "long",
@@ -234,7 +165,7 @@ export default async function PortalTurnosPage() {
                           </div>
                         )}
                       </div>
-                      <StatusBadge status={appt.status} />
+                      <ApptStatusBadge status={appt.status} />
                     </div>
                   </div>
                 );

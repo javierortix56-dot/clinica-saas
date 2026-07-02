@@ -16,7 +16,9 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { StaffSheet } from "./StaffSheet";
+import { SearchX, UserCog } from "lucide-react";
 
 const WEEKDAY_LABELS: Record<number, string> = {
   1: "Lun", 2: "Mar", 3: "Mié", 4: "Jue", 5: "Vie", 6: "Sáb", 7: "Dom",
@@ -106,13 +108,22 @@ export function StaffTable({ members }: { members: StaffMember[] }) {
       </div>
 
       {members.length === 0 ? (
-        <p className="rounded-lg border bg-card p-6 text-sm text-muted-foreground">
-          No hay miembros registrados.
-        </p>
+        <EmptyState
+          icon={UserCog}
+          title="Todavía no hay miembros en el equipo"
+          description="Sumá a los profesionales y al personal de recepción para asignarles turnos y accesos."
+          action={
+            <Button size="sm" onClick={openCreate}>
+              + Nuevo miembro
+            </Button>
+          }
+        />
       ) : filteredMembers.length === 0 ? (
-        <p className="rounded-lg border bg-card p-6 text-sm text-muted-foreground">
-          Sin resultados para "{search}".
-        </p>
+        <EmptyState
+          icon={SearchX}
+          title={`Sin resultados para "${search}"`}
+          description="Probá con otro nombre o email."
+        />
       ) : (
         <div className="rounded-lg border">
           <Table>

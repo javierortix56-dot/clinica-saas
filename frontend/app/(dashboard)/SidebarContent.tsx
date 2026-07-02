@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { initialsOf } from "@/lib/utils";
+import { avatarColorOf, initialsOf } from "@/lib/utils";
 import {
   Calendar,
   Users,
@@ -135,7 +135,10 @@ export function SidebarContent({
 
       {/* User card */}
       <div className="flex items-center gap-[10px] rounded-[13px] bg-sidebar-hover p-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-[13px] font-bold text-white">
+        <div
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[13px] font-bold text-white"
+          style={{ background: avatarColorOf(displayName) }}
+        >
           {initialsOf(displayName)}
         </div>
         <div className="min-w-0 flex-1">
