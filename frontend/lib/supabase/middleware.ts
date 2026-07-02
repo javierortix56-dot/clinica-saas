@@ -78,12 +78,17 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Guard de rol: /settings es exclusivo de admin.
-  // user_role es un claim top-level del JWT (inyectado por el Custom Access Token
-  // Hook, migración 0007) — NO vive en app_metadata. getClaims() lo devuelve ya
-  // verificado; getUser() devuelve app_metadata de raw_app_meta_data (BD), que
-  // no incluye los claims custom del hook.
-  if (isAuthenticated && pathname.startsWith("/settings") && userRole !== "admin") {
+  // Guard de rol: /settings lo pueden abrir admin (config de la clínica) y doctor
+  // (solo su sección de campos de la historia clínica; la página oculta el resto).
+  // Recepción/paciente quedan fuera. user_role es un claim top-level del JWT
+  // (inyectado por el Custom Access Token Hook, migración 0007) — getClaims() lo
+  // devuelve ya verificado; getUser() no incluye los claims custom del hook.
+  if (
+    isAuthenticated &&
+    pathname.startsWith("/settings") &&
+    userRole !== "admin" &&
+    userRole !== "doctor"
+  ) {
     const url = request.nextUrl.clone();
     url.pathname = "/approvals";
     return NextResponse.redirect(url);

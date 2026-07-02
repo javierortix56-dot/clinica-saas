@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   Sparkles,
-  Settings,
   Plus,
   Pencil,
   Search,
@@ -28,7 +27,6 @@ import {
   updateClinicalNote,
   summarizePatientHistory,
   updatePatientClinicalProfile,
-  updateNoteFieldConfig,
   transcribeNoteDictation,
   suggestDiagnosis,
   type DictationResult,
@@ -42,7 +40,6 @@ import {
   isFieldEnabled,
   isSistemaEnabled,
   isSpecialtyFieldEnabled,
-  buildConfigFromPreset,
   presetToSpecialty,
   type FieldKey,
   type NoteFieldConfig,
@@ -799,193 +796,6 @@ function NoteForm({
   );
 }
 
-// ─── Panel de configuración de campos (por profesional) ───────────────────────
-
-function NoteFieldConfigPanel({
-  config,
-  specialties,
-  specialtyFieldDefs,
-  onClose,
-}: {
-  config: NoteFieldConfig;
-  specialties: ClinicSpecialty[];
-  specialtyFieldDefs: SpecialtyFieldDef[];
-  onClose: () => void;
-}) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-
-  const [local, setLocal] = useState<Record<FieldKey, boolean>>(() => {
-    const init = {} as Record<FieldKey, boolean>;
-    for (const f of FIELD_DEFS) init[f.key] = isFieldEnabled(config, f.key);
-    return init;
-  });
-
-  const [sistemas, setSistemas] = useState<Record<string, boolean>>(() => {
-    const init: Record<string, boolean> = {};
-    for (const s of EXAM_FISICO_SISTEMAS) init[s.key] = isSistemaEnabled(config, s.key);
-    return init;
-  });
-
-  const [especializados, setEspecializados] = useState<Record<string, boolean>>(() => {
-    const init: Record<string, boolean> = {};
-    for (const f of specialtyFieldDefs) init[f.key] = isSpecialtyFieldEnabled(config, f.key);
-    return init;
-  });
-
-  const [especialidad, setEspecialidad] = useState<string>(config.especialidad ?? "");
-
-  function toggle(key: FieldKey) {
-    setLocal((prev) => ({ ...prev, [key]: !prev[key] }));
-  }
-  function toggleSistema(key: string) {
-    setSistemas((prev) => ({ ...prev, [key]: !prev[key] }));
-  }
-  function toggleEsp(key: string) {
-    setEspecializados((prev) => ({ ...prev, [key]: !prev[key] }));
-  }
-
-  // Aplica un preset: setea todos los toggles. El profesional puede ajustar luego.
-  function applyPreset(slug: string) {
-    setEspecialidad(slug);
-    const preset = specialties.find((p) => p.slug === slug);
-    if (!preset) return;
-    const cfg = buildConfigFromPreset(preset, specialtyFieldDefs);
-    const nextLocal = {} as Record<FieldKey, boolean>;
-    for (const f of FIELD_DEFS) nextLocal[f.key] = cfg[f.key] !== false;
-    setLocal(nextLocal);
-    setSistemas({ ...(cfg.examen_fisico_sistemas ?? {}) });
-    setEspecializados({ ...(cfg.especializados ?? {}) });
-  }
-
-  function handleSave() {
-    startTransition(async () => {
-      const fullConfig = {
-        ...local,
-        examen_fisico_sistemas: sistemas,
-        especializados,
-        especialidad,
-      };
-      const result = await updateNoteFieldConfig(fullConfig);
-      if (result.error) {
-        toast.error(result.error);
-        return;
-      }
-      toast.success("Configuración guardada.");
-      router.refresh();
-      onClose();
-    });
-  }
-
-  // Campos especializados a mostrar como checkboxes: los del preset activo +
-  // cualquiera ya activado. Evita listar los ~85 campos del catálogo completo.
-  const activePresetFields = especialidad
-    ? specialties.find((p) => p.slug === especialidad)?.specialtyFields ?? []
-    : [];
-  const visibleEspKeys = new Set<string>(activePresetFields);
-  for (const [k, on] of Object.entries(especializados)) if (on) visibleEspKeys.add(k);
-  const visibleEspFields = specialtyFieldDefs.filter((f) => visibleEspKeys.has(f.key));
-
-  return (
-    <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
-      <div>
-        <p className="text-sm font-medium text-slate-700">Configurar campos clínicos</p>
-        <p className="text-xs text-slate-400">
-          Elegí tu especialidad para cargar un paquete de campos, luego ajustá a gusto.
-          Aplica a tus notas.
-        </p>
-      </div>
-
-      {/* Selector de especialidad (paquete) */}
-      <div className="space-y-1">
-        <label className="text-xs font-medium text-slate-600">Especialidad</label>
-        <select
-          value={especialidad}
-          onChange={(e) => applyPreset(e.target.value)}
-          className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-        >
-          <option value="">— Personalizado —</option>
-          {specialties.map((p) => (
-            <option key={p.id} value={p.slug}>{p.label}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* Campos base */}
-      <div className="space-y-1">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Campos base</p>
-        {FIELD_DEFS.map((f) => (
-          <div key={f.key}>
-            <label className="flex cursor-pointer items-start gap-2 rounded border border-slate-100 p-2 hover:bg-slate-50">
-              <input
-                type="checkbox"
-                checked={local[f.key]}
-                onChange={() => toggle(f.key)}
-                className="mt-0.5 h-4 w-4"
-              />
-              <span>
-                <span className="block text-sm text-slate-700">{f.label}</span>
-                <span className="block text-xs text-slate-400">{f.hint}</span>
-              </span>
-            </label>
-            {f.key === "examen_fisico" && local["examen_fisico"] && (
-              <div className="ml-6 mt-1 grid grid-cols-2 gap-1 rounded border border-slate-100 bg-slate-50 p-2">
-                <p className="col-span-2 text-xs font-medium text-slate-500 mb-1">
-                  Aparatos / sistemas a mostrar:
-                </p>
-                {EXAM_FISICO_SISTEMAS.map((s) => (
-                  <label key={s.key} className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-600">
-                    <input
-                      type="checkbox"
-                      checked={sistemas[s.key] ?? true}
-                      onChange={() => toggleSistema(s.key)}
-                      className="h-3.5 w-3.5"
-                    />
-                    {s.label}
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* Campos especializados */}
-      {visibleEspFields.length > 0 && (
-        <div className="space-y-1">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Campos de especialidad
-          </p>
-          <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-            {visibleEspFields.map((f) => (
-              <label
-                key={f.key}
-                className="flex cursor-pointer items-center gap-2 rounded border border-slate-100 p-2 text-sm hover:bg-slate-50"
-              >
-                <input
-                  type="checkbox"
-                  checked={especializados[f.key] ?? false}
-                  onChange={() => toggleEsp(f.key)}
-                  className="h-4 w-4"
-                />
-                <span className="text-slate-700">{f.label}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="flex gap-2">
-        <Button size="sm" onClick={handleSave} disabled={isPending}>
-          {isPending ? "Guardando…" : "Guardar"}
-        </Button>
-        <Button size="sm" variant="outline" onClick={onClose}>
-          Cancelar
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 // ─── Perfil clínico: antecedentes personales + familiares (nivel paciente) ────
 
@@ -1385,7 +1195,6 @@ export function PatientTabs({
 
   const [tab, setTab] = useState<"turnos" | "historia">("turnos");
   const [showForm, setShowForm] = useState(false);
-  const [showConfig, setShowConfig] = useState(false);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteSearch, setNoteSearch] = useState("");
   const [lightbox, setLightbox] = useState<{ url: string; alt: string } | null>(null);
@@ -1485,38 +1294,17 @@ export function PatientTabs({
             <p className="text-[13.5px] font-medium text-muted-foreground">
               Notas clínicas del paciente ordenadas por fecha.
             </p>
-            {canCreateNote && (
-              <div className="flex gap-[9px]">
-                <button
-                  type="button"
-                  onClick={() => setShowConfig((v) => !v)}
-                  className="flex items-center gap-[6px] rounded-[10px] border border-border bg-white px-[13px] py-2 text-[12.5px] font-semibold text-slate-700 transition hover:bg-slate-50"
-                >
-                  <Settings className="h-[14px] w-[14px]" strokeWidth={1.9} />
-                  Campos
-                </button>
-                {!showForm && (
-                  <button
-                    type="button"
-                    onClick={() => setShowForm(true)}
-                    className="flex items-center gap-[6px] rounded-[10px] bg-primary px-[13px] py-2 text-[12.5px] font-bold text-white shadow-[0_4px_12px_rgba(37,99,235,.3)] transition hover:brightness-[1.07]"
-                  >
-                    <Plus className="h-[14px] w-[14px]" strokeWidth={2.4} />
-                    Nueva nota
-                  </button>
-                )}
-              </div>
+            {canCreateNote && !showForm && (
+              <button
+                type="button"
+                onClick={() => setShowForm(true)}
+                className="flex items-center gap-[6px] rounded-[10px] bg-primary px-[13px] py-2 text-[12.5px] font-bold text-white shadow-[0_4px_12px_rgba(37,99,235,.3)] transition hover:brightness-[1.07]"
+              >
+                <Plus className="h-[14px] w-[14px]" strokeWidth={2.4} />
+                Nueva nota
+              </button>
             )}
           </div>
-
-          {canCreateNote && showConfig && (
-            <NoteFieldConfigPanel
-              config={noteConfig}
-              specialties={specialtyList}
-              specialtyFieldDefs={specialtyFieldDefs}
-              onClose={() => setShowConfig(false)}
-            />
-          )}
 
           {showAntecedentes && (
             <ClinicalProfileCard

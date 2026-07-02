@@ -2,52 +2,98 @@ import { redirect } from "next/navigation";
 
 import {
   getSessionAuth,
+  isDoctorRole,
   getClinicSettings,
   getTreatmentTypesWithPhases,
   getClinicSpecialties,
   getClinicSpecialtyFields,
+  getProfessionalNoteConfig,
 } from "@/lib/supabase/server";
 import { SettingsClient } from "./SettingsClient";
 import { SpecialtiesManager } from "./SpecialtiesManager";
+import { ClinicalFieldsConfig } from "./ClinicalFieldsConfig";
+import {
+  SPECIALTY_PRESETS,
+  presetToSpecialty,
+  SPECIALTY_FIELD_DEFS,
+  type SpecialtyFieldDef,
+} from "../patients/clinical-fields";
 import { ensureSpecialtiesSeeded } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
-  // Configuraciones: exclusivas del dueño de la clínica.
-  const { isOwner } = await getSessionAuth();
-  if (!isOwner) {
+  const { isOwner, role } = await getSessionAuth();
+  const isDoctor = isDoctorRole(role);
+
+  // La config de la clínica es del dueño; los campos de historia clínica son de
+  // cada profesional. Un doctor no-dueño entra solo por su sección de campos.
+  if (!isOwner && !isDoctor) {
     redirect("/approvals");
   }
 
-  // Siembra las especialidades base la primera vez que el admin abre Ajustes.
+  // Siembra las especialidades base la primera vez que se abre Ajustes.
   await ensureSpecialtiesSeeded();
 
-  const [clinicSettings, treatmentTypes, specialties, customFields] =
+  const [clinicSettings, treatmentTypes, specialties, customFields, noteConfig] =
     await Promise.all([
-      getClinicSettings(),
-      getTreatmentTypesWithPhases(),
+      isOwner ? getClinicSettings() : Promise.resolve(null),
+      isOwner ? getTreatmentTypesWithPhases() : Promise.resolve([]),
       getClinicSpecialties(),
       getClinicSpecialtyFields(),
+      isDoctor ? getProfessionalNoteConfig() : Promise.resolve(null),
     ]);
+
+  // Especialidades para el selector de campos: las de la clínica o, si aún no se
+  // sembraron, los presets estáticos de fallback.
+  const specialtyList = specialties.length
+    ? specialties
+    : SPECIALTY_PRESETS.map(presetToSpecialty);
+  // Catálogo de campos = base + los propios de la clínica (clinic_specialty_fields).
+  const specialtyFieldDefs: SpecialtyFieldDef[] = [
+    ...SPECIALTY_FIELD_DEFS,
+    ...customFields.map((f) => ({
+      key: f.key,
+      label: f.label,
+      placeholder: f.placeholder,
+    })),
+  ];
 
   return (
     <div className="mx-auto flex max-w-[1100px] flex-col gap-10">
       <div>
         <h1 className="text-[27px] font-extrabold tracking-[-.02em]">Ajustes</h1>
         <p className="mt-[9px] text-[14px] font-medium text-muted-foreground">
-          Configuración de la clínica y parámetros clínicos.
+          {isOwner
+            ? "Configuración de la clínica y parámetros clínicos."
+            : "Configuración de tus campos de la historia clínica."}
         </p>
       </div>
 
-      <SettingsClient
-        clinicSettings={clinicSettings}
-        treatmentTypes={treatmentTypes}
-      />
+      {/* Config de campos de la historia clínica — para cualquier profesional. */}
+      {isDoctor && noteConfig && (
+        <ClinicalFieldsConfig
+          config={noteConfig}
+          specialties={specialtyList}
+          specialtyFieldDefs={specialtyFieldDefs}
+        />
+      )}
 
-      <hr className="border-slate-200" />
+      {/* Config de la clínica y especialidades — exclusivo del dueño. */}
+      {isOwner && (
+        <>
+          {isDoctor && noteConfig && <hr className="border-slate-200" />}
 
-      <SpecialtiesManager specialties={specialties} customFields={customFields} />
+          <SettingsClient
+            clinicSettings={clinicSettings}
+            treatmentTypes={treatmentTypes}
+          />
+
+          <hr className="border-slate-200" />
+
+          <SpecialtiesManager specialties={specialties} customFields={customFields} />
+        </>
+      )}
     </div>
   );
 }

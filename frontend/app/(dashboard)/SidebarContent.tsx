@@ -29,6 +29,7 @@ export function SidebarContent({
   displayName,
   roleLabel,
   isOwner,
+  isDoctor,
   approvalsCount,
   signOutAction,
   onNavigate,
@@ -36,6 +37,7 @@ export function SidebarContent({
   displayName: string;
   roleLabel: string;
   isOwner: boolean;
+  isDoctor: boolean;
   approvalsCount: number;
   signOutAction: () => void;
   onNavigate?: () => void;
@@ -53,12 +55,14 @@ export function SidebarContent({
     },
   ];
 
-  const gestion: NavItem[] = isOwner
-    ? [
-        { href: "/staff", label: "Equipo", icon: UserCog },
-        { href: "/settings", label: "Ajustes", icon: Settings },
-      ]
-    : [];
+  // "Equipo" es solo del dueño; "Ajustes" lo ve también el doctor (su sección de
+  // campos de la historia clínica vive ahí).
+  const gestion: NavItem[] = [
+    ...(isOwner ? [{ href: "/staff", label: "Equipo", icon: UserCog }] : []),
+    ...(isOwner || isDoctor
+      ? [{ href: "/settings", label: "Ajustes", icon: Settings }]
+      : []),
+  ];
 
   function isActive(href: string): boolean {
     return pathname === href || pathname.startsWith(href + "/");

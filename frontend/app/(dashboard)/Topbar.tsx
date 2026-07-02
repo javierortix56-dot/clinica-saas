@@ -7,6 +7,7 @@ export function Topbar(props: {
   displayName: string;
   roleLabel: string;
   isOwner: boolean;
+  isDoctor: boolean;
   approvalsCount: number;
   signOutAction: () => void;
 }) {
