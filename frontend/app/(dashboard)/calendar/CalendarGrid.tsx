@@ -25,6 +25,7 @@ import {
   isToday,
   parseISODate,
   timeToMinutes,
+  TZ,
 } from "./grid-utils";
 import { AppointmentSheet } from "./AppointmentSheet";
 import { ManualAppointmentSheet } from "./ManualAppointmentSheet";
@@ -61,6 +62,60 @@ function calcAge(birthDate: string | null): number | null {
 
 // Altura fija de cada franja de 30 min en el grid desktop.
 const SLOT_H = "1.75rem";
+
+// Minutos desde medianoche en la TZ de la clínica, actualizado cada 30s.
+// null hasta el primer efecto (SSR-safe: el server no dibuja la línea y el
+// cliente la agrega tras hidratar, sin mismatch).
+function useNowMinutes(): number | null {
+  const [minutes, setMinutes] = useState<number | null>(null);
+  useEffect(() => {
+    const compute = () => {
+      const hm = new Intl.DateTimeFormat("en-GB", {
+        timeZone: TZ,
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).format(new Date());
+      const [h, m] = hm.split(":").map(Number);
+      setMinutes(h * 60 + m);
+    };
+    compute();
+    const id = setInterval(compute, 30_000);
+    return () => clearInterval(id);
+  }, []);
+  return minutes;
+}
+
+// Línea de "ahora": marcador rojo en la columna de hoy a la altura de la hora
+// actual. Solo se dibuja si la semana visible incluye hoy y la hora cae dentro
+// de la grilla (08:00–20:00).
+function NowIndicator({ weekDays }: { weekDays: Date[] }) {
+  const minutes = useNowMinutes();
+  if (minutes === null) return null;
+
+  const di = weekDays.findIndex((d) => isToday(d));
+  if (di < 0) return null;
+
+  const gridStart = SLOTS[0].hour * 60;
+  const gridEnd = gridStart + SLOTS.length * 30;
+  if (minutes < gridStart || minutes >= gridEnd) return null;
+
+  const si = Math.floor((minutes - gridStart) / 30);
+  const frac = ((minutes - gridStart) % 30) / 30;
+
+  return (
+    <div
+      className="pointer-events-none relative z-30"
+      style={{ gridRow: si + 2, gridColumn: di + 2 }}
+    >
+      <div className="absolute inset-x-0" style={{ top: `${frac * 100}%` }}>
+        <div className="relative h-[2px] bg-red-500/70">
+          <span className="absolute -left-[3px] -top-[3px] h-2 w-2 rounded-full bg-red-500 shadow-[0_0_0_2px_rgba(255,255,255,.8)]" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function CalendarGrid({
   weekDays: weekDayStrs,
@@ -219,7 +274,12 @@ export function CalendarGrid({
       </div>
 
       {/* ── Vista MOBILE ──────────────────────────────────────────────────── */}
-      <div className="md:hidden overflow-hidden rounded-card border border-border bg-white shadow-card">
+      {/* key por semana: al navegar ?week= el contenedor se remonta y el
+          animate-fade-up suaviza el cambio (sin salto duro entre semanas). */}
+      <div
+        key={`m-${weekDayStrs[0]}`}
+        className="md:hidden animate-fade-up overflow-hidden rounded-card border border-border bg-white shadow-card"
+      >
         {/* Selector de día */}
         <div className="flex items-center border-b border-border bg-[#fbfcfe]">
           <button
@@ -330,7 +390,10 @@ export function CalendarGrid({
       </div>
 
       {/* ── Vista DESKTOP: grilla con filas de altura fija ─────────────────── */}
-      <div className="hidden md:block overflow-hidden rounded-card border border-border bg-white shadow-card">
+      <div
+        key={`d-${weekDayStrs[0]}`}
+        className="hidden md:block animate-fade-up overflow-hidden rounded-card border border-border bg-white shadow-card"
+      >
         <div className="overflow-x-auto">
           <div
             className="grid min-w-[640px]"
@@ -493,6 +556,9 @@ export function CalendarGrid({
                 </div>
               );
             })}
+
+            {/* ── Línea de "ahora" (columna de hoy) ── */}
+            {showGrid && <NowIndicator weekDays={weekDays} />}
           </div>
         </div>
       </div>

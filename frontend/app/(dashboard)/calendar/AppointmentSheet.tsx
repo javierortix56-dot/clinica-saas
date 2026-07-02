@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Check, Circle, Lock, PlayCircle, Phone, CreditCard } from "lucide-react";
@@ -466,9 +466,6 @@ function SheetReady({
   onCancelled: () => void;
 }) {
   const router = useRouter();
-  const [isCancelling, startCancelling] = useTransition();
-  const [isUpdating, startUpdating] = useTransition();
-  const [isRescheduling, startRescheduling] = useTransition();
   const [showReschedule, setShowReschedule] = useState(false);
   const { appt, treatmentName, phases, history, noShowCount } = state;
   const now = new Date();
@@ -482,17 +479,35 @@ function SheetReady({
     new Date(appt.end_at).toLocaleString("sv-SE", { timeZone: TZ }).slice(11, 16)
   );
 
+  // Patrón optimista: el sheet se cierra AL INSTANTE y el resultado llega por
+  // un toast de progreso (loading → éxito/error). Si el server rechaza, la
+  // grilla no cambió (el refresh solo corre en éxito) y el error queda visible.
+  function runOptimistic(
+    action: () => Promise<{ error?: string }>,
+    labels: { loading: string; success: string }
+  ) {
+    onCancelled();
+    onClose();
+    toast.promise(
+      action().then((result) => {
+        if (result.error) throw new Error(result.error);
+        router.refresh();
+      }),
+      {
+        loading: labels.loading,
+        success: labels.success,
+        error: (e: Error) => e.message,
+      }
+    );
+  }
+
   function handleReschedule(e: React.FormEvent) {
     e.preventDefault();
     const startAt = `${reschedDate}T${reschedStart}:00-03:00`;
     const endAt = `${reschedDate}T${reschedEnd}:00-03:00`;
-    startRescheduling(async () => {
-      const result = await rescheduleAppointment(appt.id, startAt, endAt);
-      if (result.error) { toast.error(result.error); return; }
-      toast.success("Turno reprogramado.");
-      router.refresh();
-      onCancelled();
-      onClose();
+    runOptimistic(() => rescheduleAppointment(appt.id, startAt, endAt), {
+      loading: "Reprogramando turno…",
+      success: "Turno reprogramado.",
     });
   }
 
@@ -510,13 +525,9 @@ function SheetReady({
       : null;
 
   function handleCancel() {
-    startCancelling(async () => {
-      const result = await cancelAppointment(appt.id);
-      if (result.error) { toast.error(result.error); return; }
-      toast.success("Turno cancelado.");
-      router.refresh();
-      onCancelled();
-      onClose();
+    runOptimistic(() => cancelAppointment(appt.id), {
+      loading: "Cancelando turno…",
+      success: "Turno cancelado.",
     });
   }
 
@@ -526,13 +537,9 @@ function SheetReady({
       completed: "completado",
       no_show: "no presentado",
     };
-    startUpdating(async () => {
-      const result = await updateAppointmentStatus(appt.id, status);
-      if (result.error) { toast.error(result.error); return; }
-      toast.success(`Turno marcado como ${labels[status]}.`);
-      router.refresh();
-      onCancelled();
-      onClose();
+    runOptimistic(() => updateAppointmentStatus(appt.id, status), {
+      loading: "Actualizando turno…",
+      success: `Turno marcado como ${labels[status]}.`,
     });
   }
 
@@ -648,13 +655,8 @@ function SheetReady({
                     />
                   </div>
                 </div>
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={isRescheduling}
-                  className="w-full"
-                >
-                  {isRescheduling ? "Reprogramando…" : "Confirmar nueva fecha"}
+                <Button type="submit" size="sm" className="w-full">
+                  Confirmar nueva fecha
                 </Button>
               </form>
             )}
@@ -667,17 +669,15 @@ function SheetReady({
             <Button
               size="sm"
               onClick={() => handleStatus("in_progress")}
-              disabled={isUpdating || isCancelling}
               className="w-full"
             >
-              {isUpdating ? "Actualizando…" : "Marcar en curso"}
+              Marcar en curso
             </Button>
             <div className="flex gap-2">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => handleStatus("no_show")}
-                disabled={isUpdating || isCancelling}
                 className="flex-1 text-amber-600 hover:border-amber-200 hover:text-amber-700"
               >
                 No se presentó
@@ -686,10 +686,9 @@ function SheetReady({
                 variant="outline"
                 size="sm"
                 onClick={handleCancel}
-                disabled={isCancelling || isUpdating}
                 className="flex-1 text-red-600 hover:border-red-200 hover:text-red-700"
               >
-                {isCancelling ? "Cancelando…" : "Cancelar"}
+                Cancelar
               </Button>
             </div>
           </section>
@@ -699,19 +698,17 @@ function SheetReady({
             <Button
               size="sm"
               onClick={() => handleStatus("completed")}
-              disabled={isUpdating || isCancelling}
               className="w-full"
             >
-              {isUpdating ? "Actualizando…" : "Completar turno"}
+              Completar turno
             </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={handleCancel}
-              disabled={isCancelling || isUpdating}
               className="w-full text-red-600 hover:border-red-200 hover:text-red-700"
             >
-              {isCancelling ? "Cancelando…" : "Cancelar"}
+              Cancelar
             </Button>
           </section>
         )}
