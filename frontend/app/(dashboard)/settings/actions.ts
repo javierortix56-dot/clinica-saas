@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { createClient } from "@/lib/supabase/server";
+import { getVerifiedClaims } from "@/lib/auth/claims";
 import { SPECIALTY_PRESETS } from "../patients/clinical-fields";
 
 // Las configuraciones de la clínica son exclusivas del dueño (is_owner).
@@ -13,23 +14,18 @@ async function requireOwner(): Promise<
   { error: string } | { supabase: ReturnType<typeof createClient>; clinicId: string }
 > {
   const supabase = createClient();
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) return { error: "Sesión expirada." };
+  // Claims con firma verificada — nunca decodificar el JWT a mano (una cookie
+  // forjada pasaría el gate de is_owner).
+  const claims = await getVerifiedClaims(supabase);
+  if (!claims) return { error: "Sesión expirada." };
+  if (!claims.isOwner) {
+    return { error: "Solo el dueño de la clínica puede realizar esta acción." };
+  }
+  if (!claims.clinicId) {
+    return { error: "No se pudo determinar la clínica del usuario." };
+  }
 
-  let isOwner = false;
-  let clinicId: string | null = null;
-  try {
-    const payload = JSON.parse(
-      Buffer.from(session.access_token.split(".")[1], "base64").toString("utf8")
-    ) as { is_owner?: boolean; clinic_id?: string };
-    isOwner = payload.is_owner === true;
-    clinicId = payload.clinic_id ?? null;
-  } catch {}
-
-  if (!isOwner) return { error: "Solo el dueño de la clínica puede realizar esta acción." };
-  if (!clinicId) return { error: "No se pudo determinar la clínica del usuario." };
-
-  return { supabase, clinicId };
+  return { supabase, clinicId: claims.clinicId };
 }
 
 export async function updateClinicSettings(
@@ -45,7 +41,12 @@ export async function updateClinicSettings(
   const prime_time_end = formData.get("prime_time_end") as string;
   const currency = (formData.get("currency") as string)?.trim();
   const valuation_fee_raw = (formData.get("valuation_fee") as string)?.trim();
-  const valuation_fee = valuation_fee_raw ? valuation_fee_raw : null;
+  // Columna numeric en la BD: parsear acá (antes viajaba como string y
+  // dependía de la coerción de PostgREST).
+  const valuation_fee = valuation_fee_raw ? Number(valuation_fee_raw) : null;
+  if (valuation_fee !== null && Number.isNaN(valuation_fee)) {
+    return { error: "El valor de la consulta de valoración debe ser numérico." };
+  }
 
   if (!name || !timezone || !prime_time_start || !prime_time_end || !currency) {
     return { error: "Todos los campos obligatorios deben estar completos." };
@@ -127,7 +128,9 @@ export async function upsertTreatmentType(
         clinic_id: clinicId,  // NOT NULL — resuelto del JWT, nunca del form
         sequence_order: i + 1,
         name: finalName,
-        phase_kind: phaseKind || "clinical",
+        phase_kind: (phaseKind === "lab_wait" ? "lab_wait" : "clinical") as
+          | "clinical"
+          | "lab_wait",
         duration_minutes: durationRaw ? parseInt(durationRaw, 10) : null,
         cooldown_days: cooldownRaw ? parseInt(cooldownRaw, 10) : 0,
       });

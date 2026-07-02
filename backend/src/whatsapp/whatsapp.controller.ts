@@ -10,6 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { SkipThrottle } from '@nestjs/throttler';
 import { WhatsappSignatureGuard } from './guards/whatsapp-signature.guard';
 import { WhatsappService } from './whatsapp.service';
 
@@ -18,6 +19,9 @@ import { WhatsappService } from './whatsapp.service';
  *   GET  -> verificación del webhook (challenge de Meta).
  *   POST -> recepción de mensajes (firma validada por WhatsappSignatureGuard).
  */
+// Sin rate limit: la autenticidad la garantiza la firma HMAC (guard) y Meta
+// reintenta en ráfagas; un 429 acá solo generaría redelivery en loop.
+@SkipThrottle()
 @Controller('webhooks/whatsapp')
 export class WhatsappController {
   private readonly logger = new Logger(WhatsappController.name);

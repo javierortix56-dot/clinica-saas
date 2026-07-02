@@ -73,6 +73,15 @@ export class RedisLockService implements OnModuleDestroy {
     return () => clearInterval(interval);
   }
 
+  /** Chequeo de vida de Redis (para el endpoint de health). */
+  async ping(): Promise<boolean> {
+    try {
+      return (await this.redis.ping()) === 'PONG';
+    } catch {
+      return false;
+    }
+  }
+
   async onModuleDestroy(): Promise<void> {
     await this.redis.quit();
   }

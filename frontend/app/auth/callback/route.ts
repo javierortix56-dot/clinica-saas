@@ -30,17 +30,12 @@ export async function GET(request: NextRequest) {
 
     await supabase.auth.exchangeCodeForSession(code);
 
-    // Leer el rol del JWT para saber a dónde redirigir.
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session) {
-      try {
-        const payload = JSON.parse(
-          Buffer.from(session.access_token.split(".")[1], "base64").toString("utf8")
-        ) as { user_role?: string };
-        if (payload.user_role === "patient") {
-          return NextResponse.redirect(new URL("/portal/turnos", request.url));
-        }
-      } catch {}
+    // Leer el rol del JWT (firma verificada) para saber a dónde redirigir.
+    const { data: claimsData } = await supabase.auth.getClaims();
+    const role = (claimsData?.claims as { user_role?: string } | undefined)
+      ?.user_role;
+    if (role === "patient") {
+      return NextResponse.redirect(new URL("/portal/turnos", request.url));
     }
   }
 

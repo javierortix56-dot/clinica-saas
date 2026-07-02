@@ -9,6 +9,7 @@ import {
   Res,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { SkipThrottle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { GoogleCalendarWatchService } from './google-calendar-watch.service';
 
@@ -21,6 +22,8 @@ import { GoogleCalendarWatchService } from './google-calendar-watch.service';
  * Console (Domain verification) para autorizar este dominio como receptor de
  * notificaciones push.
  */
+// Sin rate limit: Google notifica en ráfagas y valida su propio canal (token).
+@SkipThrottle()
 @Controller()
 export class GoogleCalendarWebhookController {
   private readonly logger = new Logger(GoogleCalendarWebhookController.name);
