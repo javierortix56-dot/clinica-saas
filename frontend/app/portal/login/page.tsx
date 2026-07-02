@@ -3,13 +3,11 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { createClient } from "@/lib/supabase/client";
-import { requestOtp } from "./actions";
+import { requestOtp, verifyPortalOtp } from "./actions";
 
 export default function PortalLoginPage() {
   const [screen, setScreen] = useState<"dni" | "otp">("dni");
   const [nationalId, setNationalId] = useState("");
-  const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -22,23 +20,19 @@ export default function PortalLoginPage() {
       toast.error(result.error);
       return;
     }
-    setEmail(result.email!);
     setScreen("otp");
-    toast.success("Te enviamos un código a tu email.");
+    toast.success(result.message ?? "Revisá tu email.");
   }
 
   async function handleVerifyOtp(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    const supabase = createClient();
-    const { error } = await supabase.auth.verifyOtp({
-      email,
-      token: otp,
-      type: "email",
-    });
+    // Verificación server-side: el email asociado al DNI nunca llega al
+    // navegador. La sesión queda en cookies al validar el código.
+    const result = await verifyPortalOtp(nationalId, otp);
     setLoading(false);
-    if (error) {
-      toast.error("Código incorrecto o expirado.");
+    if (result.error) {
+      toast.error(result.error);
       return;
     }
     window.location.href = "/portal/turnos";
@@ -52,8 +46,8 @@ export default function PortalLoginPage() {
             Ingresá tu código
           </h2>
           <p className="mt-2 text-[13.5px] font-medium text-muted-foreground">
-            Enviamos un código de 6 dígitos a{" "}
-            <span className="font-semibold text-slate-700">{email}</span>.
+            Si tu DNI está registrado y tiene un email asociado, te enviamos un
+            código de 6 dígitos. Revisá tu casilla (y el spam).
           </p>
         </div>
         <form onSubmit={handleVerifyOtp} className="mt-6 space-y-4">

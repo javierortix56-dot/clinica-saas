@@ -9,12 +9,14 @@ import type {
   CustomSpecialtyField,
   FieldKey,
 } from "@/app/(dashboard)/patients/clinical-fields";
+import { getVerifiedClaims } from "@/lib/auth/claims";
+import type { Database } from "@/lib/supabase/types";
 
 // Cliente Supabase para Server Components y Route Handlers.
 // Persiste la sesión vía cookies (requerido por @supabase/ssr en Next.js App Router).
 export function createClient() {
   const cookieStore = cookies();
-  return createServerClient(
+  return createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -35,38 +37,47 @@ export function createClient() {
 // Estado de autenticación del request: si hay sesión y qué rol trae el JWT.
 // El claim `user_role` lo inyecta el Custom Access Token Hook (admin | doctor |
 // reception; "professional" es el alias histórico de doctor).
-// cache() de React deduplica llamadas dentro del mismo request tree (RSC).
+// Los claims se leen con firma VERIFICADA (getVerifiedClaims) — nunca decodificar
+// el token a mano. cache() de React deduplica llamadas dentro del mismo request.
 export const getSessionAuth = cache(async function (): Promise<{
   hasSession: boolean;
+  userId: string | null;
   role: string | null;
   isOwner: boolean;
 }> {
   const supabase = createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session) return { hasSession: false, role: null, isOwner: false };
-
-  let role: string | null = null;
-  let isOwner = false;
-  try {
-    const payload = session.access_token.split(".")[1];
-    const claims = JSON.parse(
-      Buffer.from(payload, "base64").toString("utf8")
-    ) as { user_role?: string; is_owner?: boolean };
-    role = claims.user_role ?? null;
-    isOwner = claims.is_owner === true;
-  } catch {
-    role = null;
-    isOwner = false;
-  }
-  return { hasSession: true, role, isOwner };
+  const claims = await getVerifiedClaims(supabase);
+  if (!claims) return { hasSession: false, userId: null, role: null, isOwner: false };
+  return {
+    hasSession: true,
+    userId: claims.sub,
+    role: claims.role,
+    isOwner: claims.isOwner,
+  };
 });
 
 // True si el rol corresponde a un profesional (doctor / professional).
 export function isDoctorRole(role: string | null): boolean {
   return role === "doctor" || role === "professional";
 }
+
+// professional_id del usuario logueado (o null si no es profesional).
+// cache() dedupe: varias funciones del mismo request (p. ej. en /calendar los 3
+// getWeekly*, o en el detalle de paciente getClinicalNotes + note config) hacían
+// este MISMO lookup por separado; ahora se resuelve una sola vez por request.
+export const getCurrentProfessionalId = cache(async function (): Promise<
+  string | null
+> {
+  const supabase = createClient();
+  const { hasSession, userId } = await getSessionAuth();
+  if (!hasSession || !userId) return null;
+  const { data } = await supabase
+    .from("professionals")
+    .select("id, staff_members!inner(auth_user_id)")
+    .eq("staff_members.auth_user_id", userId)
+    .maybeSingle();
+  return (data as { id?: string } | null)?.id ?? null;
+});
 
 // Forma cruda de cada fila devuelta por el select con joins de PostgREST.
 // El nombre del profesional vive en staff_members (professionals -> staff_members),
@@ -222,20 +233,10 @@ function getWeekBounds(ref: Date = new Date()): { weekStart: Date; weekEnd: Date
 export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppointment[]> {
   const supabase = createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-
-  // Leer rol del JWT para decidir el filtro.
-  const { data: { session } } = await supabase.auth.getSession();
-  let role: string | null = null;
-  if (session) {
-    try {
-      role = (JSON.parse(Buffer.from(session.access_token.split(".")[1], "base64").toString("utf8")) as { user_role?: string }).user_role ?? null;
-    } catch {}
-  }
-  const isDoctor = role === "doctor" || role === "professional";
+  // Rol e identidad con firma verificada (deduplicado por request via cache()).
+  const { hasSession, userId, role } = await getSessionAuth();
+  if (!hasSession || !userId) redirect("/login");
+  const isDoctor = isDoctorRole(role);
 
   const { weekStart, weekEnd } = getWeekBounds(refDate);
 
@@ -271,14 +272,10 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
     .order("start_at", { ascending: true });
 
   if (isDoctor) {
-    // Filtrar por el profesional logueado.
-    const { data: prof } = await supabase
-      .from("professionals")
-      .select("id, staff_members!inner(auth_user_id)")
-      .eq("staff_members.auth_user_id", user.id)
-      .single();
-    if (!prof) return [];
-    query = query.eq("professional_id", prof.id);
+    // Filtrar por el profesional logueado (lookup deduplicado por request).
+    const profId = await getCurrentProfessionalId();
+    if (!profId) return [];
+    query = query.eq("professional_id", profId);
   }
 
   const { data, error } = await query;
@@ -309,19 +306,9 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
 export async function getWeeklyBlocks(refDate?: Date): Promise<WeeklyBlock[]> {
   const supabase = createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-
-  const { data: { session } } = await supabase.auth.getSession();
-  let role: string | null = null;
-  if (session) {
-    try {
-      role = (JSON.parse(Buffer.from(session.access_token.split(".")[1], "base64").toString("utf8")) as { user_role?: string }).user_role ?? null;
-    } catch {}
-  }
-  const isDoctor = role === "doctor" || role === "professional";
+  const { hasSession, userId, role } = await getSessionAuth();
+  if (!hasSession || !userId) redirect("/login");
+  const isDoctor = isDoctorRole(role);
 
   const { weekStart, weekEnd } = getWeekBounds(refDate);
 
@@ -354,13 +341,9 @@ export async function getWeeklyBlocks(refDate?: Date): Promise<WeeklyBlock[]> {
     .order("starts_at", { ascending: true });
 
   if (isDoctor) {
-    const { data: prof } = await supabase
-      .from("professionals")
-      .select("id, staff_members!inner(auth_user_id)")
-      .eq("staff_members.auth_user_id", user.id)
-      .single();
-    if (!prof) return [];
-    query = query.eq("professional_id", prof.id);
+    const profId = await getCurrentProfessionalId();
+    if (!profId) return [];
+    query = query.eq("professional_id", profId);
   }
 
   const { data, error } = await query;
@@ -396,19 +379,9 @@ export interface AvailabilityWindow {
 export async function getWeeklyAvailability(): Promise<AvailabilityWindow[]> {
   const supabase = createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-
-  const { data: { session } } = await supabase.auth.getSession();
-  let role: string | null = null;
-  if (session) {
-    try {
-      role = (JSON.parse(Buffer.from(session.access_token.split(".")[1], "base64").toString("utf8")) as { user_role?: string }).user_role ?? null;
-    } catch {}
-  }
-  const isDoctor = role === "doctor" || role === "professional";
+  const { hasSession, userId, role } = await getSessionAuth();
+  if (!hasSession || !userId) redirect("/login");
+  const isDoctor = isDoctorRole(role);
 
   type AvailRow = {
     weekday: number;
@@ -431,13 +404,9 @@ export async function getWeeklyAvailability(): Promise<AvailabilityWindow[]> {
     );
 
   if (isDoctor) {
-    const { data: prof } = await supabase
-      .from("professionals")
-      .select("id, staff_members!inner(auth_user_id)")
-      .eq("staff_members.auth_user_id", user.id)
-      .single();
-    if (!prof) return [];
-    query = query.eq("professional_id", prof.id);
+    const profId = await getCurrentProfessionalId();
+    if (!profId) return [];
+    query = query.eq("professional_id", profId);
   }
 
   const { data, error } = await query;
@@ -679,19 +648,9 @@ const NOTE_EDIT_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h: ventana de edición.
 export async function getClinicalNotes(patientId: string): Promise<ClinicalNote[]> {
   const supabase = createClient();
 
-  // Profesional actual (para decidir qué notas puede editar): resuelto del JWT.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  let currentProfId: string | null = null;
-  if (user) {
-    const { data: prof } = await supabase
-      .from("professionals")
-      .select("id, staff_members!inner(auth_user_id)")
-      .eq("staff_members.auth_user_id", user.id)
-      .maybeSingle();
-    currentProfId = (prof as { id?: string } | null)?.id ?? null;
-  }
+  // Profesional actual (para decidir qué notas puede editar). Lookup deduplicado
+  // por request: la note config del mismo detalle de paciente lo reutiliza.
+  const currentProfId = await getCurrentProfessionalId();
 
   const { data, error } = await supabase
     .from("clinical_notes")
@@ -959,32 +918,17 @@ export async function getTreatmentTypesWithPhases(): Promise<TreatmentTypeWithPh
 
 // ─── Portal del paciente ───────────────────────────────────────────────────────
 
-// Análogo a getSessionAuth() pero para el portal: lee el claim patient_id del JWT.
-// El claim lo inyecta el Custom Access Token Hook cuando el usuario es paciente
-// (migración 0009). Sin patient_id en el JWT → patientId null (no es paciente).
+// Análogo a getSessionAuth() pero para el portal: lee el claim patient_id del JWT
+// con firma verificada. El claim lo inyecta el Custom Access Token Hook cuando el
+// usuario es paciente (migración 0009). Sin patient_id → no es paciente.
 export async function getPatientSession(): Promise<{
   hasSession: boolean;
   patientId: string | null;
 }> {
   const supabase = createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session) return { hasSession: false, patientId: null };
-
-  let patientId: string | null = null;
-  try {
-    const payload = session.access_token.split(".")[1];
-    patientId =
-      (
-        JSON.parse(Buffer.from(payload, "base64").toString("utf8")) as {
-          patient_id?: string;
-        }
-      ).patient_id ?? null;
-  } catch {
-    patientId = null;
-  }
-  return { hasSession: true, patientId };
+  const claims = await getVerifiedClaims(supabase);
+  if (!claims) return { hasSession: false, patientId: null };
+  return { hasSession: true, patientId: claims.patientId };
 }
 
 /** Tipo de tratamiento para el combo de motivo en el form de nuevo turno. */

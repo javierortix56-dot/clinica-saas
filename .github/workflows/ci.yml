@@ -1,0 +1,65 @@
+name: CI
+
+# Gate de calidad: corre en cada PR y en cada push a main. El deploy de
+# frontend (deploy-frontend.yml) depende de que este workflow pase (ver
+# workflow_run en ese archivo).
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend (tsc + jest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Instala el monorepo completo (workspaces): backend necesita @clinica/shared.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prisma generate
+        working-directory: backend
+        run: npx prisma generate
+
+      - name: Typecheck
+        working-directory: backend
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Unit tests
+        working-directory: backend
+        run: npx jest --ci --silent
+
+  frontend:
+    name: Frontend (tsc + next build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+      # Build de verificación: valores dummy para las env NEXT_PUBLIC_* que el
+      # build necesita resolver (no se usan en runtime del CI).
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder
+          NEXT_PUBLIC_API_URL: https://ci-placeholder.example.com

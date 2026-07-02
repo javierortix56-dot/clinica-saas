@@ -4,6 +4,7 @@ import {
   NestExpressApplication,
 } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 async function bootstrap(): Promise<void> {
@@ -22,6 +23,17 @@ async function bootstrap(): Promise<void> {
     new ExpressAdapter(),
     { rawBody: true },
   );
+  // Headers de seguridad HTTP. API pura (sin HTML propio): CSP no aplica.
+  app.use(helmet({ contentSecurityPolicy: false }));
+
+  // Railway corre detrás de un proxy: sin esto, el rate limiting por IP vería
+  // la IP del proxy para todos los requests (un solo bucket global).
+  app.set('trust proxy', 1);
+
+  // Cierre limpio en redeploys: deja terminar los jobs BullMQ en curso y
+  // desconecta Prisma/Redis (hooks onModuleDestroy de los servicios).
+  app.enableShutdownHooks();
+
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT', 3000);
   await app.listen(port);

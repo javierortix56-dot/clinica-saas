@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { createClient, getSessionAuth } from "@/lib/supabase/server";
+import { createClient, getSessionAuth, isDoctorRole } from "@/lib/supabase/server";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 
@@ -56,6 +56,7 @@ export default async function DashboardLayout({
     displayName,
     roleLabel,
     isOwner,
+    isDoctor: isDoctorRole(role),
     approvalsCount: approvalsCount ?? 0,
     signOutAction: signOut,
   };

@@ -3,22 +3,17 @@
 import { revalidatePath } from "next/cache";
 
 import { createClient } from "@/lib/supabase/server";
+import { getVerifiedClaims } from "@/lib/auth/claims";
+import type { Json } from "@/lib/supabase/types";
 import { SPECIALTY_FIELD_DEFS } from "./clinical-fields";
 
 // ─── Pacientes CRUD ────────────────────────────────────────────────────────────
 
 async function getClinicId(): Promise<string | null> {
   const supabase = createClient();
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) return null;
-  try {
-    const payload = JSON.parse(
-      Buffer.from(session.access_token.split(".")[1], "base64").toString("utf8")
-    ) as { clinic_id?: string };
-    return payload.clinic_id ?? null;
-  } catch {
-    return null;
-  }
+  // Claims con firma verificada — nunca decodificar el JWT a mano.
+  const claims = await getVerifiedClaims(supabase);
+  return claims?.clinicId ?? null;
 }
 
 export async function upsertPatient(
@@ -86,8 +81,8 @@ const EXAM_FISICO_KEYS = [
 ];
 
 // Arma el objeto structured_data desde el form, descartando campos vacíos.
-function parseStructuredData(formData: FormData): Record<string, unknown> {
-  const structured: Record<string, unknown> = {};
+function parseStructuredData(formData: FormData): Json {
+  const structured: Record<string, Json | undefined> = {};
 
   const motivo = (formData.get("motivo") as string | null)?.trim();
   const enfermedadActual = (formData.get("enfermedad_actual") as string | null)?.trim();

@@ -5,38 +5,37 @@ import { randomUUID, randomBytes } from "crypto";
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-
-// Lee clinic_id + user_role + is_owner del JWT (resueltos server-side, nunca del form).
-async function getSessionClaims(): Promise<{
-  clinicId: string | null;
-  role: string | null;
-  isOwner: boolean;
-}> {
-  const supabase = createClient();
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) return { clinicId: null, role: null, isOwner: false };
-  try {
-    const payload = JSON.parse(
-      Buffer.from(session.access_token.split(".")[1], "base64").toString("utf8")
-    ) as { clinic_id?: string; user_role?: string; is_owner?: boolean };
-    return {
-      clinicId: payload.clinic_id ?? null,
-      role: payload.user_role ?? null,
-      isOwner: payload.is_owner === true,
-    };
-  } catch {
-    return { clinicId: null, role: null, isOwner: false };
-  }
-}
+import { getVerifiedClaims } from "@/lib/auth/claims";
 
 // Toda la gestión de equipo es exclusiva del dueño (is_owner).
+//
+// Doble chequeo: (1) claims del JWT con firma VERIFICADA (getVerifiedClaims —
+// nunca decodificar el token a mano: una cookie forjada pasaría el gate y estas
+// acciones ejecutan operaciones con service role), y (2) is_owner re-validado
+// contra staff_members en la BD, por si el claim quedó desactualizado respecto
+// del estado real (p. ej. le quitaron el ownership después de emitido el token).
 async function requireOwner(): Promise<{ clinicId: string } | { error: string }> {
-  const { clinicId, isOwner } = await getSessionClaims();
-  if (!isOwner) {
+  const supabase = createClient();
+  const claims = await getVerifiedClaims(supabase);
+  if (!claims) return { error: "Sesión expirada." };
+  if (!claims.isOwner) {
     return { error: "Solo el dueño de la clínica puede gestionar el equipo." };
   }
-  if (!clinicId) return { error: "Sesión expirada." };
-  return { clinicId };
+  if (!claims.clinicId) return { error: "Sesión expirada." };
+
+  const { data: member } = await supabase
+    .from("staff_members")
+    .select("id")
+    .eq("auth_user_id", claims.sub)
+    .eq("is_owner", true)
+    .eq("is_active", true)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (!member) {
+    return { error: "Solo el dueño de la clínica puede gestionar el equipo." };
+  }
+
+  return { clinicId: claims.clinicId };
 }
 
 // True si `memberId` es dueño y es el ÚNICO dueño activo de su clínica.
