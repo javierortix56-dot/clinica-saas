@@ -61,6 +61,24 @@ export function isDoctorRole(role: string | null): boolean {
   return role === "doctor" || role === "professional";
 }
 
+// professional_id del usuario logueado (o null si no es profesional).
+// cache() dedupe: varias funciones del mismo request (p. ej. en /calendar los 3
+// getWeekly*, o en el detalle de paciente getClinicalNotes + note config) hacían
+// este MISMO lookup por separado; ahora se resuelve una sola vez por request.
+export const getCurrentProfessionalId = cache(async function (): Promise<
+  string | null
+> {
+  const supabase = createClient();
+  const { hasSession, userId } = await getSessionAuth();
+  if (!hasSession || !userId) return null;
+  const { data } = await supabase
+    .from("professionals")
+    .select("id, staff_members!inner(auth_user_id)")
+    .eq("staff_members.auth_user_id", userId)
+    .maybeSingle();
+  return (data as { id?: string } | null)?.id ?? null;
+});
+
 // Forma cruda de cada fila devuelta por el select con joins de PostgREST.
 // El nombre del profesional vive en staff_members (professionals -> staff_members),
 // y la etiqueta del tratamiento se deriva de treatments -> treatment_types.name.
@@ -254,14 +272,10 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
     .order("start_at", { ascending: true });
 
   if (isDoctor) {
-    // Filtrar por el profesional logueado.
-    const { data: prof } = await supabase
-      .from("professionals")
-      .select("id, staff_members!inner(auth_user_id)")
-      .eq("staff_members.auth_user_id", userId)
-      .single();
-    if (!prof) return [];
-    query = query.eq("professional_id", prof.id);
+    // Filtrar por el profesional logueado (lookup deduplicado por request).
+    const profId = await getCurrentProfessionalId();
+    if (!profId) return [];
+    query = query.eq("professional_id", profId);
   }
 
   const { data, error } = await query;
@@ -327,13 +341,9 @@ export async function getWeeklyBlocks(refDate?: Date): Promise<WeeklyBlock[]> {
     .order("starts_at", { ascending: true });
 
   if (isDoctor) {
-    const { data: prof } = await supabase
-      .from("professionals")
-      .select("id, staff_members!inner(auth_user_id)")
-      .eq("staff_members.auth_user_id", userId)
-      .single();
-    if (!prof) return [];
-    query = query.eq("professional_id", prof.id);
+    const profId = await getCurrentProfessionalId();
+    if (!profId) return [];
+    query = query.eq("professional_id", profId);
   }
 
   const { data, error } = await query;
@@ -394,13 +404,9 @@ export async function getWeeklyAvailability(): Promise<AvailabilityWindow[]> {
     );
 
   if (isDoctor) {
-    const { data: prof } = await supabase
-      .from("professionals")
-      .select("id, staff_members!inner(auth_user_id)")
-      .eq("staff_members.auth_user_id", userId)
-      .single();
-    if (!prof) return [];
-    query = query.eq("professional_id", prof.id);
+    const profId = await getCurrentProfessionalId();
+    if (!profId) return [];
+    query = query.eq("professional_id", profId);
   }
 
   const { data, error } = await query;
@@ -642,19 +648,9 @@ const NOTE_EDIT_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h: ventana de edición.
 export async function getClinicalNotes(patientId: string): Promise<ClinicalNote[]> {
   const supabase = createClient();
 
-  // Profesional actual (para decidir qué notas puede editar): resuelto del JWT.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  let currentProfId: string | null = null;
-  if (user) {
-    const { data: prof } = await supabase
-      .from("professionals")
-      .select("id, staff_members!inner(auth_user_id)")
-      .eq("staff_members.auth_user_id", user.id)
-      .maybeSingle();
-    currentProfId = (prof as { id?: string } | null)?.id ?? null;
-  }
+  // Profesional actual (para decidir qué notas puede editar). Lookup deduplicado
+  // por request: la note config del mismo detalle de paciente lo reutiliza.
+  const currentProfId = await getCurrentProfessionalId();
 
   const { data, error } = await supabase
     .from("clinical_notes")
