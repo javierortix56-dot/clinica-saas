@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import Link from "next/link";
 import {
   Sparkles,
   Plus,
@@ -11,6 +12,8 @@ import {
   Upload,
   Camera,
   CalendarPlus,
+  CalendarDays,
+  ClipboardList,
 } from "lucide-react";
 
 import type {
@@ -22,6 +25,8 @@ import type {
   NoteStructuredData,
 } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
+import { ApptStatusBadge } from "@/components/ui/appt-status-badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   createClinicalNote,
   updateClinicalNote,
@@ -60,35 +65,6 @@ const dateFormatter = new Intl.DateTimeFormat("es-AR", {
   dateStyle: "medium",
   timeZone: "America/Argentina/Buenos_Aires",
 });
-
-// ─── Badge helpers ────────────────────────────────────────────────────────────
-
-const APPT_STATUS_CHIP: Record<
-  string,
-  { label: string; bg: string; fg: string; border: string; dot: string }
-> = {
-  proposed: { label: "Propuesto", bg: "#fffbeb", fg: "#b45309", border: "#fde68a", dot: "#f59e0b" },
-  confirmed: { label: "Confirmado", bg: "#ecfdf5", fg: "#047857", border: "#a7f3d0", dot: "#10b981" },
-  in_progress: { label: "En curso", bg: "#eff6ff", fg: "#1d4ed8", border: "#bfdbfe", dot: "#3b82f6" },
-  completed: { label: "Completado", bg: "#eff6ff", fg: "#1d4ed8", border: "#bfdbfe", dot: "#3b82f6" },
-  cancelled: { label: "Cancelado", bg: "#fff1f2", fg: "#be123c", border: "#fecdd3", dot: "#f43f5e" },
-  no_show: { label: "Ausente", bg: "#fff1f2", fg: "#be123c", border: "#fecdd3", dot: "#f43f5e" },
-};
-
-function ApptStatusBadge({ status }: { status: string }) {
-  const c = APPT_STATUS_CHIP[status] ?? {
-    label: status, bg: "#f1f5f9", fg: "#64748b", border: "#e2e8f0", dot: "#94a3b8",
-  };
-  return (
-    <span
-      className="inline-flex items-center gap-[6px] rounded-full border px-[10px] py-[4px] text-[11.5px] font-semibold"
-      style={{ background: c.bg, color: c.fg, borderColor: c.border }}
-    >
-      <span className="h-[5px] w-[5px] rounded-full" style={{ background: c.dot }} />
-      {c.label}
-    </span>
-  );
-}
 
 const NOTE_TYPE_LABELS: Record<string, string> = {
   consulta: "Consulta", evolución: "Evolución",
@@ -1241,9 +1217,22 @@ export function PatientTabs({
       {tab === "turnos" && (
         <>
           {appointments.length === 0 ? (
-            <div className="rounded-card border border-border bg-white p-6 text-sm font-medium text-muted-foreground shadow-card-soft">
-              Este paciente no tiene turnos registrados.
-            </div>
+            <EmptyState
+              icon={CalendarDays}
+              title="Sin turnos registrados"
+              description="Cuando este paciente tenga turnos agendados van a aparecer acá."
+              action={
+                canScheduleAppointment ? (
+                  <Link
+                    href={`/calendar?nuevo=1&paciente=${patientId}`}
+                    className="inline-flex items-center gap-[6px] rounded-[10px] bg-primary px-[13px] py-2 text-[12.5px] font-bold text-white shadow-[0_4px_12px_rgba(37,99,235,.3)] transition hover:brightness-[1.07]"
+                  >
+                    <Plus className="h-[14px] w-[14px]" strokeWidth={2.4} />
+                    Agendar turno
+                  </Link>
+                ) : undefined
+              }
+            />
           ) : (
             <div className="overflow-hidden rounded-card border border-border bg-white shadow-card-soft">
               <div className="hidden grid-cols-[1.4fr_1.2fr_1.6fr_1fr] border-b border-[#eef2f7] bg-[#fbfcfe] px-[22px] py-[13px] text-[11.5px] font-semibold uppercase tracking-[.05em] text-muted-foreground sm:grid">
@@ -1347,9 +1336,27 @@ export function PatientTabs({
           )}
 
           {notes.length === 0 && !showForm ? (
-            <div className="rounded-card border border-border bg-white p-6 text-sm font-medium text-muted-foreground shadow-card-soft">
-              No hay notas clínicas para este paciente.
-            </div>
+            <EmptyState
+              icon={ClipboardList}
+              title="Historia clínica vacía"
+              description={
+                canCreateNote
+                  ? "Registrá la primera nota clínica de este paciente para empezar su historia."
+                  : "Todavía no hay notas clínicas para este paciente."
+              }
+              action={
+                canCreateNote ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowForm(true)}
+                    className="inline-flex items-center gap-[6px] rounded-[10px] bg-primary px-[13px] py-2 text-[12.5px] font-bold text-white shadow-[0_4px_12px_rgba(37,99,235,.3)] transition hover:brightness-[1.07]"
+                  >
+                    <Plus className="h-[14px] w-[14px]" strokeWidth={2.4} />
+                    Nueva nota
+                  </button>
+                ) : undefined
+              }
+            />
           ) : (
             <div className="space-y-3">
               {filteredNotes.length === 0 && noteSearch ? (

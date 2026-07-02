@@ -14,7 +14,7 @@ import {
   getSessionAuth,
 } from "@/lib/supabase/server";
 import { PatientTabs } from "../PatientTabs";
-import { initialsOf } from "@/lib/utils";
+import { avatarColorOf, initialsOf } from "@/lib/utils";
 import { EditPatientButton } from "../EditPatientButton";
 
 export const dynamic = "force-dynamic";
@@ -73,7 +73,11 @@ export default async function PatientDetailPage({
 
       <div className="mb-4 flex items-start justify-between gap-3 sm:mb-[22px] sm:items-center">
         <div className="flex min-w-0 items-center gap-3 sm:gap-[15px]">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary text-[15px] font-extrabold text-white shadow-[0_6px_16px_rgba(37,99,235,.3)] sm:h-14 sm:w-14 sm:rounded-2xl sm:text-[19px]">
+          {/* Color estable derivado del nombre — coincide con el de la lista. */}
+          <div
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[15px] font-extrabold text-white shadow-[0_6px_16px_rgba(15,23,42,.22)] sm:h-14 sm:w-14 sm:rounded-2xl sm:text-[19px]"
+            style={{ background: avatarColorOf(patient.full_name) }}
+          >
             {initialsOf(patient.full_name)}
           </div>
           <div className="min-w-0">

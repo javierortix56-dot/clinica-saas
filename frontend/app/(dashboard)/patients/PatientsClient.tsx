@@ -2,28 +2,17 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Plus, ChevronRight } from "lucide-react";
+import { Search, Plus, ChevronRight, Users, SearchX } from "lucide-react";
 
 import type { Patient } from "@clinica/shared";
-import { initialsOf } from "@/lib/utils";
+import { avatarColorOf, initialsOf } from "@/lib/utils";
+import { EmptyState } from "@/components/ui/empty-state";
 import { PatientSheet } from "./PatientSheet";
 
 const dateFormatter = new Intl.DateTimeFormat("es-AR", {
   dateStyle: "medium",
   timeZone: "America/Argentina/Buenos_Aires",
 });
-
-// Paleta de avatares cíclica por índice (handoff de diseño).
-const AVATAR_COLORS = [
-  "#2563eb",
-  "#0d9488",
-  "#7c3aed",
-  "#db2777",
-  "#ea580c",
-  "#0891b2",
-  "#4f46e5",
-  "#16a34a",
-];
 
 
 export function PatientsClient({ patients }: { patients: Patient[] }) {
@@ -73,11 +62,28 @@ export function PatientsClient({ patients }: { patients: Patient[] }) {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="rounded-card border border-border bg-white p-10 text-center text-[14px] font-medium text-muted-foreground shadow-card">
-          {search
-            ? "Sin resultados para esa búsqueda."
-            : "No hay pacientes registrados."}
-        </div>
+        search ? (
+          <EmptyState
+            icon={SearchX}
+            title={`Sin resultados para "${search}"`}
+            description="Probá con otro nombre o número de documento."
+          />
+        ) : (
+          <EmptyState
+            icon={Users}
+            title="Todavía no hay pacientes"
+            description="Registrá tu primer paciente para empezar a agendar turnos y llevar su historia clínica."
+            action={
+              <button
+                onClick={() => setSheetOpen(true)}
+                className="flex items-center gap-[7px] rounded-[10px] bg-primary px-4 py-[10px] text-[13px] font-bold text-white shadow-[0_4px_12px_rgba(37,99,235,.3)] transition hover:brightness-[1.07]"
+              >
+                <Plus className="h-4 w-4" strokeWidth={2.4} />
+                Registrar primer paciente
+              </button>
+            }
+          />
+        )
       ) : (
         <div className="overflow-hidden rounded-card border border-border bg-white shadow-card">
           <div className="hidden grid-cols-[2.2fr_1.6fr_1.2fr_1.1fr] border-b border-border bg-[#fbfcfe] px-[22px] py-[13px] text-[11.5px] font-semibold uppercase tracking-[.05em] text-muted-foreground sm:grid">
@@ -86,7 +92,7 @@ export function PatientsClient({ patients }: { patients: Patient[] }) {
             <div>DNI / ID</div>
             <div>Fecha de alta</div>
           </div>
-          {filtered.map((p, i) => (
+          {filtered.map((p) => (
             <button
               key={p.id}
               onClick={() => router.push(`/patients/${p.id}`)}
@@ -94,11 +100,10 @@ export function PatientsClient({ patients }: { patients: Patient[] }) {
             >
               {/* Nombre (+ DNI bajo el nombre solo en móvil) */}
               <div className="flex min-w-0 flex-1 items-center gap-3 sm:flex-none">
+                {/* Color estable por nombre: no cambia al filtrar/reordenar. */}
                 <span
                   className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full text-[12.5px] font-bold text-white"
-                  style={{
-                    background: AVATAR_COLORS[i % AVATAR_COLORS.length],
-                  }}
+                  style={{ background: avatarColorOf(p.full_name) }}
                 >
                   {initialsOf(p.full_name)}
                 </span>
