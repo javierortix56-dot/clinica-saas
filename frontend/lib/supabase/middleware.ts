@@ -71,10 +71,10 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Con sesión y en /login → redirige al panel (evita re-login).
+  // Con sesión y en /login → redirige al inicio (evita re-login).
   if (isAuthenticated && pathname.startsWith("/login")) {
     const url = request.nextUrl.clone();
-    url.pathname = "/approvals";
+    url.pathname = "/home";
     return NextResponse.redirect(url);
   }
 
@@ -90,7 +90,7 @@ export async function updateSession(request: NextRequest) {
     userRole !== "doctor"
   ) {
     const url = request.nextUrl.clone();
-    url.pathname = "/approvals";
+    url.pathname = "/home";
     return NextResponse.redirect(url);
   }
 

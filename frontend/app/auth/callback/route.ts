@@ -39,6 +39,6 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Staff o error → login del staff.
-  return NextResponse.redirect(new URL("/approvals", request.url));
+  // Staff o error → pantalla de inicio del panel.
+  return NextResponse.redirect(new URL("/home", request.url));
 }

@@ -11,6 +11,7 @@ import {
   Settings,
   LogOut,
   Plus,
+  Home,
 } from "lucide-react";
 
 type NavItem = {
@@ -45,6 +46,7 @@ export function SidebarContent({
   const pathname = usePathname();
 
   const principal: NavItem[] = [
+    { href: "/home", label: "Inicio", icon: Home },
     { href: "/calendar", label: "Calendario", icon: Calendar },
     { href: "/patients", label: "Pacientes", icon: Users },
     {

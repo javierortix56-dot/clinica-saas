@@ -300,6 +300,121 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
   });
 }
 
+// Límites del día de HOY en la zona horaria de la clínica. A diferencia de
+// getWeekBounds (hora local del server = UTC en Vercel), acá el corte de día se
+// calcula en Buenos Aires; Argentina no tiene horario de verano, así que el
+// offset -03:00 fijo es exacto todo el año.
+function getTodayBounds(): { dayStart: Date; dayEnd: Date } {
+  const TZ = "America/Argentina/Buenos_Aires";
+  const todayISO = new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date());
+  return {
+    dayStart: new Date(`${todayISO}T00:00:00.000-03:00`),
+    dayEnd: new Date(`${todayISO}T23:59:59.999-03:00`),
+  };
+}
+
+export interface TodayOverview {
+  // Turnos confirmados de hoy, ordenados por hora. Doctores: solo los propios.
+  appointments: WeeklyAppointment[];
+  // Turnos con status 'proposed' esperando aprobación (toda la clínica).
+  approvalsCount: number;
+  // Pacientes creados en los últimos 7 días (toda la clínica).
+  newPatientsWeek: number;
+}
+
+// Datos de la pantalla de inicio "Hoy": agenda del día + indicadores rápidos.
+// Reusa el shape WeeklyAppointment para compartir el formato con el calendario.
+export async function getTodayOverview(): Promise<TodayOverview> {
+  const supabase = createClient();
+
+  const { hasSession, userId, role } = await getSessionAuth();
+  if (!hasSession || !userId) redirect("/login");
+  const isDoctor = isDoctorRole(role);
+
+  const { dayStart, dayEnd } = getTodayBounds();
+
+  type ApptRow = {
+    id: string;
+    start_at: string;
+    end_at: string;
+    reason: string | null;
+    patients: { full_name: string; birth_date: string | null } | null;
+    treatments: { treatment_types: { name: string } | null } | null;
+    treatment_phase_templates: { name: string } | null;
+    professionals: {
+      staff_members: {
+        full_name: string;
+        is_active: boolean;
+        deleted_at: string | null;
+      } | null;
+    } | null;
+  };
+
+  let apptQuery = supabase
+    .from("appointments")
+    .select(
+      `id, start_at, end_at, reason,
+       patients ( full_name, birth_date ),
+       treatments ( treatment_types ( name ) ),
+       treatment_phase_templates ( name ),
+       professionals ( staff_members ( full_name, is_active, deleted_at ) )`
+    )
+    .eq("status", "confirmed")
+    .gte("start_at", dayStart.toISOString())
+    .lte("start_at", dayEnd.toISOString())
+    .order("start_at", { ascending: true });
+
+  if (isDoctor) {
+    const profId = await getCurrentProfessionalId();
+    if (!profId) {
+      return { appointments: [], approvalsCount: 0, newPatientsWeek: 0 };
+    }
+    apptQuery = apptQuery.eq("professional_id", profId);
+  }
+
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  const [apptRes, approvalsRes, patientsRes] = await Promise.all([
+    apptQuery,
+    supabase
+      .from("appointments")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "proposed"),
+    supabase
+      .from("patients")
+      .select("id", { count: "exact", head: true })
+      .gte("created_at", weekAgo.toISOString()),
+  ]);
+
+  if (apptRes.error) {
+    throw new Error(`No se pudo cargar la agenda de hoy: ${apptRes.error.message}`);
+  }
+
+  const appointments = ((apptRes.data ?? []) as unknown as ApptRow[]).map((row) => {
+    const sm = row.professionals?.staff_members;
+    const activeProf = sm && sm.is_active && sm.deleted_at === null ? sm.full_name : null;
+    return {
+      id: row.id,
+      start_at: row.start_at,
+      end_at: row.end_at,
+      patient_name: row.patients?.full_name ?? "Paciente",
+      patient_birth_date: row.patients?.birth_date ?? null,
+      reason: row.reason ?? null,
+      treatment_label:
+        row.treatments?.treatment_types?.name ??
+        row.treatment_phase_templates?.name ??
+        null,
+      professional_name: activeProf,
+    };
+  });
+
+  return {
+    appointments,
+    approvalsCount: approvalsRes.count ?? 0,
+    newPatientsWeek: patientsRes.count ?? 0,
+  };
+}
+
 // Lee los bloqueos de disponibilidad (kind='block') que se solapan con la semana
 // de `refDate`. Incluye los eventos importados de Google Calendar (source
 // 'google_calendar') y los bloqueos manuales. Doctores: solo los propios.
