@@ -127,52 +127,6 @@ export function getDayIndex(isoStart: string, weekDays: Date[]): number {
   return weekDays.findIndex((d) => d.toDateString() === local.toDateString());
 }
 
-// ─── Cell filtering ──────────────────────────────────────────────────────────
-
-// Localiza el start_at en Buenos Aires, lo trunca al slot de 30 min más cercano
-// (floor), y compara con la celda (day, hour, minute).
-export function appointmentsForSlot(
-  appointments: WeeklyAppointment[],
-  day: Date,
-  hour: number,
-  minute: number
-): WeeklyAppointment[] {
-  return appointments.filter((a) => {
-    const localStr = new Date(a.start_at).toLocaleString("en-US", {
-      timeZone: TZ,
-    });
-    const local = new Date(localStr);
-    const slottedMinute = Math.floor(local.getMinutes() / 30) * 30;
-    return (
-      local.getHours() === hour &&
-      slottedMinute === minute &&
-      local.toDateString() === day.toDateString()
-    );
-  });
-}
-
-// Bloqueos cuyo inicio cae en este slot de 30 min (mismo criterio de floor que
-// los turnos). Un bloqueo largo se muestra en su slot de inicio con su duración.
-export function blocksForSlot(
-  blocks: WeeklyBlock[],
-  day: Date,
-  hour: number,
-  minute: number
-): WeeklyBlock[] {
-  return blocks.filter((b) => {
-    const localStr = new Date(b.start_at).toLocaleString("en-US", {
-      timeZone: TZ,
-    });
-    const local = new Date(localStr);
-    const slottedMinute = Math.floor(local.getMinutes() / 30) * 30;
-    return (
-      local.getHours() === hour &&
-      slottedMinute === minute &&
-      local.toDateString() === day.toDateString()
-    );
-  });
-}
-
 // ─── Day state ────────────────────────────────────────────────────────────────
 
 export function isToday(date: Date): boolean {

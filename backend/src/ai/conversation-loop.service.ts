@@ -12,7 +12,7 @@ import { ToolResult } from './tools/tool-result';
 import { ToolExecutorService } from './tools/tool-executor.service';
 
 /** Corta runaway y costo; si se excede → handoff a humano (blueprint §1). */
-export const MAX_TOOL_ROUNDS = 8;
+const MAX_TOOL_ROUNDS = 8;
 
 export interface RunTurnInput {
   ctx: ToolContext;

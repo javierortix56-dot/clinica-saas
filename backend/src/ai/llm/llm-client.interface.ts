@@ -13,7 +13,7 @@
  * required, enum, description). Sin features exóticas, para que el mapeo a cada
  * SDK sea trivial.
  */
-export type JsonSchemaObject = {
+type JsonSchemaObject = {
   type: 'object';
   properties: Record<string, unknown>;
   required?: string[];
@@ -26,7 +26,7 @@ export interface ToolDeclaration {
   parameters: JsonSchemaObject;
 }
 
-export type LlmRole = 'user' | 'assistant' | 'tool';
+type LlmRole = 'user' | 'assistant' | 'tool';
 
 /** Una llamada a herramienta pedida por el modelo. */
 export interface LlmToolCall {

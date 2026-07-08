@@ -104,7 +104,7 @@ function lastRealizedForPhase(
   );
 }
 
-export function computePhaseViews(
+function computePhaseViews(
   activePhaseId: string | null,
   phases: PhaseRow[],
   history: HistoryRow[],

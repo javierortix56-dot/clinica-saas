@@ -28,7 +28,7 @@ export type ToolName = (typeof ToolName)[keyof typeof ToolName];
  * ronda, con guard de idempotencia. El resto son de lectura (idempotentes,
  * paralelizables).
  */
-export const WRITE_TOOLS: ReadonlySet<string> = new Set<string>([
+const WRITE_TOOLS: ReadonlySet<string> = new Set<string>([
   ToolName.RegistrarPaciente,
   ToolName.IniciarTratamiento,
   ToolName.AgendarTurno,
@@ -36,10 +36,6 @@ export const WRITE_TOOLS: ReadonlySet<string> = new Set<string>([
 
 export function isWriteTool(name: string): boolean {
   return WRITE_TOOLS.has(name);
-}
-
-export function isReadTool(name: string): boolean {
-  return !WRITE_TOOLS.has(name);
 }
 
 export const TOOL_DECLARATIONS: ToolDeclaration[] = [

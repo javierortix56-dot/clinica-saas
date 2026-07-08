@@ -65,7 +65,7 @@ export function isDoctorRole(role: string | null): boolean {
 // cache() dedupe: varias funciones del mismo request (p. ej. en /calendar los 3
 // getWeekly*, o en el detalle de paciente getClinicalNotes + note config) hacían
 // este MISMO lookup por separado; ahora se resuelve una sola vez por request.
-export const getCurrentProfessionalId = cache(async function (): Promise<
+const getCurrentProfessionalId = cache(async function (): Promise<
   string | null
 > {
   const supabase = createClient();

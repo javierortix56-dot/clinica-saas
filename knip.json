@@ -1,0 +1,14 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "workspaces": {
+    "frontend": {
+      "ignore": [
+        "components/ui/**",
+        "lib/supabase/types.ts"
+      ]
+    },
+    "backend": {
+      "ignoreDependencies": ["prettier"]
+    }
+  }
+}
