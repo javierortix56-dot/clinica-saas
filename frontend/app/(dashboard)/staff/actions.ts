@@ -91,13 +91,19 @@ async function provisionAuthUser(
   }
 
   // El email ya tiene cuenta: la buscamos y, si nos dieron contraseña, la reseteamos.
-  const { data: list } = await admin.auth.admin.listUsers({
-    page: 1,
-    perPage: 1000,
-  });
-  const existing = list?.users.find(
-    (u) => u.email?.toLowerCase() === email.toLowerCase()
-  );
+  // La API de admin no permite filtrar por email: se pagina hasta encontrarlo
+  // (antes se miraba solo la página 1 de 1000 — con más usuarios, no lo hallaba).
+  const target = email.toLowerCase();
+  let existing: { id: string } | undefined;
+  for (let page = 1; page <= 50 && !existing; page++) {
+    const { data: list, error: listErr } = await admin.auth.admin.listUsers({
+      page,
+      perPage: 200,
+    });
+    if (listErr || !list?.users.length) break;
+    existing = list.users.find((u) => u.email?.toLowerCase() === target);
+    if (list.users.length < 200) break;
+  }
   if (existing) {
     if (hasPwd) {
       await admin.auth.admin.updateUserById(existing.id, {
