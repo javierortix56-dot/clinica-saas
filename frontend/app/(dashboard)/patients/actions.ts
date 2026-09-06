@@ -407,10 +407,19 @@ export async function updatePatientClinicalProfile(
 
 // ─── Configuración de campos clínicos del profesional ───────────────────────────
 
-// Guarda qué campos clínicos ve el profesional logueado en su formulario de nota.
-// Es por profesional (resuelto del JWT) — cada especialidad arma su propio set.
+// Guarda qué campos clínicos ve un profesional en su formulario de nota.
+//
+// Sin `professionalId` configura al profesional logueado (cada doctor ajusta su
+// propia planilla). Con `professionalId`, el DUEÑO configura la planilla de otro
+// profesional de su clínica: hasta ahora el destinatario se resolvía siempre del
+// JWT, así que un dueño con rol `admin` —que no tiene fila en `professionals`—
+// no podía asignarle la planilla a ninguno de sus médicos.
+//
+// El aislamiento por clínica lo garantiza RLS (`tenant_all` en professionals);
+// acá se agrega la restricción de que solo el dueño configure a terceros.
 export async function updateNoteFieldConfig(
-  config: Record<string, boolean | string | Record<string, boolean>>
+  config: Record<string, boolean | string | Record<string, boolean>>,
+  professionalId?: string
 ): Promise<{ error?: string }> {
   const supabase = createClient();
   const {
@@ -418,19 +427,41 @@ export async function updateNoteFieldConfig(
   } = await supabase.auth.getUser();
   if (!user) return { error: "Sesión expirada." };
 
-  const { data: prof } = await supabase
-    .from("professionals")
-    .select("id, staff_members!inner(auth_user_id)")
-    .eq("staff_members.auth_user_id", user.id)
-    .single();
-  if (!prof) return { error: "Solo profesionales pueden configurar campos." };
+  let targetId: string;
+
+  if (professionalId) {
+    const claims = await getVerifiedClaims(supabase);
+    if (!claims?.isOwner) {
+      return {
+        error: "Solo el dueño puede configurar la planilla de otro profesional.",
+      };
+    }
+    // RLS ya limita la lectura a la clínica del usuario: si no aparece, no es suyo.
+    const { data: target } = await supabase
+      .from("professionals")
+      .select("id")
+      .eq("id", professionalId)
+      .maybeSingle();
+    if (!target) return { error: "Ese profesional no pertenece a tu consultorio." };
+    targetId = professionalId;
+  } else {
+    const { data: prof } = await supabase
+      .from("professionals")
+      .select("id, staff_members!inner(auth_user_id)")
+      .eq("staff_members.auth_user_id", user.id)
+      .maybeSingle();
+    if (!prof) return { error: "Solo profesionales pueden configurar campos." };
+    targetId = (prof as { id: string }).id;
+  }
 
   const { error } = await supabase
     .from("professionals")
     .update({ note_field_config: config })
-    .eq("id", (prof as { id: string }).id);
+    .eq("id", targetId);
 
   if (error) return { error: `No se pudo guardar la configuración: ${error.message}` };
+
+  revalidatePath("/settings");
   return {};
 }
 

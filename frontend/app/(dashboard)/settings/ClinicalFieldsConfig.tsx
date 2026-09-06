@@ -31,10 +31,15 @@ export function ClinicalFieldsConfig({
   config,
   specialties,
   specialtyFieldDefs,
+  professionalId,
+  professionalName,
 }: {
   config: NoteFieldConfig;
   specialties: ClinicSpecialty[];
   specialtyFieldDefs: SpecialtyFieldDef[];
+  /** Profesional a configurar. Sin esto se configura al usuario logueado. */
+  professionalId?: string;
+  professionalName?: string;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -90,12 +95,16 @@ export function ClinicalFieldsConfig({
         especializados,
         especialidad,
       };
-      const result = await updateNoteFieldConfig(fullConfig);
+      const result = await updateNoteFieldConfig(fullConfig, professionalId);
       if (result.error) {
         toast.error(result.error);
         return;
       }
-      toast.success("Campos de la historia clínica guardados.");
+      toast.success(
+        professionalName
+          ? `Planilla de ${professionalName} guardada.`
+          : "Campos de la historia clínica guardados."
+      );
       router.refresh();
     });
   }
@@ -118,8 +127,9 @@ export function ClinicalFieldsConfig({
           Campos de la historia clínica
         </h2>
         <p className="mt-1 text-[13.5px] font-medium text-muted-foreground">
-          Elegí tu especialidad para cargar un paquete de campos y luego ajustá a
-          gusto. Define qué campos ves al cargar una nota. Aplica solo a tus notas.
+          {professionalName
+            ? `Elegí la especialidad para cargar un paquete de campos y ajustá a gusto. Define qué campos ve ${professionalName} al cargar una nota.`
+            : "Elegí tu especialidad para cargar un paquete de campos y luego ajustá a gusto. Define qué campos ves al cargar una nota. Aplica solo a tus notas."}
         </p>
       </div>
 

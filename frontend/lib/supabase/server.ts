@@ -758,6 +758,39 @@ export async function getProfessionalNoteConfig(): Promise<NoteFieldConfig | nul
   return cfg ?? {};
 }
 
+// Profesionales de la clínica con su planilla de campos clínicos, para que el
+// dueño pueda configurar la de cada médico desde Mi consultorio. RLS limita la
+// lectura a la propia clínica.
+export interface ProfessionalNoteConfig {
+  professional_id: string;
+  full_name: string;
+  note_field_config: NoteFieldConfig;
+}
+
+export async function getProfessionalsNoteConfigs(): Promise<ProfessionalNoteConfig[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("professionals")
+    .select("id, note_field_config, staff_members!inner(full_name, is_active, deleted_at)")
+    .is("deleted_at", null);
+  if (error || !data) return [];
+
+  return (
+    data as unknown as {
+      id: string;
+      note_field_config: NoteFieldConfig | null;
+      staff_members: { full_name: string; is_active: boolean; deleted_at: string | null } | null;
+    }[]
+  )
+    .filter((r) => r.staff_members?.is_active && !r.staff_members.deleted_at)
+    .map((r) => ({
+      professional_id: r.id,
+      full_name: r.staff_members?.full_name ?? "—",
+      note_field_config: r.note_field_config ?? {},
+    }))
+    .sort((a, b) => a.full_name.localeCompare(b.full_name, "es"));
+}
+
 // Especialidades editables de la clínica (clinic_specialties). Vacío si todavía
 // no se sembraron — en ese caso el frontend usa los presets estáticos de fallback.
 export async function getClinicSpecialties(): Promise<ClinicSpecialty[]> {
