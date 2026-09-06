@@ -14,6 +14,7 @@ export interface Patient {
   full_name: string;
   phone?: string | null;
   email?: string | null;
+  birth_date?: string | null;
   created_at: string;
 }
 

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CheckCircle2, Clock, Activity, ChevronLeft, ChevronRight } from "lucide-react";
+import { CheckCircle2, Clock, Activity, ChevronLeft, ChevronRight, CalendarDays, List } from "lucide-react";
 
 import {
   getWeeklyAppointments,
@@ -10,6 +10,7 @@ import {
   getPatients,
   getProfessionalsForScheduling,
   getTreatmentTypeOptions,
+  getClinicSettings,
 } from "@/lib/supabase/server";
 import { CalendarGrid } from "./CalendarGrid";
 import {
@@ -43,22 +44,26 @@ export default async function CalendarPage({
         return isNaN(d.getTime()) ? currentMonday : getMondayOf(d);
       })()
     : currentMonday;
+  const view = searchParams.view === "week" ? "week" : "day";
+  const displayedIsCurrentWeek = toISODate(displayedMonday) === toISODate(currentMonday);
 
   const { role } = await getSessionAuth();
   const canCreateAppointment = role === "admin" || role === "reception" || role === "doctor";
 
-  const [appointments, blocks, availability, patients, professionals, treatmentTypes] = await Promise.all([
+  const [appointments, blocks, availability, patients, professionals, treatmentTypes, currentWeekAppointments, clinicSettings] = await Promise.all([
     getWeeklyAppointments(displayedMonday),
     getWeeklyBlocks(displayedMonday),
     getWeeklyAvailability(),
     canCreateAppointment ? getPatients() : Promise.resolve([]),
     canCreateAppointment ? getProfessionalsForScheduling() : Promise.resolve([]),
     canCreateAppointment ? getTreatmentTypeOptions() : Promise.resolve([]),
+    displayedIsCurrentWeek ? Promise.resolve(null) : getWeeklyAppointments(currentMonday),
+    getClinicSettings(),
   ]);
   const weekDays = getWeekDays(displayedMonday);
 
   // El resumen siempre refleja "hoy" — si se navega a otra semana muestra 0.
-  const summary = buildDaySummary(appointments, now);
+  const summary = buildDaySummary(currentWeekAppointments ?? appointments, now);
 
   // Navegación semanal
   const prevWeek = toISODate(addDays(displayedMonday, -7));
@@ -95,7 +100,7 @@ export default async function CalendarPage({
         <div className="flex shrink-0 items-center gap-2">
           {!isCurrentWeek && (
             <Link
-              href="/calendar"
+              href={`/calendar?view=${view}`}
               className="rounded-[10px] border border-border bg-white px-[12px] py-[7px] text-[12px] font-semibold text-slate-700 transition hover:bg-slate-50 sm:px-[14px] sm:py-[9px] sm:text-[13px]"
             >
               Hoy
@@ -103,14 +108,14 @@ export default async function CalendarPage({
           )}
           <div className="flex overflow-hidden rounded-[10px] border border-border bg-white">
             <Link
-              href={`/calendar?week=${prevWeek}`}
+              href={`/calendar?week=${prevWeek}&view=${view}`}
               className={`${iconBtn} border-r border-border`}
               aria-label="Semana anterior"
             >
               <ChevronLeft className="h-4 w-4" strokeWidth={2} />
             </Link>
             <Link
-              href={`/calendar?week=${nextWeek}`}
+              href={`/calendar?week=${nextWeek}&view=${view}`}
               className={iconBtn}
               aria-label="Semana siguiente"
             >
@@ -118,6 +123,21 @@ export default async function CalendarPage({
             </Link>
           </div>
         </div>
+      </div>
+
+      <div className="mb-3 flex w-fit overflow-hidden rounded-[10px] border border-border bg-white p-1 shadow-card-soft">
+        <Link
+          href={`/calendar?week=${toISODate(displayedMonday)}&view=day`}
+          className={`flex items-center gap-1.5 rounded-[7px] px-3 py-1.5 text-xs font-bold transition ${view === "day" ? "bg-primary text-white" : "text-slate-500 hover:bg-slate-50"}`}
+        >
+          <List className="h-3.5 w-3.5" /> Jornada
+        </Link>
+        <Link
+          href={`/calendar?week=${toISODate(displayedMonday)}&view=week`}
+          className={`flex items-center gap-1.5 rounded-[7px] px-3 py-1.5 text-xs font-bold transition ${view === "week" ? "bg-primary text-white" : "text-slate-500 hover:bg-slate-50"}`}
+        >
+          <CalendarDays className="h-3.5 w-3.5" /> Semana
+        </Link>
       </div>
 
       {/* Resumen compacto — barra horizontal única en lugar de 3 cards */}
@@ -175,6 +195,7 @@ export default async function CalendarPage({
 
       {/* Grilla interactiva (Client Component: maneja el turno seleccionado) */}
       <CalendarGrid
+        view={view}
         weekDays={weekDays.map(toISODate)}
         appointments={appointments}
         blocks={blocks}
@@ -183,6 +204,7 @@ export default async function CalendarPage({
         patients={patients.map((p) => ({ id: p.id, full_name: p.full_name, national_id: p.national_id }))}
         professionals={professionals}
         treatmentTypes={treatmentTypes}
+        defaultDurationMinutes={clinicSettings?.default_appointment_minutes ?? 30}
       />
     </div>
   );

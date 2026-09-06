@@ -22,7 +22,7 @@ const mono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Clínica · Gestión médica",
+  title: "Consultorio · Gestión médica",
   description: "Gestión de turnos, pacientes e historias clínicas.",
 };
 

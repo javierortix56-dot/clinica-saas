@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Calendar, Clock, Check, X, CheckCircle2 } from "lucide-react";
 
@@ -88,6 +89,9 @@ function ApprovalCard({
   const name = appt.patient?.full_name ?? "—";
   const start = new Date(appt.start_at);
   const via = viaLabel(appt.origin);
+  const proposedDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+  }).format(start);
 
   return (
     <div className="rounded-card border border-border bg-white p-4 shadow-card-soft">
@@ -133,6 +137,12 @@ function ApprovalCard({
 
       {/* Botones — siempre debajo, full width en mobile, auto en desktop */}
       <div className="mt-3 flex gap-2 sm:mt-2">
+        <Link
+          href={`/calendar?nuevo=1&paciente=${appt.patient_id}&fecha=${proposedDate}`}
+          className="flex flex-1 items-center justify-center rounded-[10px] border border-border bg-white px-3 py-[9px] text-[13px] font-bold text-slate-600 transition hover:bg-slate-50 sm:flex-none"
+        >
+          Buscar alternativa
+        </Link>
         <button
           onClick={handleReject}
           disabled={busy}

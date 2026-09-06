@@ -9,7 +9,7 @@ import { Plus, Check, Mail, Lock } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 const BULLETS = [
-  "Calendario por profesional con estados claros",
+  "Agenda diaria y semanal con estados claros",
   "Historias clínicas con resumen por IA",
   "Portal de autogestión para pacientes",
 ];
@@ -59,7 +59,7 @@ export default function LoginPage() {
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary">
             <Plus className="h-[22px] w-[22px] text-white" strokeWidth={2.4} />
           </div>
-          <span className="text-[19px] font-extrabold">Clínica</span>
+          <span className="text-[19px] font-extrabold">Consultorio</span>
         </div>
 
         <div>
@@ -68,7 +68,7 @@ export default function LoginPage() {
           </h2>
           <p className="mt-5 max-w-[420px] text-[15px] font-medium leading-[1.6] text-slate-400">
             Turnos, pacientes e historias clínicas en un solo lugar. Diseñado
-            para profesionales, recepción y administración.
+            para organizar la práctica diaria de un profesional.
           </p>
           <div className="mt-[30px] flex flex-col gap-[13px]">
             {BULLETS.map((b) => (
@@ -89,7 +89,7 @@ export default function LoginPage() {
         </div>
 
         <div className="text-[12.5px] font-medium text-slate-500">
-          © 2026 Clínica · Gestión médica
+          © 2026 Consultorio · Gestión médica
         </div>
       </div>
 

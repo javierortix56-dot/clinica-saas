@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -26,6 +26,9 @@ export function ManualAppointmentSheet({
   treatmentTypes = [],
   initialPatientId,
   initialDate,
+  initialStartTime,
+  initialEndTime,
+  defaultDurationMinutes = 30,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -34,10 +37,29 @@ export function ManualAppointmentSheet({
   treatmentTypes?: TreatmentTypeOption[];
   initialPatientId?: string;
   initialDate?: string;
+  initialStartTime?: string;
+  initialEndTime?: string;
+  defaultDurationMinutes?: number;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [patientSearch, setPatientSearch] = useState("");
+  const [selectedPatientId, setSelectedPatientId] = useState(initialPatientId ?? "");
+  const [startTime, setStartTime] = useState("09:00");
+  const [endTime, setEndTime] = useState("09:30");
+
+  useEffect(() => {
+    if (!open) return;
+    setSelectedPatientId(initialPatientId ?? "");
+    setStartTime(initialStartTime ?? "09:00");
+    setEndTime(initialEndTime ?? addMinutes(initialStartTime ?? "09:00", defaultDurationMinutes));
+  }, [defaultDurationMinutes, initialEndTime, initialPatientId, initialStartTime, open]);
+
+  function addMinutes(time: string, minutes: number): string {
+    const [hours, mins] = time.split(":").map(Number);
+    const total = Math.min(23 * 60 + 59, hours * 60 + mins + minutes);
+    return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+  }
 
   const filteredPatients = patientSearch.trim()
     ? patients.filter((p) => {
@@ -65,7 +87,7 @@ export function ManualAppointmentSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="flex w-full flex-col overflow-y-auto p-0 sm:max-w-md">
         <SheetHeader className="border-b border-slate-200 p-6">
-          <SheetTitle>Nuevo turno manual</SheetTitle>
+          <SheetTitle>Nuevo turno</SheetTitle>
         </SheetHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-1 flex-col gap-5 p-6">
@@ -79,19 +101,24 @@ export function ManualAppointmentSheet({
               onChange={(e) => setPatientSearch(e.target.value)}
               className={INPUT}
             />
-            <select
-              name="patient_id"
-              required
-              size={5}
-              defaultValue={initialPatientId}
-              className="w-full rounded border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-slate-400"
-            >
-              {filteredPatients.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.full_name} {p.national_id ? `· DNI ${p.national_id}` : ""}
-                </option>
+            <input type="hidden" name="patient_id" value={selectedPatientId} />
+            <div className="max-h-48 overflow-y-auto rounded border border-slate-200 bg-white p-1">
+              {filteredPatients.slice(0, 8).map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setSelectedPatientId(p.id)}
+                  className={`flex w-full items-center justify-between rounded px-3 py-2 text-left text-sm ${selectedPatientId === p.id ? "bg-primary/10 font-semibold text-primary" : "hover:bg-slate-50"}`}
+                >
+                  <span>{p.full_name}</span>
+                  <span className="text-xs text-slate-400">{p.national_id ? `DNI ${p.national_id}` : ""}</span>
+                </button>
               ))}
-            </select>
+              {filteredPatients.length === 0 && (
+                <p className="px-3 py-4 text-center text-xs text-slate-400">No se encontraron pacientes.</p>
+              )}
+            </div>
+            {!selectedPatientId && <p className="text-xs font-medium text-amber-600">Selecciona un paciente para continuar.</p>}
           </div>
 
           {/* Profesional */}
@@ -126,7 +153,7 @@ export function ManualAppointmentSheet({
               type="text"
               name="reason"
               list="treatment-types-list"
-              placeholder="Valoración, Diseño de sonrisa…"
+              placeholder="Primera consulta, control, procedimiento…"
               maxLength={200}
               className={INPUT}
             />
@@ -137,6 +164,22 @@ export function ManualAppointmentSheet({
                 ))}
               </datalist>
             )}
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-slate-700">Duración habitual</label>
+            <div className="flex flex-wrap gap-2">
+              {Array.from(new Set([defaultDurationMinutes, 20, 30, 45, 60])).sort((a, b) => a - b).map((minutes) => (
+                <button
+                  key={minutes}
+                  type="button"
+                  onClick={() => setEndTime(addMinutes(startTime, minutes))}
+                  className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-primary/40 hover:text-primary"
+                >
+                  {minutes} min
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Fecha */}
@@ -156,16 +199,16 @@ export function ManualAppointmentSheet({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-slate-700">Inicio</label>
-              <input type="time" name="start_time" required defaultValue="09:00" className={INPUT} />
+              <input type="time" name="start_time" required value={startTime} onChange={(e) => setStartTime(e.target.value)} className={INPUT} />
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-slate-700">Fin</label>
-              <input type="time" name="end_time" required defaultValue="10:00" className={INPUT} />
+              <input type="time" name="end_time" required value={endTime} onChange={(e) => setEndTime(e.target.value)} className={INPUT} />
             </div>
           </div>
 
           <div className="mt-auto pt-4">
-            <Button type="submit" disabled={isPending} className="w-full">
+            <Button type="submit" disabled={isPending || !selectedPatientId} className="w-full">
               {isPending ? "Creando…" : "Crear turno"}
             </Button>
           </div>

@@ -29,6 +29,17 @@ const shortDateFormatter = new Intl.DateTimeFormat("es-AR", {
   timeZone: "America/Argentina/Buenos_Aires",
 });
 
+function calculateAge(birthDate: string): number {
+  const birth = new Date(`${birthDate}T12:00:00`);
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const birthdayPending =
+    today.getMonth() < birth.getMonth() ||
+    (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate());
+  if (birthdayPending) age -= 1;
+  return Math.max(0, age);
+}
+
 
 export default async function PatientDetailPage({
   params,
@@ -60,6 +71,7 @@ export default async function PatientDetailPage({
   if (!patient) {
     notFound();
   }
+  const patientAge = patient.birth_date ? calculateAge(patient.birth_date) : null;
 
   return (
     <div className="mx-auto max-w-[1000px]">
@@ -92,11 +104,31 @@ export default async function PatientDetailPage({
               <span className="text-[12.5px] font-medium text-muted-foreground sm:text-[13.5px]">
                 Activo desde {shortDateFormatter.format(new Date(patient.created_at))}
               </span>
+              {patientAge !== null && (
+                <><span className="h-1 w-1 rounded-full bg-slate-300" /><span className="text-[12.5px] font-semibold text-muted-foreground">{patientAge} años</span></>
+              )}
             </div>
           </div>
         </div>
         <EditPatientButton patient={patient} />
       </div>
+
+      {clinicalProfile && (clinicalProfile.allergies || clinicalProfile.medical_history) && (
+        <div className="mb-4 grid gap-3 rounded-card border border-amber-200 bg-amber-50/60 p-4 sm:grid-cols-2">
+          {clinicalProfile.allergies && (
+            <div>
+              <div className="text-[10.5px] font-bold uppercase tracking-[.06em] text-amber-700">Alertas y alergias</div>
+              <p className="mt-1 text-sm font-medium text-slate-800">{clinicalProfile.allergies}</p>
+            </div>
+          )}
+          {clinicalProfile.medical_history && (
+            <div>
+              <div className="text-[10.5px] font-bold uppercase tracking-[.06em] text-amber-700">Antecedentes relevantes</div>
+              <p className="mt-1 line-clamp-3 text-sm text-slate-700">{clinicalProfile.medical_history}</p>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="mb-4 grid grid-cols-2 gap-x-5 gap-y-[14px] rounded-card border border-border bg-white p-4 shadow-card-soft sm:mb-5 sm:gap-x-10 sm:gap-y-5 sm:px-6 sm:py-[22px]">
         <div>

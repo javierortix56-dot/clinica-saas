@@ -27,7 +27,7 @@ export function ClinicSettingsForm({ settings }: { settings: ClinicSettings }) {
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-slate-700">Nombre de la clínica</label>
+          <label className="text-sm font-medium text-slate-700">Nombre del consultorio</label>
           <input
             name="name"
             required
@@ -35,6 +35,31 @@ export function ClinicSettingsForm({ settings }: { settings: ClinicSettings }) {
             className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400"
           />
         </div>
+
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium text-slate-700">Teléfono de contacto</label>
+          <input name="contact_phone" defaultValue={settings.contact_phone ?? ""} placeholder="+54 11 ..." className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400" />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium text-slate-700">Dirección principal</label>
+          <input name="address" defaultValue={settings.address ?? ""} placeholder="Calle, número, localidad" className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400" />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium text-slate-700">Duración predeterminada</label>
+          <select name="default_appointment_minutes" defaultValue={settings.default_appointment_minutes} className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400">
+            {[20, 30, 45, 60, 90].map((minutes) => <option key={minutes} value={minutes}>{minutes} minutos</option>)}
+          </select>
+        </div>
+
+        <label className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <input type="checkbox" name="auto_confirm_requests" defaultChecked={settings.auto_confirm_requests} className="mt-1" />
+          <span>
+            <span className="block text-sm font-semibold text-slate-700">Confirmar automáticamente solicitudes válidas</span>
+            <span className="mt-1 block text-xs text-slate-500">Las reservas creadas por WhatsApp se confirman si el horario sigue disponible.</span>
+          </span>
+        </label>
 
         <div className="space-y-1.5">
           <label className="text-sm font-medium text-slate-700">Zona horaria</label>

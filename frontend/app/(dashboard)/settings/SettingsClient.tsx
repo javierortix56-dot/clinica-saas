@@ -41,15 +41,14 @@ export function SettingsClient({
 
   return (
     <>
-      {/* Sección A — Tipos de tratamiento */}
+      {/* Sección A — Tipos de consulta y procedimientos */}
       <section className="flex flex-col gap-4">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-lg font-semibold tracking-tight">Tipos de tratamiento</h2>
+            <h2 className="text-lg font-semibold tracking-tight">Tipos de consulta y procedimientos</h2>
             <p className="mt-1 text-sm text-muted-foreground max-w-prose">
-              Los tipos de tratamiento parametrizan las fases del motor de scheduling. Cada fase
-              define duración, tipo (clínica / laboratorio) y días de espera (cooldown) antes de
-              agendar la fase siguiente.
+              Define las consultas y procedimientos habituales. Las fases sirven para procesos
+              que requieren varias visitas y pueden dejarse para una configuración avanzada.
             </p>
           </div>
           <Button size="sm" onClick={openCreate} className="shrink-0">
@@ -59,7 +58,7 @@ export function SettingsClient({
 
         {treatmentTypes.length === 0 ? (
           <p className="rounded-lg border bg-card p-6 text-sm text-muted-foreground">
-            No hay tipos de tratamiento definidos.
+            No hay tipos de consulta definidos. Podés comenzar con Primera consulta y Control.
           </p>
         ) : (
           <div className="rounded-lg border">
@@ -101,10 +100,10 @@ export function SettingsClient({
 
       <hr className="border-slate-200" />
 
-      {/* Sección B — Configuración de la clínica */}
+      {/* Sección B — Configuración del consultorio */}
       <section className="flex flex-col gap-4">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight">Configuración de la clínica</h2>
+          <h2 className="text-lg font-semibold tracking-tight">Configuración del consultorio</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Datos generales y parámetros del motor de agendamiento.
           </p>

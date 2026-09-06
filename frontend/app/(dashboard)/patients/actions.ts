@@ -24,6 +24,7 @@ export async function upsertPatient(
   const national_id = (formData.get("national_id") as string)?.trim();
   const phone = (formData.get("phone") as string)?.trim() || null;
   const email = (formData.get("email") as string)?.trim() || null;
+  const birth_date = (formData.get("birth_date") as string)?.trim() || null;
 
   if (!full_name || !national_id) {
     return { error: "Nombre y DNI son obligatorios." };
@@ -34,7 +35,7 @@ export async function upsertPatient(
   if (id) {
     const { error } = await supabase
       .from("patients")
-      .update({ full_name, national_id, phone, email })
+      .update({ full_name, national_id, phone, email, birth_date })
       .eq("id", id);
     if (error) return { error: `No se pudo actualizar: ${error.message}` };
   } else {
@@ -42,7 +43,7 @@ export async function upsertPatient(
     if (!clinicId) return { error: "No se pudo determinar la clínica." };
     const { error } = await supabase
       .from("patients")
-      .insert({ full_name, national_id, phone, email, clinic_id: clinicId });
+      .insert({ full_name, national_id, phone, email, birth_date, clinic_id: clinicId });
     if (error) return { error: `No se pudo crear el paciente: ${error.message}` };
   }
 

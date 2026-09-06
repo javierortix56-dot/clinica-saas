@@ -54,7 +54,7 @@ export default async function PortalTurnosPage() {
   }
 
   const supabase = createClient();
-  const [{ data, error }, { data: patient }] = await Promise.all([
+  const [{ data, error }, { data: patient }, { data: clinic }] = await Promise.all([
     supabase
       .from("appointments")
       .select(
@@ -70,6 +70,10 @@ export default async function PortalTurnosPage() {
       .select("full_name")
       .eq("id", patientId)
       .maybeSingle(),
+    supabase
+      .from("clinics")
+      .select("name, contact_phone, address")
+      .maybeSingle(),
   ]);
 
   if (error) {
@@ -79,6 +83,8 @@ export default async function PortalTurnosPage() {
   const appointments = (data ?? []) as unknown as ApptRow[];
   const firstName = (patient?.full_name ?? "").trim().split(/\s+/)[0] || "";
   const now = new Date();
+  const contactPhone = clinic?.contact_phone?.trim() || null;
+  const whatsappNumber = contactPhone?.replace(/\D/g, "") || null;
 
   // Próximo turno: el más cercano en el futuro que esté propuesto o confirmado.
   const upcoming = appointments
@@ -99,7 +105,7 @@ export default async function PortalTurnosPage() {
         Hola{firstName ? `, ${firstName}` : ""}
       </h1>
       <p className="mb-[26px] mt-[11px] text-[15px] font-medium text-muted-foreground">
-        Gestioná tus turnos y consultá tus indicaciones.
+        Gestioná tus turnos y consultá la información de tu atención.
       </p>
 
       {/* Hero próximo turno */}
@@ -118,6 +124,9 @@ export default async function PortalTurnosPage() {
                 .filter(Boolean)
                 .join(" · ") || "Turno agendado"}
             </div>
+            {clinic?.address && (
+              <div className="mt-2 text-[13px] font-medium text-slate-300">{clinic.address}</div>
+            )}
           </div>
         </div>
       )}
@@ -181,16 +190,26 @@ export default async function PortalTurnosPage() {
               ¿Necesitás un turno?
             </div>
             <div className="mt-2 text-[13px] font-medium leading-[1.4] text-white/85">
-              Comunicate con la clínica para coordinar tu próxima consulta.
+              Comunicate con el consultorio para coordinar tu próxima consulta.
             </div>
+            {whatsappNumber && (
+              <a
+                href={`https://wa.me/${whatsappNumber}`}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-4 inline-flex rounded-lg bg-white px-3 py-2 text-xs font-bold text-primary"
+              >
+                Contactar por WhatsApp
+              </a>
+            )}
           </div>
           <div className="rounded-[18px] border border-border bg-white px-[22px] py-5 shadow-card-soft">
             <h3 className="mb-[14px] text-[15px] font-bold">
-              Indicaciones vigentes
+              Indicaciones de tu atención
             </h3>
             <div className="text-[13px] font-medium leading-[1.55] text-slate-600">
-              Seguí las indicaciones de tu profesional. Ante cualquier molestia,
-              contactá a la clínica.
+              Las indicaciones específicas se informan durante la consulta. Ante
+              cualquier duda o molestia, contactá al consultorio.
             </div>
           </div>
         </div>

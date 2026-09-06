@@ -119,7 +119,7 @@ export function TreatmentTypeSheet({
       >
         <SheetHeader className="border-b border-slate-200 p-6">
           <SheetTitle>
-            {mode === "create" ? "Nuevo tipo de tratamiento" : "Editar tipo de tratamiento"}
+            {mode === "create" ? "Nuevo tipo de consulta" : "Editar tipo de consulta"}
           </SheetTitle>
         </SheetHeader>
 
@@ -147,7 +147,7 @@ export function TreatmentTypeSheet({
               name="description"
               rows={2}
               defaultValue={type?.description ?? ""}
-              placeholder="Descripción breve del tratamiento…"
+              placeholder="Descripción breve de la consulta o procedimiento…"
               className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400"
             />
           </div>
