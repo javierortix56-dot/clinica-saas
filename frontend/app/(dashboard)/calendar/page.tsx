@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { CheckCircle2, Clock, Activity, ChevronLeft, ChevronRight, CalendarDays, List } from "lucide-react";
 
 import {
@@ -13,6 +14,8 @@ import {
   getClinicSettings,
 } from "@/lib/supabase/server";
 import { CalendarGrid } from "./CalendarGrid";
+import { RememberView } from "./RememberView";
+import { CALENDAR_VIEW_COOKIE, parseCalendarView } from "./view-preference";
 import {
   addDays,
   buildDaySummary,
@@ -44,7 +47,13 @@ export default async function CalendarPage({
         return isNaN(d.getTime()) ? currentMonday : getMondayOf(d);
       })()
     : currentMonday;
-  const view = searchParams.view === "week" ? "week" : "day";
+  // Vista: el parámetro explícito manda; si no, la última elección guardada en
+  // cookie; si tampoco, "day". Así el enlace pelado del menú (/calendar) no
+  // descarta la preferencia del usuario en cada visita.
+  const view =
+    parseCalendarView(typeof searchParams.view === "string" ? searchParams.view : null) ??
+    parseCalendarView(cookies().get(CALENDAR_VIEW_COOKIE)?.value) ??
+    "day";
   const displayedIsCurrentWeek = toISODate(displayedMonday) === toISODate(currentMonday);
 
   const { role } = await getSessionAuth();
@@ -87,6 +96,7 @@ export default async function CalendarPage({
 
   return (
     <div className="mx-auto max-w-[1240px]">
+      <RememberView view={view} />
       {/* Header — título + nav en la misma fila */}
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="min-w-0">
