@@ -1,0 +1,15 @@
+# Normaliza los finales de línea: LF en el repositorio, siempre.
+# Sin esto, un commit hecho desde Windows reescribe archivos enteros a CRLF y
+# convierte cada diff y cada `git blame` en ruido (ver commit cff3e34: 10.441
+# líneas tocadas para un cambio real de 522).
+* text=auto eol=lf
+
+# Binarios — nunca convertir.
+*.ico  binary
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.pdf  binary
+*.woff binary
+*.woff2 binary
