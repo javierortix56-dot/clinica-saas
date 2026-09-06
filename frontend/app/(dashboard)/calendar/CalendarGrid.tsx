@@ -470,13 +470,34 @@ export function CalendarGrid({
                 {/* Celdas de cada día */}
                 {weekDays.map((day, di) => {
                   const shaded = hasAvailability && !availableCells.has(`${di}-${si}`);
+                  // Solo las celdas realmente reservables son interactivas. Las
+                  // demás se dibujan como <div> para no meter cientos de
+                  // paradas de tabulación inútiles (6 días x 24 franjas).
+                  const canBook = canCreateAppointment && !shaded;
+                  const cellStyle = {
+                    gridRow: si + 2,
+                    gridColumn: di + 2,
+                    ...(shaded
+                      ? {
+                          backgroundImage:
+                            "repeating-linear-gradient(45deg, rgba(100,116,139,0.09), rgba(100,116,139,0.09) 5px, transparent 5px, transparent 10px)",
+                        }
+                      : null),
+                  };
+                  const cellClass = `border-b border-l border-[#eef2f7] ${
+                    isToday(day) ? "bg-primary/[.03]" : shaded ? "bg-slate-50/40" : ""
+                  }`;
+
+                  if (!canBook) {
+                    return <div key={di} style={cellStyle} className={cellClass} />;
+                  }
+
                   return (
                     <button
                       key={di}
                       type="button"
                       aria-label={`Crear turno el ${formatDayDate(day)} a las ${formatSlot(slot)}`}
                       onClick={() => {
-                        if (!canCreateAppointment || shaded) return;
                         const startMinutes = slot.hour * 60 + slot.minute;
                         const endMinutes = startMinutes + defaultDurationMinutes;
                         setPrefill({
@@ -486,19 +507,8 @@ export function CalendarGrid({
                         });
                         setNewApptOpen(true);
                       }}
-                      style={{
-                        gridRow: si + 2,
-                        gridColumn: di + 2,
-                        ...(shaded
-                          ? {
-                              backgroundImage:
-                                "repeating-linear-gradient(45deg, rgba(100,116,139,0.09), rgba(100,116,139,0.09) 5px, transparent 5px, transparent 10px)",
-                            }
-                          : null),
-                      }}
-                      className={`border-b border-l border-[#eef2f7] text-left ${canCreateAppointment && !shaded ? "cursor-pointer hover:bg-primary/[.08]" : "cursor-default"} ${
-                        isToday(day) ? "bg-primary/[.03]" : shaded ? "bg-slate-50/40" : ""
-                      }`}
+                      style={cellStyle}
+                      className={`${cellClass} cursor-pointer text-left hover:bg-primary/[.08]`}
                     />
                   );
                 })}
