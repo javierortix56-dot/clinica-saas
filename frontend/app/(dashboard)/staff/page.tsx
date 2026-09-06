@@ -17,9 +17,12 @@ export default async function StaffPage() {
   return (
     <div className="mx-auto flex max-w-[1100px] flex-col gap-6">
       <div>
-        <h1 className="text-[27px] font-extrabold tracking-[-.02em]">Horarios e integraciones</h1>
+        <h1 className="text-[27px] font-extrabold tracking-[-.02em]">
+          Equipo y horarios
+        </h1>
         <p className="mt-[9px] text-[14px] font-medium text-muted-foreground">
-          Disponibilidad del consultorio y sincronización del calendario.
+          Miembros del consultorio, disponibilidad semanal y sincronización con
+          Google Calendar.
         </p>
       </div>
 

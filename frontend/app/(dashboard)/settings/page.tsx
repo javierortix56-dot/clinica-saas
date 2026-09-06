@@ -84,10 +84,18 @@ export default async function SettingsPage() {
       {isOwner && (
         <>
           <section className="rounded-card border border-border bg-white p-5 shadow-card-soft">
-            <h2 className="text-lg font-semibold tracking-tight">Horarios e integraciones</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Configura tu disponibilidad y la conexión con Google Calendar.</p>
-            <Link href="/staff" className="mt-4 inline-flex rounded-lg bg-primary px-4 py-2 text-sm font-bold text-white">
-              Configurar agenda personal
+            <h2 className="text-lg font-semibold tracking-tight">
+              Equipo y horarios
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Disponibilidad semanal, miembros del consultorio y conexión con
+              Google Calendar.
+            </p>
+            <Link
+              href="/staff"
+              className="mt-4 inline-flex rounded-lg bg-primary px-4 py-2 text-sm font-bold text-white transition hover:brightness-[1.07]"
+            >
+              Configurar horarios
             </Link>
           </section>
 
