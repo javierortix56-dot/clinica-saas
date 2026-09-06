@@ -7,7 +7,6 @@ import {
   Calendar,
   Users,
   CheckCircle2,
-  UserCog,
   Settings,
   LogOut,
   Plus,
@@ -45,11 +44,11 @@ export function SidebarContent({
   const pathname = usePathname();
 
   const principal: NavItem[] = [
-    { href: "/calendar", label: "Calendario", icon: Calendar },
+    { href: "/calendar", label: "Mi agenda", icon: Calendar },
     { href: "/patients", label: "Pacientes", icon: Users },
     {
       href: "/approvals",
-      label: "Aprobaciones",
+      label: "Pendientes",
       icon: CheckCircle2,
       badge: approvalsCount > 0 ? approvalsCount : undefined,
     },
@@ -58,9 +57,8 @@ export function SidebarContent({
   // "Equipo" es solo del dueño; "Ajustes" lo ve también el doctor (su sección de
   // campos de la historia clínica vive ahí).
   const gestion: NavItem[] = [
-    ...(isOwner ? [{ href: "/staff", label: "Equipo", icon: UserCog }] : []),
     ...(isOwner || isDoctor
-      ? [{ href: "/settings", label: "Ajustes", icon: Settings }]
+      ? [{ href: "/settings", label: "Mi consultorio", icon: Settings }]
       : []),
   ];
 
@@ -101,10 +99,10 @@ export function SidebarContent({
         </div>
         <div>
           <div className="text-[16px] font-extrabold leading-none tracking-tight text-white">
-            Clínica
+            Consultorio
           </div>
           <div className="mt-[3px] text-[11px] font-medium leading-none text-slate-500">
-            Gestión médica
+            Mi práctica médica
           </div>
         </div>
       </div>

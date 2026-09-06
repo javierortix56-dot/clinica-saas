@@ -569,17 +569,26 @@ function SheetReady({
           </p>
         )}
         <Link
-          href={`/patients/${appt.patient_id}`}
+          href={`/patients/${appt.patient_id}?tab=historia`}
           onClick={onClose}
           className="inline-block text-xs text-slate-500 underline underline-offset-2 hover:text-slate-800"
         >
           Ver historia clínica →
         </Link>
+        {(appt.status === "confirmed" || appt.status === "in_progress") && (
+          <Link
+            href={`/patients/${appt.patient_id}?tab=historia&nueva=1&turno=${appt.id}`}
+            onClick={onClose}
+            className="mt-2 inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-bold text-white shadow-sm hover:brightness-105"
+          >
+            Atender consulta
+          </Link>
+        )}
       </SheetHeader>
 
       <div className="space-y-6 p-6">
         {/* Fases del tratamiento */}
-        <section className="space-y-3">
+        {phaseViews.length > 0 && <section className="space-y-3">
           <div className="flex items-center justify-between gap-2">
             <SectionTitle>Fases del tratamiento</SectionTitle>
             {treatmentName && (
@@ -587,7 +596,7 @@ function SheetReady({
             )}
           </div>
           <PhaseTimeline phases={phaseViews} has3D={has3D} />
-        </section>
+        </section>}
 
         {/* Próxima fase disponible */}
         {nextPhase && nextAvailableFrom && (

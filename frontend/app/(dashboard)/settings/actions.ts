@@ -36,6 +36,10 @@ export async function updateClinicSettings(
   const { supabase, clinicId } = result;
 
   const name = (formData.get("name") as string)?.trim();
+  const contact_phone = (formData.get("contact_phone") as string)?.trim() || null;
+  const address = (formData.get("address") as string)?.trim() || null;
+  const default_appointment_minutes = Number(formData.get("default_appointment_minutes") || 30);
+  const auto_confirm_requests = formData.get("auto_confirm_requests") === "on";
   const timezone = (formData.get("timezone") as string)?.trim();
   const prime_time_start = formData.get("prime_time_start") as string;
   const prime_time_end = formData.get("prime_time_end") as string;
@@ -51,12 +55,15 @@ export async function updateClinicSettings(
   if (!name || !timezone || !prime_time_start || !prime_time_end || !currency) {
     return { error: "Todos los campos obligatorios deben estar completos." };
   }
+  if (!Number.isInteger(default_appointment_minutes) || default_appointment_minutes < 10 || default_appointment_minutes > 240) {
+    return { error: "La duración predeterminada debe estar entre 10 y 240 minutos." };
+  }
 
   // WHERE explícito por id (del JWT). PostgREST rechaza UPDATE sin filtro aunque
   // RLS ya restrinja a la propia clínica ("UPDATE requires a WHERE clause").
   const { error } = await supabase
     .from("clinics")
-    .update({ name, timezone, prime_time_start, prime_time_end, currency, valuation_fee })
+    .update({ name, contact_phone, address, default_appointment_minutes, auto_confirm_requests, timezone, prime_time_start, prime_time_end, currency, valuation_fee })
     .eq("id", clinicId);
 
   if (error) return { error: `No se pudo guardar: ${error.message}` };

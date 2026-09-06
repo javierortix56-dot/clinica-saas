@@ -492,8 +492,12 @@ export type Database = {
       }
       clinics: {
         Row: {
+          address: string | null
+          auto_confirm_requests: boolean
           created_at: string
+          contact_phone: string | null
           currency: string
+          default_appointment_minutes: number
           deleted_at: string | null
           id: string
           name: string
@@ -504,8 +508,12 @@ export type Database = {
           valuation_fee: number | null
         }
         Insert: {
+          address?: string | null
+          auto_confirm_requests?: boolean
           created_at?: string
+          contact_phone?: string | null
           currency?: string
+          default_appointment_minutes?: number
           deleted_at?: string | null
           id?: string
           name: string
@@ -516,8 +524,12 @@ export type Database = {
           valuation_fee?: number | null
         }
         Update: {
+          address?: string | null
+          auto_confirm_requests?: boolean
           created_at?: string
+          contact_phone?: string | null
           currency?: string
+          default_appointment_minutes?: number
           deleted_at?: string | null
           id?: string
           name?: string

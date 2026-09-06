@@ -11,12 +11,15 @@ import {
 } from '../../ai/tools/args.util';
 import { mapDbError } from '../../ai/tools/db-error.mapper';
 import { SchedulingService } from '../scheduling.service';
+import { GoogleCalendarEventService } from '../../google-calendar/google-calendar-event.service';
+import { ModuleRef } from '@nestjs/core';
 
 /**
  * `agendar_turno` (W) — blueprint Paso 5 §5.H.
  * Resuelve treatment_id (C2) + fase (C3), calcula end_at con duración base (C1,
  * sin modificadores), PRE-VALIDA las reglas de agenda para producir el error_code
- * preciso, y crea el turno en estado `proposed` / origin `whatsapp_bot`. Los
+ * preciso, y crea el turno como propuesto o confirmado según la configuración
+ * del consultorio, con origin `whatsapp_bot`. Los
  * triggers quedan como red de seguridad ante carreras (→ OVERLAP / SCHEDULING_CONFLICT).
  */
 @Injectable()
@@ -27,6 +30,7 @@ export class AgendarTurnoHandler implements ToolHandler {
   constructor(
     private readonly prisma: PrismaService,
     private readonly scheduling: SchedulingService,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   async execute(
@@ -155,7 +159,15 @@ export class AgendarTurnoHandler implements ToolHandler {
         );
       }
 
-      // --- INSERT (status proposed, origin whatsapp_bot) en runAsBot ---
+      const clinicConfig = await this.prisma.clinics.findUnique({
+        where: { id: ctx.clinicId },
+        select: { auto_confirm_requests: true },
+      });
+      const appointmentStatus = clinicConfig?.auto_confirm_requests
+        ? 'confirmed'
+        : 'proposed';
+
+      // --- INSERT (estado configurable, origin whatsapp_bot) en runAsBot ---
       const appt = await this.prisma.runAsBot(ctx.actor.actorId, (tx) =>
         tx.appointments.create({
           data: {
@@ -166,12 +178,27 @@ export class AgendarTurnoHandler implements ToolHandler {
             professional_id: prof.id,
             start_at: startAt,
             end_at: endAt,
-            status: 'proposed',
+            status: appointmentStatus,
             origin: 'whatsapp_bot',
           },
           select: { id: true, status: true, start_at: true, end_at: true },
         }),
       );
+
+      if (appt.status === 'confirmed') {
+        try {
+          const gcal = this.moduleRef.get(GoogleCalendarEventService, {
+            strict: false,
+          });
+          void gcal.upsertEvent(appt.id).catch((err: unknown) =>
+            this.logger.error(
+              `GCal upsert falló para turno auto-confirmado ${appt.id}: ${String(err)}`,
+            ),
+          );
+        } catch {
+          // El módulo de calendario es opcional en pruebas y despliegues mínimos.
+        }
+      }
 
       return ok({
         appointment_id: appt.id,

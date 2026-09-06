@@ -155,9 +155,11 @@ function AvailabilityEditor({
 function GoogleCalendarSection({
   professionalId,
   connected,
+  lastSyncedAt,
 }: {
   professionalId: string;
   connected: boolean;
+  lastSyncedAt: string | null;
 }) {
   const router = useRouter();
   const [isConnecting, startConnecting] = useTransition();
@@ -226,6 +228,13 @@ function GoogleCalendarSection({
           >
             {isConnecting ? "Redirigiendo…" : "Conectar"}
           </Button>
+        )}
+        {connected && (
+          <p className="mt-2 text-xs text-slate-400">
+            {lastSyncedAt
+              ? `Última sincronización: ${new Intl.DateTimeFormat("es-AR", { dateStyle: "short", timeStyle: "short" }).format(new Date(lastSyncedAt))}`
+              : "Conectado. La primera sincronización está pendiente."}
+          </p>
         )}
       </div>
       <p className="text-xs text-slate-400">
@@ -549,6 +558,7 @@ export function StaffSheet({
             <GoogleCalendarSection
               professionalId={member.professional_id}
               connected={member.gcal_connected}
+              lastSyncedAt={member.gcal_last_synced_at}
             />
           )}
 

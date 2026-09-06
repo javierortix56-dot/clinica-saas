@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 
 import {
   getSessionAuth,
@@ -62,10 +63,10 @@ export default async function SettingsPage() {
   return (
     <div className="mx-auto flex max-w-[1100px] flex-col gap-10">
       <div>
-        <h1 className="text-[27px] font-extrabold tracking-[-.02em]">Ajustes</h1>
+        <h1 className="text-[27px] font-extrabold tracking-[-.02em]">Mi consultorio</h1>
         <p className="mt-[9px] text-[14px] font-medium text-muted-foreground">
           {isOwner
-            ? "Configuración de la clínica y parámetros clínicos."
+            ? "Horarios, tipos de consulta y configuración de tu práctica."
             : "Configuración de tus campos de la historia clínica."}
         </p>
       </div>
@@ -82,6 +83,14 @@ export default async function SettingsPage() {
       {/* Config de la clínica y especialidades — exclusivo del dueño. */}
       {isOwner && (
         <>
+          <section className="rounded-card border border-border bg-white p-5 shadow-card-soft">
+            <h2 className="text-lg font-semibold tracking-tight">Horarios e integraciones</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Configura tu disponibilidad y la conexión con Google Calendar.</p>
+            <Link href="/staff" className="mt-4 inline-flex rounded-lg bg-primary px-4 py-2 text-sm font-bold text-white">
+              Configurar agenda personal
+            </Link>
+          </section>
+
           {isDoctor && noteConfig && <hr className="border-slate-200" />}
 
           <SettingsClient

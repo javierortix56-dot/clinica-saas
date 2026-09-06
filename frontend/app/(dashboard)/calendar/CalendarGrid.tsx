@@ -118,6 +118,7 @@ function NowIndicator({ weekDays }: { weekDays: Date[] }) {
 }
 
 export function CalendarGrid({
+  view,
   weekDays: weekDayStrs,
   appointments,
   blocks = [],
@@ -126,7 +127,9 @@ export function CalendarGrid({
   patients,
   professionals,
   treatmentTypes = [],
+  defaultDurationMinutes = 30,
 }: {
+  view: "day" | "week";
   weekDays: string[];
   appointments: WeeklyAppointment[];
   blocks?: WeeklyBlock[];
@@ -135,10 +138,16 @@ export function CalendarGrid({
   patients: Pick<Patient, "id" | "full_name" | "national_id">[];
   professionals: ProfessionalForScheduling[];
   treatmentTypes?: TreatmentTypeOption[];
+  defaultDurationMinutes?: number;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newApptOpen, setNewApptOpen] = useState(false);
-  const [prefill, setPrefill] = useState<{ patientId?: string; date?: string }>({});
+  const [prefill, setPrefill] = useState<{
+    patientId?: string;
+    date?: string;
+    startTime?: string;
+    endTime?: string;
+  }>({});
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const weekDays = weekDayStrs.map(parseISODate);
 
@@ -278,7 +287,7 @@ export function CalendarGrid({
           animate-fade-up suaviza el cambio (sin salto duro entre semanas). */}
       <div
         key={`m-${weekDayStrs[0]}`}
-        className="md:hidden animate-fade-up overflow-hidden rounded-card border border-border bg-white shadow-card"
+        className={`${view === "day" ? "block" : "md:hidden"} animate-fade-up overflow-hidden rounded-card border border-border bg-white shadow-card`}
       >
         {/* Selector de día */}
         <div className="flex items-center border-b border-border bg-[#fbfcfe]">
@@ -392,7 +401,7 @@ export function CalendarGrid({
       {/* ── Vista DESKTOP: grilla con filas de altura fija ─────────────────── */}
       <div
         key={`d-${weekDayStrs[0]}`}
-        className="hidden md:block animate-fade-up overflow-hidden rounded-card border border-border bg-white shadow-card"
+        className={`${view === "week" ? "hidden md:block" : "hidden"} animate-fade-up overflow-hidden rounded-card border border-border bg-white shadow-card`}
       >
         <div className="overflow-x-auto">
           <div
@@ -462,8 +471,21 @@ export function CalendarGrid({
                 {weekDays.map((day, di) => {
                   const shaded = hasAvailability && !availableCells.has(`${di}-${si}`);
                   return (
-                    <div
+                    <button
                       key={di}
+                      type="button"
+                      aria-label={`Crear turno el ${formatDayDate(day)} a las ${formatSlot(slot)}`}
+                      onClick={() => {
+                        if (!canCreateAppointment || shaded) return;
+                        const startMinutes = slot.hour * 60 + slot.minute;
+                        const endMinutes = startMinutes + defaultDurationMinutes;
+                        setPrefill({
+                          date: weekDayStrs[di],
+                          startTime: `${String(slot.hour).padStart(2, "0")}:${String(slot.minute).padStart(2, "0")}`,
+                          endTime: `${String(Math.floor(endMinutes / 60)).padStart(2, "0")}:${String(endMinutes % 60).padStart(2, "0")}`,
+                        });
+                        setNewApptOpen(true);
+                      }}
                       style={{
                         gridRow: si + 2,
                         gridColumn: di + 2,
@@ -474,7 +496,7 @@ export function CalendarGrid({
                             }
                           : null),
                       }}
-                      className={`border-b border-l border-[#eef2f7] ${
+                      className={`border-b border-l border-[#eef2f7] text-left ${canCreateAppointment && !shaded ? "cursor-pointer hover:bg-primary/[.08]" : "cursor-default"} ${
                         isToday(day) ? "bg-primary/[.03]" : shaded ? "bg-slate-50/40" : ""
                       }`}
                     />
@@ -623,6 +645,9 @@ export function CalendarGrid({
         treatmentTypes={treatmentTypes}
         initialPatientId={prefill.patientId}
         initialDate={prefill.date}
+        initialStartTime={prefill.startTime}
+        initialEndTime={prefill.endTime}
+        defaultDurationMinutes={defaultDurationMinutes}
       />
     </>
   );

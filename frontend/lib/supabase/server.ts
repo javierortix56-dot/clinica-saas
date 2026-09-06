@@ -161,7 +161,7 @@ export async function getProposedAppointments(): Promise<ProposedAppointment[]> 
 
 // Columnas que seleccionamos de `patients`. La columna real es `national_id`
 // (el spec la llamaba `document_id` — usamos el nombre real de la BD).
-const PATIENT_SELECT = "id, clinic_id, full_name, phone, email, national_id, created_at";
+const PATIENT_SELECT = "id, clinic_id, full_name, phone, email, birth_date, national_id, created_at";
 
 function rowToPatient(row: Record<string, unknown>): Patient {
   return {
@@ -170,6 +170,7 @@ function rowToPatient(row: Record<string, unknown>): Patient {
     full_name: row.full_name as string,
     phone: (row.phone as string | null) ?? null,
     email: (row.email as string | null) ?? null,
+    birth_date: (row.birth_date as string | null) ?? null,
     national_id: row.national_id as string,
     created_at: row.created_at as string,
   };
@@ -195,6 +196,7 @@ export async function getPatients(): Promise<Patient[]> {
 // Tipo local para la vista de calendario — específico de esta vista, no en @clinica/shared.
 export interface WeeklyAppointment {
   id: string;
+  patient_id: string;
   start_at: string;
   end_at: string;
   patient_name: string;
@@ -242,6 +244,7 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
 
   type ApptRow = {
     id: string;
+    patient_id: string;
     start_at: string;
     end_at: string;
     reason: string | null;
@@ -260,7 +263,7 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
   let query = supabase
     .from("appointments")
     .select(
-      `id, start_at, end_at, reason,
+      `id, patient_id, start_at, end_at, reason,
        patients ( full_name, birth_date ),
        treatments ( treatment_types ( name ) ),
        treatment_phase_templates ( name ),
@@ -286,6 +289,7 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
     const activeProf = sm && sm.is_active && sm.deleted_at === null ? sm.full_name : null;
     return {
       id: row.id,
+      patient_id: row.patient_id,
       start_at: row.start_at,
       end_at: row.end_at,
       patient_name: row.patients?.full_name ?? "Paciente",
@@ -460,6 +464,7 @@ export interface StaffMember {
   // weekday 1=Lun … 6=Sáb; time como "HH:MM:SS"
   availability: { weekday: number; start_time: string; end_time: string }[];
   gcal_connected: boolean;
+  gcal_last_synced_at: string | null;
 }
 
 interface StaffRow {
@@ -477,7 +482,7 @@ interface StaffRow {
       start_time: string;
       end_time: string;
     }[];
-    professional_calendar_links: { is_active: boolean } | null;
+    professional_calendar_links: { is_active: boolean; last_synced_at: string | null } | null;
   } | null;
 }
 
@@ -494,7 +499,7 @@ export async function getStaffMembers(): Promise<StaffMember[]> {
         professionals (
           id, license_number,
           professional_availability ( weekday, start_time, end_time ),
-          professional_calendar_links ( is_active )
+          professional_calendar_links ( is_active, last_synced_at )
         )
       `
     )
@@ -519,6 +524,8 @@ export async function getStaffMembers(): Promise<StaffMember[]> {
     ),
     gcal_connected:
       row.professionals?.professional_calendar_links?.is_active ?? false,
+    gcal_last_synced_at:
+      row.professionals?.professional_calendar_links?.last_synced_at ?? null,
   }));
 }
 
@@ -840,6 +847,10 @@ export async function getPatientTreatments(patientId: string): Promise<PatientTr
 export interface ClinicSettings {
   id: string;
   name: string;
+  contact_phone: string | null;
+  address: string | null;
+  default_appointment_minutes: number;
+  auto_confirm_requests: boolean;
   timezone: string;
   prime_time_start: string;
   prime_time_end: string;
@@ -851,7 +862,7 @@ export async function getClinicSettings(): Promise<ClinicSettings | null> {
   const supabase = createClient();
   const { data, error } = await supabase
     .from("clinics")
-    .select("id, name, timezone, prime_time_start, prime_time_end, currency, valuation_fee")
+    .select("id, name, contact_phone, address, default_appointment_minutes, auto_confirm_requests, timezone, prime_time_start, prime_time_end, currency, valuation_fee")
     .single();
   if (error) {
     if (error.code === "PGRST116") return null;
@@ -861,6 +872,10 @@ export async function getClinicSettings(): Promise<ClinicSettings | null> {
   return {
     id: row.id as string,
     name: row.name as string,
+    contact_phone: (row.contact_phone as string | null) ?? null,
+    address: (row.address as string | null) ?? null,
+    default_appointment_minutes: (row.default_appointment_minutes as number | null) ?? 30,
+    auto_confirm_requests: (row.auto_confirm_requests as boolean | null) ?? false,
     timezone: row.timezone as string,
     prime_time_start: ((row.prime_time_start as string) ?? "17:00:00").slice(0, 5),
     prime_time_end: ((row.prime_time_end as string) ?? "20:00:00").slice(0, 5),

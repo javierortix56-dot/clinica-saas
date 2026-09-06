@@ -14,7 +14,7 @@ export default function PortalLayout({
             <Plus className="h-[18px] w-[18px] text-white" strokeWidth={2.4} />
           </div>
           <span className="text-[17px] font-extrabold tracking-tight">
-            {process.env.NEXT_PUBLIC_CLINIC_NAME ?? "Clínica"}
+            {process.env.NEXT_PUBLIC_CLINIC_NAME ?? "Consultorio"}
           </span>
         </div>
         <Link

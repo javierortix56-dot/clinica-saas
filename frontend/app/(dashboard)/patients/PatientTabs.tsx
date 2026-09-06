@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import Link from "next/link";
 import {
@@ -14,6 +14,7 @@ import {
   CalendarPlus,
   CalendarDays,
   ClipboardList,
+  FileText,
 } from "lucide-react";
 
 import type {
@@ -36,6 +37,7 @@ import {
   suggestDiagnosis,
   type DictationResult,
 } from "./actions";
+import { updateAppointmentStatus } from "../calendar/actions";
 import {
   FIELD_DEFS,
   VITAL_DEFS,
@@ -319,9 +321,14 @@ function NoteForm({
   canScheduleAppointment?: boolean;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const submitIntentRef = useRef<"save" | "finish" | "schedule">("save");
   const cameraRef = useRef<HTMLInputElement | null>(null);
   const [cameraName, setCameraName] = useState<string | null>(null);
+  const [draftReady, setDraftReady] = useState(false);
+  const [dictationApplied, setDictationApplied] = useState(false);
 
   const sd = note?.structured_data ?? {};
   const [noteType, setNoteType] = useState(note?.note_type ?? "consulta");
@@ -352,6 +359,43 @@ function NoteForm({
     for (const f of specialtyFieldDefs) init[f.key] = esp[f.key] ?? "";
     return init;
   });
+  const draftKey = `clinical-note-draft:${patientId}`;
+
+  useEffect(() => {
+    if (mode !== "create") return;
+    try {
+      const raw = window.localStorage.getItem(draftKey);
+      if (raw) {
+        const draft = JSON.parse(raw) as Record<string, unknown>;
+        if (typeof draft.body === "string") setBody(draft.body);
+        if (typeof draft.motivo === "string") setMotivo(draft.motivo);
+        if (typeof draft.enfermedadActual === "string") setEnfermedadActual(draft.enfermedadActual);
+        if (typeof draft.diagnostico === "string") setDiagnostico(draft.diagnostico);
+        if (typeof draft.indicaciones === "string") setIndicaciones(draft.indicaciones);
+        if (typeof draft.fechaControl === "string") setFechaControl(draft.fechaControl);
+        if (draft.vitals && typeof draft.vitals === "object") setVitals(draft.vitals as Record<string, string>);
+        if (draft.examFisico && typeof draft.examFisico === "object") setExamFisico(draft.examFisico as Record<string, string>);
+        if (draft.especializados && typeof draft.especializados === "object") setEspecializados(draft.especializados as Record<string, string>);
+        toast.info("Se recuperó el borrador de esta consulta.");
+      }
+    } catch {
+      window.localStorage.removeItem(draftKey);
+    }
+    setDraftReady(true);
+  }, [draftKey, mode]);
+
+  useEffect(() => {
+    if (mode !== "create" || !draftReady) return;
+    const hasContent = [body, motivo, enfermedadActual, diagnostico, indicaciones, fechaControl].some((value) => value.trim());
+    if (!hasContent) return;
+    const timer = window.setTimeout(() => {
+      window.localStorage.setItem(draftKey, JSON.stringify({
+        body, motivo, enfermedadActual, diagnostico, indicaciones, fechaControl,
+        vitals, examFisico, especializados,
+      }));
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [body, diagnostico, draftKey, draftReady, enfermedadActual, especializados, examFisico, fechaControl, indicaciones, mode, motivo, vitals]);
 
   const show = (k: FieldKey) => isFieldEnabled(config, k);
 
@@ -371,6 +415,7 @@ function NoteForm({
   ];
 
   function applyDictation(d: DictationResult) {
+    setDictationApplied(true);
     setBody((prev) => (prev.trim() ? `${prev.trim()}\n${d.body}` : d.body));
     if (d.motivo) setMotivo((prev) => (prev.trim() ? prev : d.motivo!));
     if (d.enfermedad_actual)
@@ -441,6 +486,19 @@ function NoteForm({
       }
       if (result.warning) toast.warning(result.warning);
       else toast.success(mode === "edit" ? "Nota actualizada." : "Nota guardada.");
+      if (mode === "create") window.localStorage.removeItem(draftKey);
+
+      const appointmentId = searchParams.get("turno");
+      if (submitIntentRef.current === "finish" && appointmentId) {
+        await updateAppointmentStatus(appointmentId, "in_progress");
+        const completed = await updateAppointmentStatus(appointmentId, "completed");
+        if (completed.error) toast.warning(`La nota se guardó, pero el turno no pudo finalizarse: ${completed.error}`);
+      }
+
+      if (submitIntentRef.current === "schedule" && fechaControl) {
+        router.push(`/calendar?nuevo=1&paciente=${patientId}&fecha=${fechaControl}`);
+        return;
+      }
       router.refresh();
       onClose();
     });
@@ -448,6 +506,7 @@ function NoteForm({
 
   return (
     <form
+      ref={formRef}
       onSubmit={handleSubmit}
       className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4"
     >
@@ -463,6 +522,15 @@ function NoteForm({
           <AudioUploadButton fields={dictationFields} onResult={applyDictation} />
         </div>
       </div>
+
+      {mode === "create" && draftReady && (
+        <p className="text-[11px] font-medium text-emerald-700">Borrador protegido automáticamente en este dispositivo.</p>
+      )}
+      {dictationApplied && (
+        <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-800">
+          El dictado completó los campos disponibles. Revisa también las secciones desplegables antes de guardar.
+        </div>
+      )}
 
       {/* Tipo + Tratamiento */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -532,10 +600,10 @@ function NoteForm({
 
       {/* 3. Signos vitales */}
       {show("vitals") && (
-        <div className="space-y-1">
-          <label className={fieldLabel}>
-            Signos vitales <span className="text-slate-400">(opcional)</span>
-          </label>
+        <details className="group rounded-lg border border-slate-200 bg-white p-3">
+          <summary className="cursor-pointer list-none text-xs font-semibold text-slate-600">
+            Signos vitales <span className="font-normal text-slate-400">(opcional)</span>
+          </summary>
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
             {VITAL_DEFS.map((v) => (
               <div key={v.key} className="space-y-1">
@@ -553,14 +621,14 @@ function NoteForm({
               </div>
             ))}
           </div>
-        </div>
+        </details>
       )}
 
       {/* 4. Examen físico por sistema */}
       {show("examen_fisico") && (
-        <div className="space-y-2">
-          <label className={fieldLabel}>Examen físico</label>
-          <div className="space-y-2">
+        <details className="rounded-lg border border-slate-200 bg-white p-3">
+          <summary className="cursor-pointer list-none text-xs font-semibold text-slate-600">Examen físico</summary>
+          <div className="mt-3 space-y-2">
             {EXAM_FISICO_SISTEMAS.filter((s) => isSistemaEnabled(config, s.key)).map((s) => (
               <div key={s.key} className="space-y-0.5">
                 <label className="text-[11px] font-medium text-slate-500">{s.label}</label>
@@ -577,16 +645,16 @@ function NoteForm({
               </div>
             ))}
           </div>
-        </div>
+        </details>
       )}
 
       {/* 5. Campos de especialidad (texto libre) */}
       {activeSpecialtyFields.length > 0 && (
-        <div className="space-y-2 rounded border border-slate-200 bg-white p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <details className="rounded-lg border border-slate-200 bg-white p-3">
+          <summary className="cursor-pointer list-none text-xs font-semibold text-slate-600">
             Campos de especialidad
-          </p>
-          {activeSpecialtyFields.map((f) => (
+          </summary>
+          <div className="mt-3 space-y-2">{activeSpecialtyFields.map((f) => (
             <div key={f.key} className="space-y-0.5">
               <label className="text-[11px] font-medium text-slate-500">{f.label}</label>
               <textarea
@@ -600,8 +668,8 @@ function NoteForm({
                 className={fieldInput}
               />
             </div>
-          ))}
-        </div>
+          ))}</div>
+        </details>
       )}
 
       {/* 6. Nota libre */}
@@ -699,25 +767,25 @@ function NoteForm({
           {fechaControl && canScheduleAppointment && (
             <button
               type="button"
-              onClick={() =>
-                router.push(
-                  `/calendar?nuevo=1&paciente=${patientId}&fecha=${fechaControl}`
-                )
-              }
+              onClick={() => {
+                submitIntentRef.current = "schedule";
+                formRef.current?.requestSubmit();
+              }}
               className="mt-1 inline-flex items-center gap-[6px] rounded-[9px] border border-primary/25 bg-primary/[.07] px-[12px] py-[7px] text-[12.5px] font-bold text-primary transition hover:bg-primary/[.12]"
             >
               <CalendarPlus className="h-[15px] w-[15px]" strokeWidth={2} />
-              Generar turno para esta fecha
+              Guardar y agendar control
             </button>
           )}
         </div>
       )}
 
       {/* Adjuntos */}
-      <div className="space-y-1">
-        <label className={fieldLabel}>
+      <details className="rounded-lg border border-slate-200 bg-white p-3">
+        <summary className="cursor-pointer list-none text-xs font-semibold text-slate-600">
           Adjuntos <span className="text-slate-400">(imágenes o PDF — opcional)</span>
-        </label>
+        </summary>
+        <div className="mt-3 space-y-1">
         <input
           type="file"
           name="attachments"
@@ -758,12 +826,18 @@ function NoteForm({
             ? "Se agregan a los adjuntos existentes. Máx. 10 MB por archivo."
             : "Radiografías, fotos clínicas o estudios. Máx. 10 MB por archivo."}
         </p>
-      </div>
+        </div>
+      </details>
 
       <div className="flex gap-2">
-        <Button type="submit" size="sm" disabled={isPending}>
+        <Button type="submit" size="sm" disabled={isPending} onClick={() => { submitIntentRef.current = "save"; }}>
           {isPending ? "Guardando…" : mode === "edit" ? "Guardar cambios" : "Guardar nota"}
         </Button>
+        {mode === "create" && searchParams.get("turno") && (
+          <Button type="submit" size="sm" disabled={isPending} onClick={() => { submitIntentRef.current = "finish"; }}>
+            Guardar y finalizar consulta
+          </Button>
+        )}
         <Button type="button" size="sm" variant="outline" onClick={onClose}>
           Cancelar
         </Button>
@@ -1169,8 +1243,10 @@ export function PatientTabs({
     ? specialties
     : SPECIALTY_PRESETS.map(presetToSpecialty);
 
-  const [tab, setTab] = useState<"turnos" | "historia">("turnos");
-  const [showForm, setShowForm] = useState(false);
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get("tab") === "historia" ? "historia" : searchParams.get("tab") === "documentos" ? "documentos" : "turnos";
+  const [tab, setTab] = useState<"turnos" | "historia" | "documentos">(initialTab);
+  const [showForm, setShowForm] = useState(searchParams.get("nueva") === "1");
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteSearch, setNoteSearch] = useState("");
   const [lightbox, setLightbox] = useState<{ url: string; alt: string } | null>(null);
@@ -1179,7 +1255,7 @@ export function PatientTabs({
     setLightbox({ url, alt });
   }
 
-  function switchTab(next: "turnos" | "historia") {
+  function switchTab(next: "turnos" | "historia" | "documentos") {
     setTab(next);
     if (next !== "historia") setNoteSearch("");
   }
@@ -1200,6 +1276,8 @@ export function PatientTabs({
         );
       })
     : notes;
+  const notesWithAttachments = notes.filter((note) => note.attachments.length > 0);
+  const attachmentCount = notesWithAttachments.reduce((total, note) => total + note.attachments.length, 0);
 
   return (
     <div className="flex flex-col gap-4">
@@ -1210,6 +1288,9 @@ export function PatientTabs({
         </TabButton>
         <TabButton active={tab === "historia"} onClick={() => switchTab("historia")}>
           Historia clínica ({notes.length})
+        </TabButton>
+        <TabButton active={tab === "documentos"} onClick={() => switchTab("documentos")}>
+          Documentos ({attachmentCount})
         </TabButton>
       </div>
 
@@ -1274,6 +1355,26 @@ export function PatientTabs({
             </div>
           )}
         </>
+      )}
+
+      {tab === "documentos" && (
+        <div className="space-y-4">
+          {notesWithAttachments.length === 0 ? (
+            <EmptyState
+              icon={FileText}
+              title="Sin documentos"
+              description="Los estudios, imágenes y archivos adjuntos aparecerán aquí ordenados por consulta."
+            />
+          ) : notesWithAttachments.map((note) => (
+            <section key={note.id} className="rounded-card border border-border bg-white p-4 shadow-card-soft">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm font-bold text-slate-700">{NOTE_TYPE_LABELS[note.note_type] ?? note.note_type}</span>
+                <span className="text-xs text-slate-400">{dateFormatter.format(new Date(note.created_at))}</span>
+              </div>
+              <AttachmentGallery attachments={note.attachments} onOpenImage={openImage} />
+            </section>
+          ))}
+        </div>
       )}
 
       {/* Tab: Historia clínica */}

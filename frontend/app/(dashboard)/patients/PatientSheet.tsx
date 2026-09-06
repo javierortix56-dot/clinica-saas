@@ -108,6 +108,12 @@ export function PatientSheet({
             placeholder="+54 11 1234-5678"
           />
           <Field
+            label="Fecha de nacimiento"
+            name="birth_date"
+            type="date"
+            defaultValue={patient?.birth_date}
+          />
+          <Field
             label="Email"
             name="email"
             type="email"

@@ -15,10 +15,10 @@ export default async function ApprovalsPage() {
     <div className="mx-auto max-w-[980px]">
       <div className="mb-4">
         <h1 className="text-[22px] font-extrabold tracking-[-.02em] sm:text-[24px]">
-          Aprobaciones
+          Pendientes
         </h1>
         <p className="mt-1 text-[13px] font-medium text-muted-foreground sm:text-[14px]">
-          Solicitudes de turno pendientes de confirmación.
+          Solicitudes de turno que requieren tu decisión.
         </p>
       </div>
 
