@@ -1,10 +1,18 @@
-import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { calendar } from '@googleapis/calendar';
 import { OAuth2Client, Credentials } from 'google-auth-library';
 import { PrismaService } from '../database/prisma.service';
 import { VaultService } from './vault.service';
+import type { AuthUser } from '../auth/auth-user.interface';
 
 const SCOPES = [
   'https://www.googleapis.com/auth/calendar',
@@ -34,12 +42,48 @@ export class GoogleCalendarOAuthService {
 
   private makeClient(): OAuth2Client {
     if (!this.clientId || !this.clientSecret) {
-      throw new Error(
-        'Google Calendar no está configurado. ' +
-          'Asegurate de setear GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET y GOOGLE_REDIRECT_URI.',
+      // 503 con mensaje explícito: antes era un Error genérico que el frontend
+      // mostraba como "No se pudo obtener la URL de conexión", indistinguible
+      // de un problema de red o de permisos.
+      throw new ServiceUnavailableException(
+        'Google Calendar no está configurado en el servidor. Faltan ' +
+          'GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET o GOOGLE_REDIRECT_URI.',
       );
     }
     return new OAuth2Client(this.clientId, this.clientSecret, this.redirectUri);
+  }
+
+  /**
+   * Autoriza a gestionar el calendario de `professionalId`, además de validar
+   * que el profesional sea de la clínica.
+   *
+   * Pueden hacerlo: un `admin`, el DUEÑO de la clínica (cualquiera sea su rol) y
+   * el propio profesional sobre su calendario. Antes el endpoint exigía
+   * `@Roles('admin')` a secas, así que en un consultorio de un solo médico —donde
+   * el dueño tiene rol `doctor`— conectar Google Calendar devolvía 403.
+   */
+  async authorizeCalendarManagement(
+    professionalId: string,
+    user: AuthUser,
+  ): Promise<void> {
+    await this.validateProfessionalOwnership(professionalId, user.clinicId);
+
+    if (user.role === 'admin' || user.isOwner) return;
+
+    const own = await this.prisma.professionals.findFirst({
+      where: {
+        id: professionalId,
+        clinic_id: user.clinicId,
+        deleted_at: null,
+        staff_members: { auth_user_id: user.userId },
+      },
+      select: { id: true },
+    });
+    if (!own) {
+      throw new ForbiddenException(
+        'Solo el dueño del consultorio o el propio profesional pueden gestionar este calendario.',
+      );
+    }
   }
 
   /**

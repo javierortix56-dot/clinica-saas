@@ -94,6 +94,11 @@ export class SupabaseJwtGuard implements CanActivate {
       );
     }
 
-    return { userId, clinicId, role: role as StaffRole };
+    return {
+      userId,
+      clinicId,
+      role: role as StaffRole,
+      isOwner: payload.is_owner === true,
+    };
   }
 }

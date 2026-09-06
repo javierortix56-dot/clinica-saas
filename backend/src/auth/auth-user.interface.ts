@@ -17,4 +17,10 @@ export interface AuthUser {
   clinicId: string;
   /** `user_role` inyectado por el hook (enum user_role de la BD). */
   role: StaffRole;
+  /**
+   * `is_owner` inyectado por el hook (migración 0016). El dueño de la clínica
+   * puede administrar aunque su rol no sea `admin` — caso típico del consultorio
+   * de un solo médico, donde el dueño tiene rol `doctor`.
+   */
+  isOwner: boolean;
 }

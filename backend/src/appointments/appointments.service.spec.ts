@@ -14,6 +14,7 @@ const USER: AuthUser = {
   userId: 'user-1',
   clinicId: 'clinic-1',
   role: 'reception',
+  isOwner: false,
 };
 
 const D1 = new Date('2026-07-01T15:00:00.000Z');

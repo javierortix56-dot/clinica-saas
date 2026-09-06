@@ -405,28 +405,61 @@ export async function deleteStaff(
   return {};
 }
 
+/**
+ * Extrae el motivo real que devuelve el backend.
+ *
+ * Antes cualquier fallo se mostraba como "No se pudo obtener la URL de
+ * conexión": un 403 por permisos, un 503 por credenciales de Google sin setear
+ * y un backend caído eran indistinguibles para quien usaba la app.
+ */
+async function backendError(res: Response, fallback: string): Promise<string> {
+  const body = (await res.json().catch(() => null)) as
+    | { message?: string | string[] }
+    | null;
+  const msg = Array.isArray(body?.message)
+    ? body?.message.join(" ")
+    : body?.message;
+  if (msg) return msg;
+  if (res.status === 401) return "Sesión expirada. Volvé a iniciar sesión.";
+  if (res.status === 403) return "No tenés permiso para gestionar este calendario.";
+  if (res.status === 404) return "No se encontró el profesional.";
+  if (res.status >= 500) return `${fallback} El servidor respondió ${res.status}.`;
+  return fallback;
+}
+
 export async function getGoogleCalendarConnectUrl(
   professionalId: string
 ): Promise<{ url?: string; error?: string }> {
   const supabase = createClient();
-  const owner = await requireOwner();
-  if ("error" in owner) return { error: owner.error };
+  // El backend autoriza (dueño, admin o el propio profesional); acá solo se
+  // exige sesión con contexto de clínica.
+  const claims = await getVerifiedClaims(supabase);
+  if (!claims?.clinicId) return { error: "Sesión expirada." };
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return { error: "Sesión expirada." };
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-  if (!apiUrl) return { error: "API no configurada." };
+  if (!apiUrl) {
+    return {
+      error:
+        "Falta configurar NEXT_PUBLIC_API_URL: el frontend no sabe a qué backend pedirle la conexión.",
+    };
+  }
 
   try {
     const res = await fetch(
       `${apiUrl}/google-calendar/connect/${professionalId}`,
       { headers: { Authorization: `Bearer ${session.access_token}` } }
     );
-    if (!res.ok) return { error: "No se pudo obtener la URL de conexión." };
+    if (!res.ok) {
+      return { error: await backendError(res, "No se pudo obtener la URL de conexión.") };
+    }
     const { url } = (await res.json()) as { url: string };
     return { url };
   } catch {
-    return { error: "Error de red al conectar Google Calendar." };
+    return {
+      error: `No se pudo contactar al backend (${apiUrl}). Verificá que esté desplegado y accesible.`,
+    };
   }
 }
 
@@ -434,13 +467,18 @@ export async function disconnectGoogleCalendar(
   professionalId: string
 ): Promise<{ error?: string }> {
   const supabase = createClient();
-  const owner = await requireOwner();
-  if ("error" in owner) return { error: owner.error };
+  const claims = await getVerifiedClaims(supabase);
+  if (!claims?.clinicId) return { error: "Sesión expirada." };
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return { error: "Sesión expirada." };
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-  if (!apiUrl) return { error: "API no configurada." };
+  if (!apiUrl) {
+    return {
+      error:
+        "Falta configurar NEXT_PUBLIC_API_URL: el frontend no sabe a qué backend pedirle la desconexión.",
+    };
+  }
 
   try {
     const res = await fetch(
@@ -450,9 +488,13 @@ export async function disconnectGoogleCalendar(
         headers: { Authorization: `Bearer ${session.access_token}` },
       }
     );
-    if (!res.ok) return { error: "No se pudo desconectar Google Calendar." };
+    if (!res.ok) {
+      return { error: await backendError(res, "No se pudo desconectar Google Calendar.") };
+    }
   } catch {
-    return { error: "Error de red al desconectar Google Calendar." };
+    return {
+      error: `No se pudo contactar al backend (${apiUrl}). Verificá que esté desplegado y accesible.`,
+    };
   }
 
   revalidatePath("/staff");

@@ -23,9 +23,11 @@ import { GoogleCalendarWatchService } from './google-calendar-watch.service';
 /**
  * Endpoints de Google Calendar.
  *
- * - GET /google-calendar/connect/:professionalId  → URL de OAuth (solo admin)
+ * - GET /google-calendar/connect/:professionalId  → URL de OAuth (dueño,
+ *   admin, o el propio profesional)
  * - GET /auth/google/callback                     → callback de OAuth (sin guard, viene de Google)
- * - DELETE /google-calendar/disconnect/:professionalId → desconectar (solo admin)
+ * - DELETE /google-calendar/disconnect/:professionalId → desconectar (mismos
+ *   permisos que connect)
  * - POST /google-calendar/sync/:professionalId    → forzar sync manual (solo admin)
  */
 @Controller()
@@ -40,12 +42,12 @@ export class GoogleCalendarController {
   /** Devuelve la URL de autorización OAuth de Google para el profesional. */
   @Get('google-calendar/connect/:professionalId')
   @UseGuards(SupabaseJwtGuard, RolesGuard)
-  @Roles('admin')
+  @Roles('admin', 'doctor')
   async getConnectUrl(
     @Param('professionalId', ParseUUIDPipe) professionalId: string,
     @CurrentUser() user: AuthUser,
   ): Promise<{ url: string }> {
-    await this.oauth.validateProfessionalOwnership(professionalId, user.clinicId);
+    await this.oauth.authorizeCalendarManagement(professionalId, user);
     const url = this.oauth.getAuthUrl(professionalId, user.clinicId);
     return { url };
   }
@@ -82,12 +84,12 @@ export class GoogleCalendarController {
   @Delete('google-calendar/disconnect/:professionalId')
   @HttpCode(200)
   @UseGuards(SupabaseJwtGuard, RolesGuard)
-  @Roles('admin')
+  @Roles('admin', 'doctor')
   async disconnect(
     @Param('professionalId', ParseUUIDPipe) professionalId: string,
     @CurrentUser() user: AuthUser,
   ): Promise<{ ok: boolean }> {
-    await this.oauth.validateProfessionalOwnership(professionalId, user.clinicId);
+    await this.oauth.authorizeCalendarManagement(professionalId, user);
     // Detener el canal push ANTES de borrar los tokens (stop necesita auth).
     await this.watch.stopChannel(professionalId).catch(() => undefined);
     await this.oauth.disconnect(professionalId, user.clinicId);
@@ -98,11 +100,12 @@ export class GoogleCalendarController {
   @Post('google-calendar/sync/:professionalId')
   @HttpCode(200)
   @UseGuards(SupabaseJwtGuard, RolesGuard)
-  @Roles('admin')
+  @Roles('admin', 'doctor')
   async forceSync(
     @Param('professionalId', ParseUUIDPipe) professionalId: string,
     @CurrentUser() user: AuthUser,
   ): Promise<{ ok: boolean }> {
+    await this.oauth.authorizeCalendarManagement(professionalId, user);
     await this.importer.syncByProfessionalId(professionalId, user.clinicId);
     return { ok: true };
   }
