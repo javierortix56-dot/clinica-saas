@@ -60,8 +60,10 @@ function calcAge(birthDate: string | null): number | null {
   return age >= 0 ? age : null;
 }
 
-// Altura fija de cada franja de 30 min en el grid desktop.
-const SLOT_H = "1.75rem";
+// Altura fija de cada franja de 30 min en el grid desktop. Tiene que dar lugar
+// a una línea de texto con aire: por debajo de esto las tarjetas de 30 min
+// (la duración más común) cortan el texto a la mitad.
+const SLOT_H = "2rem";
 
 // Minutos desde medianoche en la TZ de la clínica, actualizado cada 30s.
 // null hasta el primer efecto (SSR-safe: el server no dibuja la línea y el
@@ -458,11 +460,11 @@ export function CalendarGrid({
               <React.Fragment key={`${slot.hour}-${slot.minute}`}>
                 {/* Etiqueta de hora (columna 1) */}
                 <div
-                  className="relative border-b border-[#eef2f7] pr-1.5"
+                  className={`relative border-b pr-1.5 ${slot.minute === 0 ? "border-[#e4eaf2]" : "border-[#f4f7fa]"}`}
                   style={{ gridRow: si + 2, gridColumn: 1 }}
                 >
                   {slot.minute === 0 && (
-                    <span className="absolute right-[5px] top-[3px] font-mono text-[9.5px] leading-none text-slate-400">
+                    <span className="absolute right-[5px] top-[3px] font-mono text-[10px] leading-none text-slate-400">
                       {formatSlot(slot)}
                     </span>
                   )}
@@ -484,9 +486,11 @@ export function CalendarGrid({
                         }
                       : null),
                   };
-                  const cellClass = `border-b border-l border-[#eef2f7] ${
-                    isToday(day) ? "bg-primary/[.03]" : shaded ? "bg-slate-50/40" : ""
-                  }`;
+                  // La línea de la media hora es más tenue que la de la hora en
+                  // punto: da ritmo vertical sin que la grilla parezca rayada.
+                  const cellClass = `border-b border-l border-l-[#eef2f7] ${
+                    slot.minute === 0 ? "border-b-[#e4eaf2]" : "border-b-[#f4f7fa]"
+                  } ${isToday(day) ? "bg-primary/[.03]" : shaded ? "bg-slate-50/40" : ""}`;
 
                   if (!canBook) {
                     return <div key={di} style={cellStyle} className={cellClass} />;
@@ -532,9 +536,9 @@ export function CalendarGrid({
                 >
                   <div
                     title={`${formatTime(b.start_at)}–${formatTime(b.end_at)} · ${b.reason || "Ocupado"}`}
-                    className="pointer-events-auto absolute inset-[1px] flex items-start overflow-hidden rounded-[3px] border border-slate-200 border-l-[2px] border-l-slate-300 bg-slate-100 px-[4px] py-[2px]"
+                    className="pointer-events-auto absolute inset-[1px] flex items-center overflow-hidden rounded-[4px] border border-slate-200 border-l-[2px] border-l-slate-300 bg-slate-100 px-[5px]"
                   >
-                    <p className="truncate font-mono text-[8.5px] text-slate-400">
+                    <p className="min-w-0 truncate font-mono text-[9.5px] leading-tight text-slate-400">
                       {b.reason || "Ocupado"}
                     </p>
                   </div>
@@ -549,6 +553,11 @@ export function CalendarGrid({
               const di = getDayIndex(a.start_at, weekDays);
               if (si < 0 || di < 0) return null;
               const age = calcAge(a.patient_birth_date);
+              const detail = a.reason ?? a.treatment_label;
+              // Un turno de 30 min ocupa una sola franja y ahí entra una línea
+              // sola. Meterle más texto lo corta a la mitad: el detalle queda en
+              // el tooltip y en el panel del turno.
+              const compact = span < 2;
               // Multi-profesional: además del borde izquierdo, un tinte de fondo
               // suave con el color del profesional (sufijos hex = alpha ~8%/20%)
               // para escanear la grilla por profesional de un vistazo.
@@ -557,6 +566,14 @@ export function CalendarGrid({
               const profTint = color
                 ? { background: `${color}14`, borderColor: `${color}33`, borderLeftColor: color, borderLeftWidth: 2 }
                 : undefined;
+              const tooltip = [
+                `${formatTime(a.start_at)}–${formatTime(a.end_at)}`,
+                a.patient_name,
+                detail,
+                a.professional_name,
+              ]
+                .filter(Boolean)
+                .join(" · ");
               return (
                 <div
                   key={a.id}
@@ -568,28 +585,45 @@ export function CalendarGrid({
                 >
                   <button
                     type="button"
+                    title={tooltip}
                     onClick={() => setSelectedId(a.id)}
-                    className="pointer-events-auto absolute inset-[1px] flex flex-col justify-start overflow-hidden rounded-[3px] border border-status-confirmado-border border-l-[2px] bg-status-confirmado-bg px-[4px] py-[2px] text-left transition-shadow hover:shadow-[0_2px_8px_rgba(15,23,42,.12)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                    className={`pointer-events-auto absolute inset-[1px] flex flex-col overflow-hidden rounded-[4px] border border-status-confirmado-border border-l-[2px] bg-status-confirmado-bg px-[5px] text-left transition-shadow hover:shadow-[0_2px_8px_rgba(15,23,42,.12)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary ${
+                      compact ? "justify-center" : "justify-start py-[3px]"
+                    }`}
                     style={profTint}
                   >
-                    <p className="truncate font-mono text-[8.5px] leading-tight text-status-confirmado-fg/70">
-                      {formatTime(a.start_at)}
-                    </p>
-                    <p className="truncate text-[10px] font-semibold leading-tight text-status-confirmado-fg">
-                      {a.patient_name}
-                      {age !== null && (
-                        <span className="ml-1 font-normal text-[8.5px] opacity-70">{age}a</span>
-                      )}
-                    </p>
-                    {(a.reason ?? a.treatment_label) && (
-                      <p className="truncate text-[8px] leading-tight text-status-confirmado-fg/60">
-                        {a.reason ?? a.treatment_label}
+                    {compact ? (
+                      <p className="flex w-full items-baseline gap-[4px] text-[11px] font-semibold leading-tight text-status-confirmado-fg">
+                        <span className="shrink-0 font-mono text-[9px] font-normal opacity-70">
+                          {formatTime(a.start_at)}
+                        </span>
+                        <span className="min-w-0 truncate">{a.patient_name}</span>
+                        {age !== null && (
+                          <span className="shrink-0 text-[9px] font-normal opacity-60">{age}a</span>
+                        )}
                       </p>
-                    )}
-                    {multiProf && a.professional_name && (
-                      <p className="truncate text-[8px] leading-tight text-status-confirmado-fg/60">
-                        {a.professional_name}
-                      </p>
+                    ) : (
+                      <>
+                        <p className="truncate font-mono text-[9px] leading-tight text-status-confirmado-fg/70">
+                          {formatTime(a.start_at)}
+                        </p>
+                        <p className="truncate text-[11px] font-semibold leading-tight text-status-confirmado-fg">
+                          {a.patient_name}
+                          {age !== null && (
+                            <span className="ml-1 font-normal text-[9px] opacity-70">{age}a</span>
+                          )}
+                        </p>
+                        {detail && (
+                          <p className="truncate text-[9px] leading-tight text-status-confirmado-fg/60">
+                            {detail}
+                          </p>
+                        )}
+                        {multiProf && a.professional_name && (
+                          <p className="truncate text-[9px] leading-tight text-status-confirmado-fg/60">
+                            {a.professional_name}
+                          </p>
+                        )}
+                      </>
                     )}
                   </button>
                 </div>

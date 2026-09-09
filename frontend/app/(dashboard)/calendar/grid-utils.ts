@@ -75,11 +75,13 @@ export function formatSlot({
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
+// `date` ya viene de parseISODate: es medianoche LOCAL del día de calendario,
+// no un instante que haya que reinterpretar en otra zona. Convertirlo a TZ acá
+// lo corría un día en navegadores al este de Buenos Aires.
 export function formatDayDate(date: Date): string {
   return date.toLocaleDateString("es-AR", {
     day: "numeric",
     month: "numeric",
-    timeZone: TZ,
   });
 }
 
@@ -175,9 +177,11 @@ export function blocksForSlot(
 
 // ─── Day state ────────────────────────────────────────────────────────────────
 
+// "Hoy" según el reloj de la clínica, comparado contra el día de calendario que
+// representa `date` (ver nota en formatDayDate: no lleva conversión de TZ).
 export function isToday(date: Date): boolean {
   const today = new Date().toLocaleDateString("es-AR", { timeZone: TZ });
-  return date.toLocaleDateString("es-AR", { timeZone: TZ }) === today;
+  return date.toLocaleDateString("es-AR") === today;
 }
 
 export function isSameLocalDay(iso: string, ref: Date): boolean {
