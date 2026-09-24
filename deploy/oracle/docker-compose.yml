@@ -1,0 +1,48 @@
+# Backend en un servidor propio (Oracle Cloud Always Free).
+# Uso, desde esta carpeta:  docker compose up -d --build
+# Variables: archivo .env en esta misma carpeta (ver README.md).
+
+services:
+  redis:
+    image: redis:7-alpine
+    # Cola de WhatsApp y locks: datos transitorios. BullMQ exige noeviction.
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "noeviction"]
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: backend/Dockerfile
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379
+      PORT: "3000"
+    depends_on:
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  caddy:
+    image: caddy:2-alpine
+    # HTTPS automático (Let's Encrypt) para el dominio de DOMAIN.
+    environment:
+      DOMAIN: ${DOMAIN:?Definí DOMAIN en .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
