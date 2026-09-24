@@ -16,14 +16,14 @@ import {
 import { CalendarGrid } from "./CalendarGrid";
 import { RememberView } from "./RememberView";
 import { CALENDAR_VIEW_COOKIE, parseCalendarView } from "./view-preference";
+import { buildDaySummary, formatTime } from "./grid-utils";
 import {
-  addDays,
-  buildDaySummary,
-  getMondayOf,
-  getWeekDays,
-  toISODate,
-  formatTime,
-} from "./grid-utils";
+  addDaysISO,
+  formatISODate,
+  isISODate,
+  mondayOfISO,
+  todayISO,
+} from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
@@ -36,17 +36,12 @@ export default async function CalendarPage({
 }) {
 
   const now = new Date();
-  const currentMonday = getMondayOf(now);
+  const currentMonday = mondayOfISO(todayISO());
 
-  // ?week=YYYY-MM-DD — lunes de la semana a mostrar. Default: semana actual.
+  // ?week=YYYY-MM-DD — cualquier día de la semana a mostrar. Default: semana actual.
   const weekParam =
     typeof searchParams.week === "string" ? searchParams.week : null;
-  const displayedMonday = weekParam
-    ? (() => {
-        const d = new Date(weekParam);
-        return isNaN(d.getTime()) ? currentMonday : getMondayOf(d);
-      })()
-    : currentMonday;
+  const displayedMonday = isISODate(weekParam) ? mondayOfISO(weekParam) : currentMonday;
   // Vista: el parámetro explícito manda; si no, la última elección guardada en
   // cookie; si tampoco, "day". Así el enlace pelado del menú (/calendar) no
   // descarta la preferencia del usuario en cada visita.
@@ -54,7 +49,7 @@ export default async function CalendarPage({
     parseCalendarView(typeof searchParams.view === "string" ? searchParams.view : null) ??
     parseCalendarView(cookies().get(CALENDAR_VIEW_COOKIE)?.value) ??
     "day";
-  const displayedIsCurrentWeek = toISODate(displayedMonday) === toISODate(currentMonday);
+  const isCurrentWeek = displayedMonday === currentMonday;
 
   const { role } = await getSessionAuth();
   const canCreateAppointment = role === "admin" || role === "reception" || role === "doctor";
@@ -66,29 +61,26 @@ export default async function CalendarPage({
     canCreateAppointment ? getPatients() : Promise.resolve([]),
     canCreateAppointment ? getProfessionalsForScheduling() : Promise.resolve([]),
     canCreateAppointment ? getTreatmentTypeOptions() : Promise.resolve([]),
-    displayedIsCurrentWeek ? Promise.resolve(null) : getWeeklyAppointments(currentMonday),
+    isCurrentWeek ? Promise.resolve(null) : getWeeklyAppointments(currentMonday),
     getClinicSettings(),
   ]);
-  const weekDays = getWeekDays(displayedMonday);
+  // Lun–Sáb de la semana mostrada.
+  const weekDays = Array.from({ length: 6 }, (_, i) => addDaysISO(displayedMonday, i));
 
-  // El resumen siempre refleja "hoy" — si se navega a otra semana muestra 0.
+  // El resumen siempre refleja "hoy", aunque se navegue a otra semana.
   const summary = buildDaySummary(currentWeekAppointments ?? appointments, now);
 
   // Navegación semanal
-  const prevWeek = toISODate(addDays(displayedMonday, -7));
-  const nextWeek = toISODate(addDays(displayedMonday, 7));
-  const todayWeek = toISODate(currentMonday);
-  const isCurrentWeek = toISODate(displayedMonday) === todayWeek;
+  const prevWeek = addDaysISO(displayedMonday, -7);
+  const nextWeek = addDaysISO(displayedMonday, 7);
 
-  const weekLabel = `Semana del ${weekDays[0].toLocaleDateString("es-AR", {
+  const weekLabel = `Semana del ${formatISODate(weekDays[0], {
     day: "numeric",
     month: "long",
-    timeZone: "America/Argentina/Buenos_Aires",
-  })} al ${weekDays[5].toLocaleDateString("es-AR", {
+  })} al ${formatISODate(weekDays[5], {
     day: "numeric",
     month: "long",
     year: "numeric",
-    timeZone: "America/Argentina/Buenos_Aires",
   })}`;
 
   const iconBtn =
@@ -101,7 +93,7 @@ export default async function CalendarPage({
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-[22px] font-extrabold tracking-[-.02em] sm:text-[27px]">
-            Calendario
+            Agenda
           </h1>
           <p className="mt-0.5 truncate text-[12px] font-medium text-muted-foreground sm:text-[14px]">
             {weekLabel}
@@ -137,13 +129,13 @@ export default async function CalendarPage({
 
       <div className="mb-3 flex w-fit overflow-hidden rounded-[10px] border border-border bg-white p-1 shadow-card-soft">
         <Link
-          href={`/calendar?week=${toISODate(displayedMonday)}&view=day`}
+          href={`/calendar?week=${displayedMonday}&view=day`}
           className={`flex items-center gap-1.5 rounded-[7px] px-3 py-1.5 text-xs font-bold transition ${view === "day" ? "bg-primary text-white" : "text-slate-500 hover:bg-slate-50"}`}
         >
           <List className="h-3.5 w-3.5" /> Jornada
         </Link>
         <Link
-          href={`/calendar?week=${toISODate(displayedMonday)}&view=week`}
+          href={`/calendar?week=${displayedMonday}&view=week`}
           className={`flex items-center gap-1.5 rounded-[7px] px-3 py-1.5 text-xs font-bold transition ${view === "week" ? "bg-primary text-white" : "text-slate-500 hover:bg-slate-50"}`}
         >
           <CalendarDays className="h-3.5 w-3.5" /> Semana
@@ -206,7 +198,9 @@ export default async function CalendarPage({
       {/* Grilla interactiva (Client Component: maneja el turno seleccionado) */}
       <CalendarGrid
         view={view}
-        weekDays={weekDays.map(toISODate)}
+        weekDays={weekDays}
+        prevWeek={prevWeek}
+        nextWeek={nextWeek}
         appointments={appointments}
         blocks={blocks}
         availability={availability}

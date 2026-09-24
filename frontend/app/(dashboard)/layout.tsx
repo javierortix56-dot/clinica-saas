@@ -33,8 +33,8 @@ export default async function DashboardLayout({
   }
 
   // Lecturas dependientes solo de `user`; corren en paralelo para no encadenar
-  // round-trips en cada navegación. El conteo de aprobaciones alimenta el badge
-  // del sidebar (solo cuenta, sin traer filas).
+  // round-trips en cada navegación. El conteo alimenta el badge del sidebar: solo
+  // solicitudes vigentes (las vencidas no requieren una decisión urgente).
   const [{ role, isOwner }, { data: sm }, { count: approvalsCount }] =
     await Promise.all([
       getSessionAuth(),
@@ -46,7 +46,8 @@ export default async function DashboardLayout({
       supabase
         .from("appointments")
         .select("id", { count: "exact", head: true })
-        .eq("status", "proposed"),
+        .eq("status", "proposed")
+        .gte("start_at", new Date().toISOString()),
     ]);
 
   const displayName = sm?.full_name ?? user.email ?? "Usuario";

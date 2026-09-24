@@ -10,11 +10,13 @@ export function EditPatientButton({ patient }: { patient: Patient }) {
   return (
     <>
       <button
+        type="button"
         onClick={() => setOpen(true)}
-        className="flex shrink-0 items-center gap-[7px] rounded-[10px] border border-border bg-white px-[15px] py-[9px] text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50"
+        aria-label="Editar datos del paciente"
+        className="flex shrink-0 items-center gap-[7px] rounded-[10px] border border-border bg-white px-[11px] py-[9px] text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 sm:px-[15px]"
       >
         <Pencil className="h-[15px] w-[15px]" strokeWidth={1.9} />
-        Editar datos
+        <span className="hidden sm:inline">Editar datos</span>
       </button>
       <PatientSheet patient={patient} open={open} onOpenChange={setOpen} />
     </>

@@ -19,6 +19,16 @@ const USER: AuthUser = {
 
 const D1 = new Date('2026-07-01T15:00:00.000Z');
 const D2 = new Date('2026-07-01T15:30:00.000Z');
+// "Ahora" fijo antes de D1: los turnos de prueba son futuros.
+const NOW = new Date('2026-06-30T12:00:00.000Z').getTime();
+
+beforeEach(() => {
+  jest.spyOn(Date, 'now').mockReturnValue(NOW);
+});
+
+afterEach(() => {
+  jest.restoreAllMocks();
+});
 
 function buildService() {
   const prisma = {
@@ -90,6 +100,20 @@ describe('AppointmentsService.confirm', () => {
       expect(prisma.runAsActor).not.toHaveBeenCalled();
     },
   );
+
+  it('proposed con horario ya pasado → Conflict, sin escribir', async () => {
+    const { service, prisma } = buildService();
+    jest.spyOn(Date, 'now').mockReturnValue(D1.getTime() + 60_000);
+    prisma.appointments.findFirst.mockResolvedValue({
+      id: 'appt-1',
+      status: 'proposed',
+      start_at: D1,
+      end_at: D2,
+    });
+
+    await expect(service.confirm('appt-1', USER)).rejects.toThrow(/vencida/);
+    expect(prisma.runAsActor).not.toHaveBeenCalled();
+  });
 
   it('proposed → confirmed, en runAsActor con source staff', async () => {
     const { service, prisma } = buildService();

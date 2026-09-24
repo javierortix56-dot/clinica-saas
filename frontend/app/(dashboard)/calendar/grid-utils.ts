@@ -1,10 +1,11 @@
 import type { WeeklyAppointment, WeeklyBlock } from "@/lib/supabase/server";
+import { CLINIC_TZ, dateISOInTZ, todayISO } from "@/lib/dates";
 
 // Helpers puros de fecha/slot para el calendario. Sin secretos ni acceso a datos
 // — solo aritmética de fechas. Compartidos entre page.tsx (Server Component, para
 // el resumen del día) y CalendarGrid.tsx (Client Component, para la grilla).
 
-export const TZ = "America/Argentina/Buenos_Aires";
+export const TZ = CLINIC_TZ;
 
 // ─── Grid constants ───────────────────────────────────────────────────────────
 
@@ -19,31 +20,17 @@ export const DAY_LABELS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 
-export function getMondayOf(ref: Date): Date {
-  const d = new Date(ref);
-  const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
 export function addDays(d: Date, days: number): Date {
   const result = new Date(d);
   result.setDate(result.getDate() + days);
   return result;
 }
 
-// YYYY-MM-DD en hora local del servidor (UTC en producción).
+// YYYY-MM-DD de una fecha construida con parseISODate (medianoche local).
 export function toISODate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
     d.getDate()
   ).padStart(2, "0")}`;
-}
-
-// Lun–Sáb a partir del lunes de la semana mostrada.
-export function getWeekDays(monday: Date): Date[] {
-  return Array.from({ length: 6 }, (_, i) => addDays(monday, i));
 }
 
 // Reconstruye un YYYY-MM-DD como fecha a medianoche LOCAL (no UTC), para que
@@ -75,12 +62,9 @@ export function formatSlot({
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
+// `date` es una fecha de calendario (medianoche local): se formatea sin zona.
 export function formatDayDate(date: Date): string {
-  return date.toLocaleDateString("es-AR", {
-    day: "numeric",
-    month: "numeric",
-    timeZone: TZ,
-  });
+  return date.toLocaleDateString("es-AR", { day: "numeric", month: "numeric" });
 }
 
 export function formatDuration(startIso: string, endIso: string): string {
@@ -122,9 +106,8 @@ export function timeToMinutes(t: string): number {
 
 // Índice 0-based del día en la semana. Devuelve -1 si no corresponde a ningún día visible.
 export function getDayIndex(isoStart: string, weekDays: Date[]): number {
-  const localStr = new Date(isoStart).toLocaleString("en-US", { timeZone: TZ });
-  const local = new Date(localStr);
-  return weekDays.findIndex((d) => d.toDateString() === local.toDateString());
+  const day = dateISOInTZ(isoStart);
+  return weekDays.findIndex((d) => toISODate(d) === day);
 }
 
 // ─── Cell filtering ──────────────────────────────────────────────────────────
@@ -176,15 +159,12 @@ export function blocksForSlot(
 // ─── Day state ────────────────────────────────────────────────────────────────
 
 export function isToday(date: Date): boolean {
-  const today = new Date().toLocaleDateString("es-AR", { timeZone: TZ });
-  return date.toLocaleDateString("es-AR", { timeZone: TZ }) === today;
+  return toISODate(date) === todayISO();
 }
 
+// ¿El instante `iso` cae en el día de calendario `ref` (medianoche local)?
 export function isSameLocalDay(iso: string, ref: Date): boolean {
-  return (
-    new Date(iso).toLocaleDateString("es-AR", { timeZone: TZ }) ===
-    ref.toLocaleDateString("es-AR", { timeZone: TZ })
-  );
+  return dateISOInTZ(iso) === toISODate(ref);
 }
 
 // ─── Day summary (siempre basado en "hoy", no en la semana mostrada) ──────────
@@ -199,7 +179,8 @@ export function buildDaySummary(
   appointments: WeeklyAppointment[],
   now: Date
 ): DaySummary {
-  const todays = appointments.filter((a) => isSameLocalDay(a.start_at, now));
+  const today = dateISOInTZ(now);
+  const todays = appointments.filter((a) => dateISOInTZ(a.start_at) === today);
   const remaining = todays.filter((a) => new Date(a.start_at) >= now);
   return { todayCount: todays.length, remaining, next: remaining[0] ?? null };
 }

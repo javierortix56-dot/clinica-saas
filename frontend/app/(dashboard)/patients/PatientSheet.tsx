@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useId, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -31,13 +31,16 @@ function Field({
   placeholder?: string;
   hint?: string;
 }) {
+  const id = useId();
   return (
     <div className="space-y-1">
-      <label className="block text-sm font-medium text-slate-700">
+      <label htmlFor={id} className="block text-sm font-medium text-slate-700">
         {label}
-        {required && <span className="ml-0.5 text-red-500">*</span>}
+        {required && <span className="ml-0.5 text-red-500" aria-hidden>*</span>}
       </label>
       <input
+        id={id}
+        aria-describedby={hint ? `${id}-hint` : undefined}
         type={type}
         name={name}
         defaultValue={defaultValue ?? ""}
@@ -45,7 +48,7 @@ function Field({
         placeholder={placeholder}
         className="block w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none"
       />
-      {hint && <p className="text-xs text-slate-400">{hint}</p>}
+      {hint && <p id={`${id}-hint`} className="text-xs text-slate-400">{hint}</p>}
     </div>
   );
 }
@@ -74,7 +77,9 @@ export function PatientSheet({
       }
       toast.success(patient ? "Paciente actualizado." : "Paciente creado.");
       onOpenChange(false);
-      router.refresh();
+      // Alta nueva → directo a su ficha, desde donde se agenda el primer turno.
+      if (!patient && result.id) router.push(`/patients/${result.id}`);
+      else router.refresh();
     });
   }
 

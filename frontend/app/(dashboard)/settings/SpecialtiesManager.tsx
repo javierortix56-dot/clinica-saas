@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useId, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, Search } from "lucide-react";
@@ -56,6 +56,7 @@ export function SpecialtiesManager({
   customFields: CustomSpecialtyField[];
 }) {
   const router = useRouter();
+  const uid = useId();
   const [isPending, startTransition] = useTransition();
 
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -194,10 +195,11 @@ export function SpecialtiesManager({
       {draft && (
         <div className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-600">
+            <label htmlFor={`${uid}-spec`} className="text-xs font-medium text-slate-600">
               Nombre de la especialidad
             </label>
             <input
+              id={`${uid}-spec`}
               type="text"
               value={draft.label}
               onChange={(e) => setDraft({ ...draft, label: e.target.value })}
@@ -263,6 +265,7 @@ export function SpecialtiesManager({
                 <Search className="h-3.5 w-3.5 text-slate-400" />
                 <input
                   type="search"
+                  aria-label="Buscar campo de especialidad"
                   value={fieldSearch}
                   onChange={(e) => setFieldSearch(e.target.value)}
                   placeholder="Buscar campo…"
@@ -392,10 +395,11 @@ export function SpecialtiesManager({
           <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1">
-                <label className="text-xs font-medium text-slate-600">
+                <label htmlFor={`${uid}-field`} className="text-xs font-medium text-slate-600">
                   Nombre del campo
                 </label>
                 <input
+                  id={`${uid}-field`}
                   type="text"
                   value={fieldDraft.label}
                   onChange={(e) =>
@@ -406,10 +410,11 @@ export function SpecialtiesManager({
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-slate-600">
+                <label htmlFor={`${uid}-placeholder`} className="text-xs font-medium text-slate-600">
                   Ayuda / placeholder <span className="text-slate-400">(opcional)</span>
                 </label>
                 <input
+                  id={`${uid}-placeholder`}
                   type="text"
                   value={fieldDraft.placeholder}
                   onChange={(e) =>

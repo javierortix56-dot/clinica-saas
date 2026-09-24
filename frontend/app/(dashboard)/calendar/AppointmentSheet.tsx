@@ -16,6 +16,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { addDays, formatDuration, formatTime } from "./grid-utils";
+import { todayISO } from "@/lib/dates";
 import { cancelAppointment, updateAppointmentStatus, rescheduleAppointment } from "./actions";
 
 const TZ = "America/Argentina/Buenos_Aires";
@@ -632,20 +633,22 @@ function SheetReady({
               <form onSubmit={handleReschedule} className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <p className="text-xs font-medium text-slate-500">Nueva fecha y horario</p>
                 <div className="space-y-1.5">
-                  <label className="text-xs text-slate-500">Fecha</label>
+                  <label htmlFor="resched-date" className="text-xs text-slate-500">Fecha</label>
                   <input
+                    id="resched-date"
                     type="date"
                     value={reschedDate}
                     onChange={(e) => setReschedDate(e.target.value)}
-                    min={new Date().toISOString().slice(0, 10)}
+                    min={todayISO()}
                     required
                     className="w-full rounded border border-slate-200 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-slate-400"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1">
-                    <label className="text-xs text-slate-500">Inicio</label>
+                    <label htmlFor="resched-start" className="text-xs text-slate-500">Inicio</label>
                     <input
+                      id="resched-start"
                       type="time"
                       value={reschedStart}
                       onChange={(e) => setReschedStart(e.target.value)}
@@ -654,8 +657,9 @@ function SheetReady({
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs text-slate-500">Fin</label>
+                    <label htmlFor="resched-end" className="text-xs text-slate-500">Fin</label>
                     <input
+                      id="resched-end"
                       type="time"
                       value={reschedEnd}
                       onChange={(e) => setReschedEnd(e.target.value)}

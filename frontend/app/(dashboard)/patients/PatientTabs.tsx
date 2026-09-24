@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -321,6 +321,7 @@ function NoteForm({
   canScheduleAppointment?: boolean;
 }) {
   const router = useRouter();
+  const uid = useId();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const formRef = useRef<HTMLFormElement | null>(null);
@@ -535,8 +536,9 @@ function NoteForm({
       {/* Tipo + Tratamiento */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1">
-          <label className={fieldLabel}>Tipo</label>
+          <label htmlFor={`${uid}-note_type`} className={fieldLabel}>Tipo</label>
           <select
+            id={`${uid}-note_type`}
             name="note_type"
             required
             value={noteType}
@@ -550,10 +552,11 @@ function NoteForm({
         </div>
         {treatments.length > 0 && (
           <div className="space-y-1">
-            <label className={fieldLabel}>
+            <label htmlFor={`${uid}-treatment_id`} className={fieldLabel}>
               Tratamiento <span className="text-slate-400">(opcional)</span>
             </label>
             <select
+              id={`${uid}-treatment_id`}
               name="treatment_id"
               value={treatmentId}
               onChange={(e) => setTreatmentId(e.target.value)}
@@ -571,8 +574,9 @@ function NoteForm({
       {/* 1. Motivo de consulta */}
       {show("motivo") && (
         <div className="space-y-1">
-          <label className={fieldLabel}>Motivo de consulta</label>
+          <label htmlFor={`${uid}-motivo`} className={fieldLabel}>Motivo de consulta</label>
           <input
+            id={`${uid}-motivo`}
             type="text"
             name="motivo"
             value={motivo}
@@ -586,8 +590,9 @@ function NoteForm({
       {/* 2. Enfermedad actual */}
       {show("enfermedad_actual") && (
         <div className="space-y-1">
-          <label className={fieldLabel}>Enfermedad actual</label>
+          <label htmlFor={`${uid}-enfermedad_actual`} className={fieldLabel}>Enfermedad actual</label>
           <textarea
+            id={`${uid}-enfermedad_actual`}
             name="enfermedad_actual"
             rows={3}
             value={enfermedadActual}
@@ -607,8 +612,9 @@ function NoteForm({
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
             {VITAL_DEFS.map((v) => (
               <div key={v.key} className="space-y-1">
-                <label className="text-[11px] text-slate-500">{v.label}</label>
+                <label htmlFor={`${uid}-vital_${v.key}`} className="text-[11px] text-slate-500">{v.label}</label>
                 <input
+                  id={`${uid}-vital_${v.key}`}
                   type="text"
                   name={`vital_${v.key}`}
                   value={vitals[v.key] ?? ""}
@@ -631,8 +637,9 @@ function NoteForm({
           <div className="mt-3 space-y-2">
             {EXAM_FISICO_SISTEMAS.filter((s) => isSistemaEnabled(config, s.key)).map((s) => (
               <div key={s.key} className="space-y-0.5">
-                <label className="text-[11px] font-medium text-slate-500">{s.label}</label>
+                <label htmlFor={`${uid}-ef_${s.key}`} className="text-[11px] font-medium text-slate-500">{s.label}</label>
                 <textarea
+                  id={`${uid}-ef_${s.key}`}
                   name={`examen_fisico_${s.key}`}
                   rows={1}
                   value={examFisico[s.key] ?? ""}
@@ -656,8 +663,9 @@ function NoteForm({
           </summary>
           <div className="mt-3 space-y-2">{activeSpecialtyFields.map((f) => (
             <div key={f.key} className="space-y-0.5">
-              <label className="text-[11px] font-medium text-slate-500">{f.label}</label>
+              <label htmlFor={`${uid}-esp_${f.key}`} className="text-[11px] font-medium text-slate-500">{f.label}</label>
               <textarea
+                id={`${uid}-esp_${f.key}`}
                 name={`esp_${f.key}`}
                 rows={1}
                 value={especializados[f.key] ?? ""}
@@ -674,8 +682,9 @@ function NoteForm({
 
       {/* 6. Nota libre */}
       <div className="space-y-1">
-        <label className={fieldLabel}>Nota</label>
+        <label htmlFor={`${uid}-body`} className={fieldLabel}>Nota</label>
         <textarea
+          id={`${uid}-body`}
           name="body"
           required
           rows={4}
@@ -690,7 +699,7 @@ function NoteForm({
       {show("diagnostico") && (
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <label className={fieldLabel}>Impresión diagnóstica</label>
+            <label htmlFor={`${uid}-diagnostico`} className={fieldLabel}>Impresión diagnóstica</label>
             <button
               type="button"
               onClick={handleSuggestDx}
@@ -725,6 +734,7 @@ function NoteForm({
             </div>
           )}
           <textarea
+            id={`${uid}-diagnostico`}
             name="diagnostico"
             rows={2}
             value={diagnostico}
@@ -741,8 +751,9 @@ function NoteForm({
       {/* 7. Indicaciones */}
       {show("indicaciones") && (
         <div className="space-y-1">
-          <label className={fieldLabel}>Indicaciones / Tratamiento</label>
+          <label htmlFor={`${uid}-indicaciones`} className={fieldLabel}>Indicaciones / Tratamiento</label>
           <textarea
+            id={`${uid}-indicaciones`}
             name="indicaciones"
             rows={2}
             value={indicaciones}
@@ -756,8 +767,9 @@ function NoteForm({
       {/* 8. Fecha de control */}
       {show("fecha_control") && (
         <div className="space-y-1">
-          <label className={fieldLabel}>Fecha de control</label>
+          <label htmlFor={`${uid}-fecha_control`} className={fieldLabel}>Fecha de control</label>
           <input
+            id={`${uid}-fecha_control`}
             type="date"
             name="fecha_control"
             value={fechaControl}
@@ -863,6 +875,7 @@ function ClinicalProfileCard({
   showFamiliares: boolean;
 }) {
   const router = useRouter();
+  const uid = useId();
   const [editing, setEditing] = useState(false);
   const [isPending, startTransition] = useTransition();
 
@@ -898,8 +911,9 @@ function ClinicalProfileCard({
         <p className="text-sm font-medium text-amber-900">Antecedentes del paciente</p>
         {showPersonales && (
           <div className="space-y-1">
-            <label className={fieldLabel}>Antecedentes personales</label>
+            <label htmlFor={`${uid}-medical_history`} className={fieldLabel}>Antecedentes personales</label>
             <textarea
+              id={`${uid}-medical_history`}
               name="medical_history"
               rows={3}
               defaultValue={personalesText ?? ""}
@@ -910,8 +924,9 @@ function ClinicalProfileCard({
         )}
         {showFamiliares && (
           <div className="space-y-1">
-            <label className={fieldLabel}>Antecedentes familiares</label>
+            <label htmlFor={`${uid}-antecedentes_familiares`} className={fieldLabel}>Antecedentes familiares</label>
             <textarea
+              id={`${uid}-antecedentes_familiares`}
               name="antecedentes_familiares"
               rows={2}
               defaultValue={familiaresText ?? ""}

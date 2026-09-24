@@ -2,6 +2,8 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { HOME_PATH } from "@/lib/routes";
+
 // Handler PKCE para magic links de Supabase Auth.
 // Supabase redirige aquí con ?code=... después de que el usuario hace clic
 // en el link del email. Intercambiamos el code por una sesión y redirigimos
@@ -39,6 +41,6 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Staff o error → login del staff.
-  return NextResponse.redirect(new URL("/approvals", request.url));
+  // Staff → inicio del panel (sin sesión, el middleware lo manda a /login).
+  return NextResponse.redirect(new URL(HOME_PATH, request.url));
 }

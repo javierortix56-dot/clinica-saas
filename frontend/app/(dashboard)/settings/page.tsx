@@ -11,7 +11,8 @@ import {
   getProfessionalNoteConfig,
   getProfessionalsNoteConfigs,
 } from "@/lib/supabase/server";
-import { SettingsClient } from "./SettingsClient";
+import { TreatmentTypesSection } from "./TreatmentTypesSection";
+import { ClinicSettingsForm } from "./ClinicSettingsForm";
 import { SpecialtiesManager } from "./SpecialtiesManager";
 import { ClinicalFieldsConfig } from "./ClinicalFieldsConfig";
 import {
@@ -21,6 +22,7 @@ import {
   type SpecialtyFieldDef,
 } from "../patients/clinical-fields";
 import { ensureSpecialtiesSeeded } from "./actions";
+import { HOME_PATH } from "@/lib/routes";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +37,7 @@ export default async function SettingsPage({
   // La config de la clínica es del dueño; los campos de historia clínica son de
   // cada profesional. Un doctor no-dueño entra solo por su sección de campos.
   if (!isOwner && !isDoctor) {
-    redirect("/approvals");
+    redirect(HOME_PATH);
   }
 
   // Siembra las especialidades base la primera vez que se abre Ajustes.
@@ -81,23 +83,88 @@ export default async function SettingsPage({
     })),
   ];
 
+  const hasClinicalFields = (isOwner && !!selectedProfessional) || (isDoctor && !!noteConfig);
+  const sections = [
+    ...(isOwner
+      ? [
+          { id: "datos", label: "Datos generales" },
+          { id: "equipo", label: "Equipo y horarios" },
+          { id: "tipos", label: "Tipos de consulta" },
+        ]
+      : []),
+    ...(hasClinicalFields ? [{ id: "historia", label: "Historia clínica" }] : []),
+    ...(isOwner ? [{ id: "avanzado", label: "Opciones avanzadas" }] : []),
+  ];
+
+  const sectionTitle = "text-lg font-semibold tracking-tight";
+
   return (
-    <div className="mx-auto flex max-w-[1100px] flex-col gap-10">
+    <div className="mx-auto flex max-w-[1100px] flex-col gap-8">
       <div>
         <h1 className="text-[27px] font-extrabold tracking-[-.02em]">Mi consultorio</h1>
         <p className="mt-[9px] text-[14px] font-medium text-muted-foreground">
           {isOwner
-            ? "Horarios, tipos de consulta y configuración de tu práctica."
+            ? "Datos del consultorio, equipo, tipos de consulta y planillas clínicas."
             : "Configuración de tus campos de la historia clínica."}
         </p>
+        {sections.length > 1 && (
+          <nav aria-label="Secciones de Mi consultorio" className="mt-4 flex flex-wrap gap-2">
+            {sections.map((s) => (
+              <a
+                key={s.id}
+                href={`#${s.id}`}
+                className="rounded-full border border-border bg-white px-3 py-[6px] text-[12.5px] font-semibold text-slate-600 transition hover:border-primary/40 hover:text-primary"
+              >
+                {s.label}
+              </a>
+            ))}
+          </nav>
+        )}
       </div>
+
+      {isOwner && (
+        <>
+          <section id="datos" className="scroll-mt-4 flex flex-col gap-4">
+            <h2 className={sectionTitle}>Datos generales</h2>
+            <div className="rounded-card border border-border bg-white p-5 shadow-card-soft">
+              {clinicSettings ? (
+                <ClinicSettingsForm settings={clinicSettings} />
+              ) : (
+                <p className="text-sm text-muted-foreground">No se pudo cargar la configuración.</p>
+              )}
+            </div>
+          </section>
+
+          <section
+            id="equipo"
+            className="scroll-mt-4 flex flex-wrap items-center justify-between gap-4 rounded-card border border-border bg-white p-5 shadow-card-soft"
+          >
+            <div>
+              <h2 className={sectionTitle}>Equipo y horarios</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Miembros del consultorio, disponibilidad semanal y conexión con Google Calendar.
+              </p>
+            </div>
+            <Link
+              href="/staff"
+              className="inline-flex shrink-0 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-white transition hover:brightness-[1.07]"
+            >
+              Gestionar equipo
+            </Link>
+          </section>
+
+          <section id="tipos" className="scroll-mt-4 flex flex-col gap-4">
+            <h2 className={sectionTitle}>Tipos de consulta y procedimientos</h2>
+            <TreatmentTypesSection treatmentTypes={treatmentTypes} />
+          </section>
+        </>
+      )}
 
       {/* Planilla de campos clínicos.
           El dueño elige a qué médico se la asigna; un doctor no-dueño edita la
-          suya. Antes esta sección solo aparecía si el usuario logueado era
-          doctor, así que un dueño con rol admin no podía configurar a nadie. */}
+          suya. */}
       {isOwner && selectedProfessional ? (
-        <div className="space-y-4">
+        <div id="historia" className="scroll-mt-4 space-y-4">
           {professionalConfigs.length > 1 && (
             <div className="space-y-2">
               <p className="text-xs font-semibold uppercase tracking-[.05em] text-slate-400">
@@ -134,43 +201,28 @@ export default async function SettingsPage({
           />
         </div>
       ) : isDoctor && noteConfig ? (
-        <ClinicalFieldsConfig
-          config={noteConfig}
-          specialties={specialtyList}
-          specialtyFieldDefs={specialtyFieldDefs}
-        />
+        <div id="historia" className="scroll-mt-4">
+          <ClinicalFieldsConfig
+            config={noteConfig}
+            specialties={specialtyList}
+            specialtyFieldDefs={specialtyFieldDefs}
+          />
+        </div>
       ) : null}
 
-      {/* Config de la clínica y especialidades — exclusivo del dueño. */}
+      {/* Plantillas de especialidades: se configuran una vez; quedan plegadas. */}
       {isOwner && (
-        <>
-          <section className="rounded-card border border-border bg-white p-5 shadow-card-soft">
-            <h2 className="text-lg font-semibold tracking-tight">
-              Equipo y horarios
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Disponibilidad semanal, miembros del consultorio y conexión con
-              Google Calendar.
-            </p>
-            <Link
-              href="/staff"
-              className="mt-4 inline-flex rounded-lg bg-primary px-4 py-2 text-sm font-bold text-white transition hover:brightness-[1.07]"
-            >
-              Configurar horarios
-            </Link>
-          </section>
-
-          {isDoctor && noteConfig && <hr className="border-slate-200" />}
-
-          <SettingsClient
-            clinicSettings={clinicSettings}
-            treatmentTypes={treatmentTypes}
-          />
-
-          <hr className="border-slate-200" />
-
-          <SpecialtiesManager specialties={specialties} customFields={customFields} />
-        </>
+        <details
+          id="avanzado"
+          className="scroll-mt-4 rounded-card border border-border bg-white shadow-card-soft"
+        >
+          <summary className="cursor-pointer select-none px-5 py-4 text-[15px] font-semibold text-slate-800 marker:text-slate-400">
+            Opciones avanzadas: especialidades y campos clínicos propios
+          </summary>
+          <div className="border-t border-slate-100 p-5">
+            <SpecialtiesManager specialties={specialties} customFields={customFields} />
+          </div>
+        </details>
       )}
     </div>
   );

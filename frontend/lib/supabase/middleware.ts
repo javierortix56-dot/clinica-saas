@@ -1,6 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { HOME_PATH } from "@/lib/routes";
+
 // Refresca la sesión de Supabase en cada request y resuelve el guard de auth.
 // Patrón estándar de @supabase/ssr para Next.js App Router: el cliente lee las
 // cookies del request y escribe las cookies refrescadas en la response.
@@ -74,7 +76,8 @@ export async function updateSession(request: NextRequest) {
   // Con sesión y en /login → redirige al panel (evita re-login).
   if (isAuthenticated && pathname.startsWith("/login")) {
     const url = request.nextUrl.clone();
-    url.pathname = "/approvals";
+    url.pathname = HOME_PATH;
+    url.search = "";
     return NextResponse.redirect(url);
   }
 
@@ -90,7 +93,8 @@ export async function updateSession(request: NextRequest) {
     userRole !== "doctor"
   ) {
     const url = request.nextUrl.clone();
-    url.pathname = "/approvals";
+    url.pathname = HOME_PATH;
+    url.search = "";
     return NextResponse.redirect(url);
   }
 

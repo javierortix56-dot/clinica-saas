@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { getSessionAuth, getStaffMembers } from "@/lib/supabase/server";
+import { HOME_PATH } from "@/lib/routes";
 import { StaffTable } from "./StaffTable";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +10,7 @@ export default async function StaffPage() {
   // Gestión de equipo: exclusiva del dueño de la clínica.
   const { isOwner } = await getSessionAuth();
   if (!isOwner) {
-    redirect("/approvals");
+    redirect(HOME_PATH);
   }
 
   const members = await getStaffMembers();

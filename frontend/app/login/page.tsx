@@ -7,6 +7,7 @@ import { loginSchema } from "@clinica/shared";
 import { Plus, Check, Mail, Lock } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
+import { HOME_PATH } from "@/lib/routes";
 
 const BULLETS = [
   "Agenda diaria y semanal con estados claros",
@@ -45,9 +46,8 @@ export default function LoginPage() {
       return;
     }
 
-    // En éxito, la sesión queda en cookies (@supabase/ssr). Redirige a la
-    // bandeja de aprobaciones (vista de mayor valor del MVP).
-    router.replace("/approvals");
+    // En éxito, la sesión queda en cookies (@supabase/ssr).
+    router.replace(HOME_PATH);
     router.refresh();
   }
 
@@ -104,12 +104,13 @@ export default function LoginPage() {
           </p>
 
           <form onSubmit={handleSubmit} noValidate>
-            <label className="mb-[7px] block text-[12.5px] font-semibold text-slate-700">
+            <label htmlFor="login-email" className="mb-[7px] block text-[12.5px] font-semibold text-slate-700">
               Email
             </label>
             <div className="mb-4 flex items-center gap-[9px] rounded-[11px] border border-border px-[13px] py-[11px] focus-within:border-primary">
               <Mail className="h-4 w-4 text-slate-400" strokeWidth={1.8} />
               <input
+                id="login-email"
                 type="email"
                 autoComplete="email"
                 placeholder="doctor@clinica.com"
@@ -120,12 +121,13 @@ export default function LoginPage() {
               />
             </div>
 
-            <label className="mb-[7px] block text-[12.5px] font-semibold text-slate-700">
+            <label htmlFor="login-password" className="mb-[7px] block text-[12.5px] font-semibold text-slate-700">
               Contraseña
             </label>
             <div className="mb-[22px] flex items-center gap-[9px] rounded-[11px] border border-border px-[13px] py-[11px] focus-within:border-primary">
               <Lock className="h-4 w-4 text-slate-400" strokeWidth={1.8} />
               <input
+                id="login-password"
                 type="password"
                 autoComplete="current-password"
                 placeholder="••••••••"
