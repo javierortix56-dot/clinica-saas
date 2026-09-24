@@ -8,18 +8,12 @@ import { Calendar, Clock, Check, X, CheckCircle2, CalendarClock, Trash2 } from "
 
 import { createClient } from "@/lib/supabase/client";
 import type { ProposedAppointment } from "@/lib/supabase/server";
-import { dateISOInTZ } from "@/lib/dates";
+import { clinicDateFormatter, dateISOInTZ } from "@/lib/dates";
 import { confirmAppointment, rejectAppointment } from "./actions";
 import { avatarColorOf, initialsOf } from "@/lib/utils";
 
-const dateFormatter = new Intl.DateTimeFormat("es-AR", {
-  dateStyle: "medium",
-  timeZone: "America/Argentina/Buenos_Aires",
-});
-const timeFormatter = new Intl.DateTimeFormat("es-AR", {
-  timeStyle: "short",
-  timeZone: "America/Argentina/Buenos_Aires",
-});
+const dateFormatter = clinicDateFormatter({ dateStyle: "medium" });
+const timeFormatter = clinicDateFormatter({ timeStyle: "short" });
 
 function viaLabel(origin: string | null | undefined): string {
   switch (origin) {

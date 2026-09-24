@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { isGcalStale } from "@/lib/gcal-status";
+import { clinicDateFormatter } from "@/lib/dates";
 import {
   upsertStaff,
   deactivateStaff,
@@ -159,12 +160,10 @@ function AvailabilityEditor({
 
 // ─── Google Calendar section ──────────────────────────────────────────────────
 
+const syncDateFormatter = clinicDateFormatter({ dateStyle: "short", timeStyle: "short" });
+
 function formatSyncDate(iso: string): string {
-  return new Intl.DateTimeFormat("es-AR", {
-    dateStyle: "short",
-    timeStyle: "short",
-    timeZone: "America/Argentina/Buenos_Aires",
-  }).format(new Date(iso));
+  return syncDateFormatter.format(iso);
 }
 
 function GoogleCalendarSection({

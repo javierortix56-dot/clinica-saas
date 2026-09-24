@@ -9,11 +9,9 @@ import type { Patient } from "@clinica/shared";
 import { avatarColorOf, initialsOf } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PatientSheet } from "./PatientSheet";
+import { clinicDateFormatter } from "@/lib/dates";
 
-const dateFormatter = new Intl.DateTimeFormat("es-AR", {
-  dateStyle: "medium",
-  timeZone: "America/Argentina/Buenos_Aires",
-});
+const dateFormatter = clinicDateFormatter({ dateStyle: "medium" });
 
 
 export function PatientsClient({ patients }: { patients: Patient[] }) {

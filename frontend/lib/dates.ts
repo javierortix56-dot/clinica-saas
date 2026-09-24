@@ -77,6 +77,19 @@ export function startOfDayInTZ(iso: string): Date {
   return new Date(guess.getTime() - (asLocal - guess.getTime()));
 }
 
+// Intl en la zona de la clínica con espacios normalizados: Node y los navegadores
+// usan ICU distintos (espacio común vs U+00A0/U+202F en "p. m."), y esa diferencia
+// rompe la hidratación de React en componentes cliente renderizados en el server.
+export function clinicDateFormatter(options: Intl.DateTimeFormatOptions): {
+  format: (date: Date | string) => string;
+} {
+  const fmt = new Intl.DateTimeFormat("es-AR", { timeZone: CLINIC_TZ, ...options });
+  return {
+    format: (date) =>
+      fmt.format(typeof date === "string" ? new Date(date) : date).replace(/[  ]/g, " "),
+  };
+}
+
 // Formatea una fecha de calendario sin que la zona horaria la desplace.
 export function formatISODate(
   iso: string,

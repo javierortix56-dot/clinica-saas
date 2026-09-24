@@ -54,19 +54,13 @@ import {
   type ClinicSpecialty,
   type CustomSpecialtyField,
 } from "./clinical-fields";
+import { clinicDateFormatter } from "@/lib/dates";
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 
-const dateTimeFormatter = new Intl.DateTimeFormat("es-AR", {
-  dateStyle: "medium",
-  timeStyle: "short",
-  timeZone: "America/Argentina/Buenos_Aires",
-});
+const dateTimeFormatter = clinicDateFormatter({ dateStyle: "medium", timeStyle: "short" });
 
-const dateFormatter = new Intl.DateTimeFormat("es-AR", {
-  dateStyle: "medium",
-  timeZone: "America/Argentina/Buenos_Aires",
-});
+const dateFormatter = clinicDateFormatter({ dateStyle: "medium" });
 
 const NOTE_TYPE_LABELS: Record<string, string> = {
   consulta: "Consulta", evolución: "Evolución",
