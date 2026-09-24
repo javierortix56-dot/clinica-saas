@@ -36,7 +36,9 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # ",z" re-etiqueta el archivo para SELinux (Oracle Linux); no afecta a
+      # sistemas sin SELinux como Ubuntu.
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro,z
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
