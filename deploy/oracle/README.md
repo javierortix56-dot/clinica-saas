@@ -142,9 +142,9 @@ curl https://DOMAIN/healthz       # debe responder {"status":"ok","db":"up","red
 
 ## 9. Conectar el resto de los servicios
 
-1. **Vercel** → proyecto `clinica-saas-frontend` → Settings → Environment
-   Variables → `NEXT_PUBLIC_API_URL` = `https://DOMAIN` (en Production y
-   Preview) → **Redeploy** de producción.
+1. **Vercel**: la URL del backend está por defecto en `frontend/lib/api-url.ts`.
+   Si el dominio cambia, actualizar ese archivo o crear en Vercel la variable
+   `API_URL` = `https://DOMAIN` (puede ser *Sensitive*) → **Redeploy**.
 2. **Google Cloud Console** → APIs y servicios → Credenciales → cliente OAuth →
    agregar `https://DOMAIN/auth/google/callback` en *URIs de redireccionamiento
    autorizados*.

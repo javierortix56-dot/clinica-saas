@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { createClient } from "@/lib/supabase/server";
+import { API_URL } from "@/lib/api-url";
 
 // Cancela un turno. Pasa por el backend NestJS (/appointments/:id/cancel) para
 // que además elimine el evento espejo del Google Calendar del profesional. Es
@@ -14,7 +15,7 @@ export async function cancelAppointment(
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return { error: "Sesión expirada." };
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  const apiUrl = API_URL;
   if (!apiUrl) return { error: "API no configurada." };
 
   try {
@@ -52,7 +53,7 @@ export async function updateAppointmentStatus(
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return { error: "Sesión expirada." };
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  const apiUrl = API_URL;
   if (!apiUrl) return { error: "API no configurada." };
 
   try {
@@ -117,7 +118,7 @@ export async function createManualAppointment(
     return { error: "El horario de fin debe ser posterior al de inicio." };
   }
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  const apiUrl = API_URL;
   if (!apiUrl) return { error: "API no configurada." };
 
   try {
@@ -167,7 +168,7 @@ export async function rescheduleAppointment(
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return { error: "Sesión expirada." };
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  const apiUrl = API_URL;
   if (!apiUrl) return { error: "API no configurada." };
 
   try {

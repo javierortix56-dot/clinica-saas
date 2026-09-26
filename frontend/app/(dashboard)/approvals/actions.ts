@@ -3,8 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { createClient } from "@/lib/supabase/server";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
+import { API_URL } from "@/lib/api-url";
 
 // Nest devuelve { message: string | string[] } en los errores HTTP.
 async function backendMessage(res: Response): Promise<string | null> {

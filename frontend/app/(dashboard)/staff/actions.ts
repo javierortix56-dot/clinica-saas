@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { randomUUID, randomBytes } from "crypto";
 
 import { createClient } from "@/lib/supabase/server";
+import { API_URL } from "@/lib/api-url";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getVerifiedClaims } from "@/lib/auth/claims";
 
@@ -438,11 +439,11 @@ export async function getGoogleCalendarConnectUrl(
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return { error: "Sesión expirada." };
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  const apiUrl = API_URL;
   if (!apiUrl) {
     return {
       error:
-        "Falta configurar NEXT_PUBLIC_API_URL: el frontend no sabe a qué backend pedirle la conexión.",
+        "Falta configurar API_URL: el frontend no sabe a qué backend pedirle la conexión.",
     };
   }
 
@@ -472,11 +473,11 @@ export async function disconnectGoogleCalendar(
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return { error: "Sesión expirada." };
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  const apiUrl = API_URL;
   if (!apiUrl) {
     return {
       error:
-        "Falta configurar NEXT_PUBLIC_API_URL: el frontend no sabe a qué backend pedirle la desconexión.",
+        "Falta configurar API_URL: el frontend no sabe a qué backend pedirle la desconexión.",
     };
   }
 
