@@ -1,11 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    // Desactiva el Router Cache del cliente (staleTimes = 0).
-    // Así cada navegación a una página dinámica va al servidor y obtiene datos frescos.
-    // Necesario para que borrados/ediciones en Supabase se reflejen inmediatamente.
+    // Router Cache del cliente: volver a una pantalla vista hace menos de 30 s
+    // es instantáneo. Las mutaciones de la app (Server Actions con
+    // revalidatePath / router.refresh) invalidan esa caché, así que lo que
+    // cambia el usuario se ve al momento; cambios externos (bot de WhatsApp,
+    // Google Calendar) tardan como máximo 30 s en aparecer al navegar.
     staleTimes: {
-      dynamic: 0,
+      dynamic: 30,
       static: 180,
     },
     // El dictado por voz manda el audio (base64) a un Server Action; el límite

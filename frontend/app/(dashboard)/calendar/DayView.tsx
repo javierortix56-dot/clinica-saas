@@ -41,7 +41,7 @@ function dayStripSubtitle(d: DayModel): string {
   return parts.join(" · ");
 }
 
-export function DayStrip({
+function DayStrip({
   days,
   selectedIdx,
   todayISO,
