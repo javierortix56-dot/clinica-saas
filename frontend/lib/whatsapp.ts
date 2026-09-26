@@ -5,7 +5,7 @@
 // Número en formato internacional sin "+". Argentina: los celulares en WhatsApp
 // llevan 9 después del 54 (54 9 11 …); se agrega si falta. Un número local de
 // 10 dígitos (área + número) se asume argentino.
-export function whatsappNumber(raw: string | null | undefined): string | null {
+function whatsappNumber(raw: string | null | undefined): string | null {
   if (!raw) return null;
   let digits = raw.replace(/\D/g, "");
   if (digits.startsWith("00")) digits = digits.slice(2);

@@ -11,7 +11,6 @@ import type {
   ProfessionalForScheduling,
   TreatmentTypeOption,
 } from "@/lib/supabase/server";
-import type { Patient } from "@clinica/shared";
 import { dateISOInTZ } from "@/lib/dates";
 import { buildWeekModel, formatHours, minutesInTZ, weekRange } from "./agenda-model";
 import { DayView, type NewAppointmentPrefill } from "./DayView";
@@ -20,6 +19,7 @@ import { SummaryView } from "./SummaryView";
 import { AppointmentSheet } from "./AppointmentSheet";
 import { ManualAppointmentSheet } from "./ManualAppointmentSheet";
 import { confirmAppointment } from "../approvals/actions";
+import { getSchedulingOptions, type PatientOption } from "./actions";
 import type { CalendarView } from "./view-preference";
 
 // Parámetros de "abrir formulario con contexto" que se consumen una sola vez.
@@ -48,10 +48,8 @@ export function CalendarGrid({
   canCreateAppointment,
   canAttend,
   singleProfessional,
-  patients,
   professionals,
   selectedProfessionalId = null,
-  treatmentTypes = [],
   defaultDurationMinutes = 30,
 }: {
   view: CalendarView;
@@ -66,10 +64,8 @@ export function CalendarGrid({
   // Un único profesional a la vista: se muestran huecos libres y no hace
   // falta el nombre del profesional en cada turno.
   singleProfessional: boolean;
-  patients: Pick<Patient, "id" | "full_name" | "national_id">[];
   professionals: ProfessionalForScheduling[];
   selectedProfessionalId?: string | null;
-  treatmentTypes?: TreatmentTypeOption[];
   defaultDurationMinutes?: number;
 }) {
   const router = useRouter();
@@ -84,6 +80,21 @@ export function CalendarGrid({
   const [prefill, setPrefill] = useState<NewAppointmentPrefill>({});
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [rangeMode, setRangeMode] = useState<"fit" | "full">("fit");
+  // Opciones del formulario de turno: se piden al abrirlo (no en cada visita a
+  // la agenda). Al reabrir se muestra la lista anterior mientras se actualiza.
+  const [options, setOptions] = useState<{
+    patients: PatientOption[];
+    treatmentTypes: TreatmentTypeOption[];
+  } | null>(null);
+
+  useEffect(() => {
+    if (!newApptOpen) return;
+    let cancelled = false;
+    getSchedulingOptions()
+      .then((o) => { if (!cancelled) setOptions(o); })
+      .catch(() => toast.error("No se pudo cargar la lista de pacientes."));
+    return () => { cancelled = true; };
+  }, [newApptOpen]);
 
   useEffect(() => {
     try {
@@ -252,9 +263,9 @@ export function CalendarGrid({
       <ManualAppointmentSheet
         open={newApptOpen}
         onOpenChange={setNewApptOpen}
-        patients={patients}
+        patients={options?.patients ?? null}
         professionals={professionals}
-        treatmentTypes={treatmentTypes}
+        treatmentTypes={options?.treatmentTypes ?? []}
         initialPatientId={prefill.patientId}
         initialProfessionalId={prefill.professionalId}
         replacesAppointmentId={prefill.replacesAppointmentId}

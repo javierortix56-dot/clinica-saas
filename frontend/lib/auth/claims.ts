@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 // Claims custom que inyecta el Custom Access Token Hook (migraciones 0007/0009/0016).
 export interface SessionClaims {
   sub: string;
+  email: string | null;
   role: string | null; // user_role: admin | doctor | reception | patient
   clinicId: string | null;
   isOwner: boolean;
@@ -30,6 +31,7 @@ export async function getVerifiedClaims(
   if (typeof c.sub !== "string" || !c.sub) return null;
   return {
     sub: c.sub,
+    email: typeof c.email === "string" ? c.email : null,
     role: typeof c.user_role === "string" ? c.user_role : null,
     clinicId: typeof c.clinic_id === "string" ? c.clinic_id : null,
     isOwner: c.is_owner === true,

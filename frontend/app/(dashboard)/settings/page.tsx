@@ -40,13 +40,10 @@ export default async function SettingsPage({
     redirect(HOME_PATH);
   }
 
-  // Siembra las especialidades base la primera vez que se abre Ajustes.
-  await ensureSpecialtiesSeeded();
-
   const [
     clinicSettings,
     treatmentTypes,
-    specialties,
+    loadedSpecialties,
     customFields,
     noteConfig,
     professionalConfigs,
@@ -59,6 +56,14 @@ export default async function SettingsPage({
     // El dueño configura la planilla de CADA médico; un doctor no-dueño solo la suya.
     isOwner ? getProfessionalsNoteConfigs() : Promise.resolve([]),
   ]);
+
+  // Siembra las especialidades base solo la primera vez (clínica sin ninguna):
+  // antes corría en cada visita, con dos consultas en serie antes de cargar.
+  let specialties = loadedSpecialties;
+  if (isOwner && specialties.length === 0) {
+    const seeded = await ensureSpecialtiesSeeded();
+    if (seeded.seeded) specialties = await getClinicSpecialties();
+  }
 
   // ?profesional=<id> — de quién se está editando la planilla. Default: el primero.
   const selectedProfessionalId =

@@ -8,9 +8,7 @@ import {
   getWeeklyAvailability,
   getSessionAuth,
   isDoctorRole,
-  getPatients,
   getProfessionalsForScheduling,
-  getTreatmentTypeOptions,
   getClinicSettings,
   getCurrentProfessionalId,
 } from "@/lib/supabase/server";
@@ -87,12 +85,10 @@ export default async function CalendarPage({
   // una clínica con un solo profesional.
   const singleProfessional = isDoctor || selectedProfessionalId !== null || professionals.length <= 1;
 
-  const [appointments, blocks, availability, patients, treatmentTypes, clinicSettings] = await Promise.all([
+  const [appointments, blocks, availability, clinicSettings] = await Promise.all([
     getWeeklyAppointments(displayedMonday, selectedProfessionalId),
     getWeeklyBlocks(displayedMonday, selectedProfessionalId),
     getWeeklyAvailability(selectedProfessionalId),
-    canCreateAppointment ? getPatients() : Promise.resolve([]),
-    canCreateAppointment ? getTreatmentTypeOptions() : Promise.resolve([]),
     getClinicSettings(),
   ]);
   // Lun–Sáb de la semana mostrada.
@@ -188,10 +184,8 @@ export default async function CalendarPage({
         canCreateAppointment={canCreateAppointment}
         canAttend={currentProfessionalId !== null}
         singleProfessional={singleProfessional}
-        patients={patients.map((p) => ({ id: p.id, full_name: p.full_name, national_id: p.national_id }))}
         professionals={professionals}
         selectedProfessionalId={selectedProfessionalId}
-        treatmentTypes={treatmentTypes}
         defaultDurationMinutes={clinicSettings?.default_appointment_minutes ?? 30}
       />
     </div>

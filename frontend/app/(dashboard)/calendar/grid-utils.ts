@@ -2,7 +2,7 @@ import { CLINIC_TZ } from "@/lib/dates";
 
 // Helpers puros de fecha para la hoja de turno. La agenda usa agenda-model.ts.
 
-export const TZ = CLINIC_TZ;
+const TZ = CLINIC_TZ;
 
 export function addDays(d: Date, days: number): Date {
   const result = new Date(d);

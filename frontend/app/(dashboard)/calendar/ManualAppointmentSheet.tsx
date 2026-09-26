@@ -51,7 +51,8 @@ export function ManualAppointmentSheet({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  patients: Pick<Patient, "id" | "full_name" | "national_id">[];
+  // null mientras se carga la lista (se pide al abrir el formulario).
+  patients: Pick<Patient, "id" | "full_name" | "national_id">[] | null;
   professionals: ProfessionalForScheduling[];
   treatmentTypes?: TreatmentTypeOption[];
   initialPatientId?: string;
@@ -92,9 +93,10 @@ export function ManualAppointmentSheet({
   // Un profesional que ya no está disponible (inactivo) no queda preseleccionado.
   const professionalValue = professionals.some((p) => p.id === professionalId) ? professionalId : "";
 
+  const loadedPatients = patients ?? [];
   const allPatients = [
-    ...createdPatients.filter((c) => !patients.some((p) => p.id === c.id)),
-    ...patients,
+    ...createdPatients.filter((c) => !loadedPatients.some((p) => p.id === c.id)),
+    ...loadedPatients,
   ];
   const selectedPatient = allPatients.find((p) => p.id === selectedPatientId) ?? null;
   const query = patientSearch.trim().toLowerCase();
@@ -177,7 +179,9 @@ export function ManualAppointmentSheet({
                   <span className="text-xs text-slate-400">{p.national_id ? `DNI ${p.national_id}` : ""}</span>
                 </button>
               ))}
-              {matches.length === 0 && (
+              {patients === null ? (
+                <p className="px-3 py-3 text-center text-xs text-slate-400">Cargando pacientes…</p>
+              ) : matches.length === 0 && (
                 <p className="px-3 py-3 text-center text-xs text-slate-400">No se encontraron pacientes.</p>
               )}
               <button

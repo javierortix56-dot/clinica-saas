@@ -29,10 +29,6 @@ export interface DayModel {
   busyByKind: { confirmed: number; pending: number; block: number };
 }
 
-// Estados que se muestran en la agenda. Cancelados no; las solicitudes
-// vencidas tampoco (se gestionan en Solicitudes).
-export const AGENDA_STATUSES = ["proposed", "confirmed", "in_progress", "completed", "no_show"] as const;
-
 const hmFormatter = new Intl.DateTimeFormat("en-GB", {
   timeZone: CLINIC_TZ,
   hour: "2-digit",
@@ -48,7 +44,7 @@ export function minutesInTZ(instant: Date | string): number {
   return h * 60 + m;
 }
 
-export function timeToMinutes(t: string): number {
+function timeToMinutes(t: string): number {
   const [h, m] = t.split(":").map(Number);
   return h * 60 + (m || 0);
 }

@@ -43,15 +43,17 @@ export function createClient() {
 export const getSessionAuth = cache(async function (): Promise<{
   hasSession: boolean;
   userId: string | null;
+  email: string | null;
   role: string | null;
   isOwner: boolean;
 }> {
   const supabase = createClient();
   const claims = await getVerifiedClaims(supabase);
-  if (!claims) return { hasSession: false, userId: null, role: null, isOwner: false };
+  if (!claims) return { hasSession: false, userId: null, email: null, role: null, isOwner: false };
   return {
     hasSession: true,
     userId: claims.sub,
+    email: claims.email,
     role: claims.role,
     isOwner: claims.isOwner,
   };
@@ -766,15 +768,13 @@ export async function getPatientClinicalProfile(
 // {} = defaults. null si el usuario no es profesional (no crea notas).
 export async function getProfessionalNoteConfig(): Promise<NoteFieldConfig | null> {
   const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
+  const { userId } = await getSessionAuth();
+  if (!userId) return null;
 
   const { data } = await supabase
     .from("professionals")
     .select("note_field_config, staff_members!inner(auth_user_id)")
-    .eq("staff_members.auth_user_id", user.id)
+    .eq("staff_members.auth_user_id", userId)
     .maybeSingle();
 
   const cfg = (data as { note_field_config?: NoteFieldConfig } | null)

@@ -24,24 +24,22 @@ export default async function DashboardLayout({
 }) {
   const supabase = createClient();
 
-  // Guard de sesión: getUser() revalida el token contra Supabase.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
+  // Guard de sesión con los claims del JWT verificados localmente (firma ES256
+  // contra el JWKS): sin round-trip a Supabase Auth en cada navegación. El
+  // middleware ya refrescó la sesión; los datos igual pasan por RLS.
+  const { userId, email, role, isOwner } = await getSessionAuth();
+  if (!userId) {
     redirect("/login");
   }
 
-  // Lecturas dependientes solo de `user`; corren en paralelo para no encadenar
-  // round-trips en cada navegación. El conteo alimenta el badge del sidebar: solo
-  // solicitudes vigentes (las vencidas no requieren una decisión urgente).
-  const [{ role, isOwner }, { data: sm }, { count: approvalsCount }] =
+  // En paralelo: nombre para el menú y conteo del badge (solo solicitudes
+  // vigentes; las vencidas no requieren una decisión urgente).
+  const [{ data: sm }, { count: approvalsCount }] =
     await Promise.all([
-      getSessionAuth(),
       supabase
         .from("staff_members")
         .select("full_name")
-        .eq("auth_user_id", user.id)
+        .eq("auth_user_id", userId)
         .single(),
       supabase
         .from("appointments")
@@ -50,7 +48,7 @@ export default async function DashboardLayout({
         .gte("start_at", new Date().toISOString()),
     ]);
 
-  const displayName = sm?.full_name ?? user.email ?? "Usuario";
+  const displayName = sm?.full_name ?? email ?? "Usuario";
   const roleLabel = role ? ROLE_LABEL[role] ?? "Usuario" : "Usuario";
 
   const navProps = {

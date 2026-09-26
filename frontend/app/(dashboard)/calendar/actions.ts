@@ -2,8 +2,32 @@
 
 import { revalidatePath } from "next/cache";
 
-import { createClient } from "@/lib/supabase/server";
+import {
+  createClient,
+  getTreatmentTypeOptions,
+  type TreatmentTypeOption,
+} from "@/lib/supabase/server";
 import { API_URL } from "@/lib/api-url";
+
+export interface PatientOption {
+  id: string;
+  full_name: string;
+  national_id: string;
+}
+
+// Pacientes y tipos de tratamiento para el formulario de nuevo turno. Se piden
+// al abrirlo (no en cada visita a la agenda) y solo con las columnas que usa.
+export async function getSchedulingOptions(): Promise<{
+  patients: PatientOption[];
+  treatmentTypes: TreatmentTypeOption[];
+}> {
+  const supabase = createClient();
+  const [{ data }, treatmentTypes] = await Promise.all([
+    supabase.from("patients").select("id, full_name, national_id").order("full_name", { ascending: true }),
+    getTreatmentTypeOptions(),
+  ]);
+  return { patients: (data ?? []) as PatientOption[], treatmentTypes };
+}
 
 // Cancela un turno. Pasa por el backend NestJS (/appointments/:id/cancel) para
 // que además elimine el evento espejo del Google Calendar del profesional. Es
