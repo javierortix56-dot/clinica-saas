@@ -1,24 +1,33 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Search, Plus, ChevronRight, Users, SearchX } from "lucide-react";
 
 import type { Patient } from "@clinica/shared";
 import { avatarColorOf, initialsOf } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PatientSheet } from "./PatientSheet";
+import { clinicDateFormatter } from "@/lib/dates";
 
-const dateFormatter = new Intl.DateTimeFormat("es-AR", {
-  dateStyle: "medium",
-  timeZone: "America/Argentina/Buenos_Aires",
-});
+const dateFormatter = clinicDateFormatter({ dateStyle: "medium" });
 
 
 export function PatientsClient({ patients }: { patients: Patient[] }) {
-  const router = useRouter();
+  const searchParams = useSearchParams();
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(searchParams.get("q") ?? "");
+
+  // Accesos desde otras pantallas: ?q= (buscador global) y ?nuevo=1 (alta directa).
+  useEffect(() => {
+    const q = searchParams.get("q");
+    if (q !== null) setSearch(q);
+    if (searchParams.get("nuevo") === "1") setSheetOpen(true);
+    if (q !== null || searchParams.has("nuevo")) {
+      window.history.replaceState(null, "", "/patients");
+    }
+  }, [searchParams]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -26,7 +35,7 @@ export function PatientsClient({ patients }: { patients: Patient[] }) {
     return patients.filter(
       (p) =>
         p.full_name.toLowerCase().includes(q) ||
-        p.national_id.includes(q)
+        p.national_id.toLowerCase().includes(q)
     );
   }, [patients, search]);
 
@@ -56,6 +65,8 @@ export function PatientsClient({ patients }: { patients: Patient[] }) {
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          aria-label="Buscar paciente por nombre o DNI"
+          autoFocus={!!searchParams.get("q")}
           placeholder="Buscar por nombre o DNI…"
           className="flex-1 bg-transparent text-[14px] font-medium text-foreground outline-none placeholder:text-slate-400"
         />
@@ -93,10 +104,10 @@ export function PatientsClient({ patients }: { patients: Patient[] }) {
             <div>Fecha de alta</div>
           </div>
           {filtered.map((p) => (
-            <button
+            <Link
               key={p.id}
-              onClick={() => router.push(`/patients/${p.id}`)}
-              className="flex w-full items-center gap-3 border-b border-slate-100 px-4 py-[10px] text-left transition-colors last:border-0 hover:bg-slate-50 sm:grid sm:grid-cols-[2.2fr_1.6fr_1.2fr_1.1fr] sm:gap-0 sm:px-[22px] sm:py-[13px]"
+              href={`/patients/${p.id}`}
+              className="flex w-full items-center gap-3 border-b border-slate-100 px-4 py-[10px] text-left transition-colors last:border-0 hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:outline-none sm:grid sm:grid-cols-[2.2fr_1.6fr_1.2fr_1.1fr] sm:gap-0 sm:px-[22px] sm:py-[13px]"
             >
               {/* Nombre (+ DNI bajo el nombre solo en móvil) */}
               <div className="flex min-w-0 flex-1 items-center gap-3 sm:flex-none">
@@ -140,7 +151,7 @@ export function PatientsClient({ patients }: { patients: Patient[] }) {
                 className="h-4 w-4 shrink-0 text-slate-300 sm:hidden"
                 strokeWidth={2}
               />
-            </button>
+            </Link>
           ))}
         </div>
       )}

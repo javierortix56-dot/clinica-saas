@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition, useState } from "react";
+import { useId, useTransition, useState } from "react";
 import { toast } from "sonner";
 
 import type { TreatmentTypeWithPhases, TreatmentPhase } from "@/lib/supabase/server";
@@ -55,6 +55,7 @@ export function TreatmentTypeSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const uid = useId();
   const [isPending, startTransition] = useTransition();
   const [isDeleting, startDeleting] = useTransition();
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -129,8 +130,9 @@ export function TreatmentTypeSheet({
           )}
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">Nombre</label>
+            <label htmlFor={`${uid}-name`} className="text-sm font-medium text-slate-700">Nombre</label>
             <input
+              id={`${uid}-name`}
               name="name"
               required
               defaultValue={type?.name ?? ""}
@@ -140,10 +142,11 @@ export function TreatmentTypeSheet({
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
+            <label htmlFor={`${uid}-desc`} className="text-sm font-medium text-slate-700">
               Descripción <span className="text-slate-400">(opcional)</span>
             </label>
             <textarea
+              id={`${uid}-desc`}
               name="description"
               rows={2}
               defaultValue={type?.description ?? ""}
@@ -157,11 +160,11 @@ export function TreatmentTypeSheet({
               <input
                 type="checkbox"
                 name="is_active"
-                id="is_active_treatment"
+                id={`${uid}-active`}
                 defaultChecked={type?.is_active ?? true}
                 className="h-4 w-4 rounded border-slate-300"
               />
-              <label htmlFor="is_active_treatment" className="text-sm text-slate-700">
+              <label htmlFor={`${uid}-active`} className="text-sm text-slate-700">
                 Tipo activo (visible para agendar turnos)
               </label>
             </div>
@@ -195,6 +198,7 @@ export function TreatmentTypeSheet({
                       type="button"
                       onClick={() => movePhase(i, -1)}
                       disabled={i === 0}
+                      aria-label={`Subir fase ${i + 1}`}
                       className="rounded px-1.5 py-0.5 text-xs text-slate-400 hover:text-slate-700 disabled:opacity-30"
                     >
                       ↑
@@ -203,6 +207,7 @@ export function TreatmentTypeSheet({
                       type="button"
                       onClick={() => movePhase(i, 1)}
                       disabled={i === phases.length - 1}
+                      aria-label={`Bajar fase ${i + 1}`}
                       className="rounded px-1.5 py-0.5 text-xs text-slate-400 hover:text-slate-700 disabled:opacity-30"
                     >
                       ↓
@@ -210,6 +215,7 @@ export function TreatmentTypeSheet({
                     <button
                       type="button"
                       onClick={() => removePhase(i)}
+                      aria-label={`Quitar fase ${i + 1}`}
                       className="rounded px-1.5 py-0.5 text-xs text-red-400 hover:text-red-600"
                     >
                       ×
@@ -219,8 +225,9 @@ export function TreatmentTypeSheet({
 
                 <div className="grid grid-cols-2 gap-2">
                   <div className="col-span-2 space-y-1">
-                    <label className="text-xs text-slate-500">Nombre de la fase</label>
+                    <label htmlFor={`${uid}-p${i}-name`} className="text-xs text-slate-500">Nombre de la fase</label>
                     <input
+                      id={`${uid}-p${i}-name`}
                       value={phase.name}
                       onChange={(e) => updatePhase(i, { name: e.target.value })}
                       placeholder="Ej: Colocación de brackets"
@@ -229,8 +236,9 @@ export function TreatmentTypeSheet({
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs text-slate-500">Tipo</label>
+                    <label htmlFor={`${uid}-p${i}-kind`} className="text-xs text-slate-500">Tipo</label>
                     <select
+                      id={`${uid}-p${i}-kind`}
                       value={phase.phase_kind}
                       onChange={(e) =>
                         updatePhase(i, { phase_kind: e.target.value as "clinical" | "lab_wait" })
@@ -243,13 +251,14 @@ export function TreatmentTypeSheet({
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs text-slate-500">
+                    <label htmlFor={`${uid}-p${i}-dur`} className="text-xs text-slate-500">
                       Duración (min)
                       {phase.is3d && (
                         <Badge variant="secondary" className="ml-1 text-xs">+15 min automático</Badge>
                       )}
                     </label>
                     <input
+                      id={`${uid}-p${i}-dur`}
                       type="number"
                       min="0"
                       value={phase.duration_minutes ?? ""}
@@ -264,8 +273,9 @@ export function TreatmentTypeSheet({
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs text-slate-500">Cooldown (días)</label>
+                    <label htmlFor={`${uid}-p${i}-cool`} className="text-xs text-slate-500">Espera a la próxima fase (días)</label>
                     <input
+                      id={`${uid}-p${i}-cool`}
                       type="number"
                       min="0"
                       value={phase.cooldown_days}
@@ -280,12 +290,12 @@ export function TreatmentTypeSheet({
                   <div className="col-span-2 flex items-center gap-2">
                     <input
                       type="checkbox"
-                      id={`phase_3d_${i}`}
+                      id={`${uid}-p${i}-3d`}
                       checked={phase.is3d}
                       onChange={(e) => updatePhase(i, { is3d: e.target.checked })}
                       className="h-4 w-4 rounded border-slate-300"
                     />
-                    <label htmlFor={`phase_3d_${i}`} className="text-xs text-slate-600">
+                    <label htmlFor={`${uid}-p${i}-3d`} className="text-xs text-slate-600">
                       Incluye escaneo digital 3D
                     </label>
                   </div>

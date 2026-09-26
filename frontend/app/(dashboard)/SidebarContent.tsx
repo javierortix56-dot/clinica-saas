@@ -6,8 +6,9 @@ import { avatarColorOf, initialsOf } from "@/lib/utils";
 import {
   Calendar,
   Users,
-  CheckCircle2,
+  Inbox,
   Settings,
+  UserCog,
   LogOut,
   Plus,
 } from "lucide-react";
@@ -44,22 +45,23 @@ export function SidebarContent({
   const pathname = usePathname();
 
   const principal: NavItem[] = [
-    { href: "/calendar", label: "Mi agenda", icon: Calendar },
+    { href: "/calendar", label: "Agenda", icon: Calendar },
     { href: "/patients", label: "Pacientes", icon: Users },
     {
       href: "/approvals",
-      label: "Pendientes",
-      icon: CheckCircle2,
+      label: "Solicitudes",
+      icon: Inbox,
       badge: approvalsCount > 0 ? approvalsCount : undefined,
     },
   ];
 
-  // "Equipo" es solo del dueño; "Ajustes" lo ve también el doctor (su sección de
-  // campos de la historia clínica vive ahí).
+  // "Equipo" es solo del dueño; "Mi consultorio" lo ve también el doctor (su
+  // sección de campos de la historia clínica vive ahí).
   const gestion: NavItem[] = [
     ...(isOwner || isDoctor
       ? [{ href: "/settings", label: "Mi consultorio", icon: Settings }]
       : []),
+    ...(isOwner ? [{ href: "/staff", label: "Equipo y horarios", icon: UserCog }] : []),
   ];
 
   function isActive(href: string): boolean {
@@ -73,6 +75,7 @@ export function SidebarContent({
       <Link
         href={item.href}
         onClick={onNavigate}
+        aria-current={active ? "page" : undefined}
         className={`flex items-center gap-[11px] rounded-[10px] px-[11px] py-[9px] text-[13.5px] font-semibold transition-colors ${
           active
             ? "bg-primary/20 text-white"
@@ -84,6 +87,7 @@ export function SidebarContent({
         {item.badge ? (
           <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1 text-[11px] font-bold text-white">
             {item.badge}
+            <span className="sr-only"> pendientes</span>
           </span>
         ) : null}
       </Link>
@@ -151,6 +155,7 @@ export function SidebarContent({
           <button
             type="submit"
             title="Cerrar sesión"
+            aria-label="Cerrar sesión"
             className="flex rounded-lg p-[5px] text-slate-500 transition-colors hover:bg-[#1f2d49] hover:text-slate-200"
           >
             <LogOut className="h-[17px] w-[17px]" strokeWidth={1.8} />

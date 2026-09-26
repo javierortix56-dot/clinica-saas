@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useId, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -42,6 +42,7 @@ export function ClinicalFieldsConfig({
   professionalName?: string;
 }) {
   const router = useRouter();
+  const uid = useId();
   const [isPending, startTransition] = useTransition();
 
   const [local, setLocal] = useState<Record<FieldKey, boolean>>(() => {
@@ -136,8 +137,9 @@ export function ClinicalFieldsConfig({
       <div className="space-y-4 rounded-card border border-border bg-white p-5 shadow-card-soft">
         {/* Selector de especialidad (paquete) */}
         <div className="space-y-1">
-          <label className="text-xs font-medium text-slate-600">Especialidad</label>
+          <label htmlFor={`${uid}-esp`} className="text-xs font-medium text-slate-600">Especialidad</label>
           <select
+            id={`${uid}-esp`}
             value={especialidad}
             onChange={(e) => applyPreset(e.target.value)}
             className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 sm:max-w-sm"

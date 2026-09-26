@@ -73,6 +73,12 @@ export class AppointmentsService {
       );
     }
 
+    if (appt.start_at.getTime() < Date.now()) {
+      throw new ConflictException(
+        'La solicitud está vencida: el horario ya pasó. Proponé otro horario o descartala.',
+      );
+    }
+
     let count: number;
     try {
       const res = await this.prisma.runAsActor(

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { createClient } from "@/lib/supabase/server";
+import { API_URL } from "@/lib/api-url";
 
 // Cancela un turno del paciente vía el endpoint NestJS POST
 // /portal/appointments/:id/cancel. Pasar por el backend respeta la regla de que
@@ -18,7 +19,7 @@ export async function cancelPortalAppointment(
   } = await supabase.auth.getSession();
   if (!session) return { error: "Sesión expirada." };
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  const apiUrl = API_URL;
   if (!apiUrl) return { error: "API no configurada." };
 
   try {

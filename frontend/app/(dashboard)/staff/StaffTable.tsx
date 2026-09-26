@@ -18,7 +18,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StaffSheet } from "./StaffSheet";
-import { SearchX, UserCog } from "lucide-react";
+import { Pencil, SearchX, UserCog } from "lucide-react";
+import { isGcalStale } from "@/lib/gcal-status";
 
 const WEEKDAY_LABELS: Record<number, string> = {
   1: "Lun", 2: "Mar", 3: "Mié", 4: "Jue", 5: "Vie", 6: "Sáb", 7: "Dom",
@@ -97,6 +98,7 @@ export function StaffTable({ members }: { members: StaffMember[] }) {
       <div className="flex items-center gap-3">
         <input
           type="search"
+          aria-label="Buscar miembro por nombre o email"
           placeholder="Buscar por nombre o email…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -134,6 +136,9 @@ export function StaffTable({ members }: { members: StaffMember[] }) {
                 <TableHead>Estado</TableHead>
                 <TableHead>Matrícula</TableHead>
                 <TableHead>Disponibilidad</TableHead>
+                <TableHead className="w-[1%]">
+                  <span className="sr-only">Acciones</span>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -146,14 +151,22 @@ export function StaffTable({ members }: { members: StaffMember[] }) {
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
                       {m.full_name}
-                      {m.gcal_connected && (
-                        <span
-                          title="Google Calendar conectado"
-                          className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-700"
-                        >
-                          GCal
-                        </span>
-                      )}
+                      {m.gcal_connected &&
+                        (isGcalStale(m.gcal_last_synced_at) ? (
+                          <span
+                            title="Google Calendar conectado, pero sin sincronizar hace más de 2 horas"
+                            className="rounded-full bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800"
+                          >
+                            GCal sin sincronizar
+                          </span>
+                        ) : (
+                          <span
+                            title="Google Calendar sincronizado"
+                            className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-700"
+                          >
+                            GCal
+                          </span>
+                        ))}
                     </div>
                     {m.email && (
                       <span className="block text-xs text-muted-foreground">
@@ -203,6 +216,21 @@ export function StaffTable({ members }: { members: StaffMember[] }) {
                         ))}
                       </div>
                     )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      aria-label={`Editar a ${m.full_name}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openEdit(m);
+                      }}
+                    >
+                      <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                      Editar
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}

@@ -10,6 +10,7 @@ import type {
   FieldKey,
 } from "@/app/(dashboard)/patients/clinical-fields";
 import { getVerifiedClaims } from "@/lib/auth/claims";
+import { addDaysISO, mondayOfISO, startOfDayInTZ, todayISO } from "@/lib/dates";
 import type { Database } from "@/lib/supabase/types";
 
 // Cliente Supabase para Server Components y Route Handlers.
@@ -218,21 +219,18 @@ export interface WeeklyBlock {
   source: string;
 }
 
-function getWeekBounds(ref: Date = new Date()): { weekStart: Date; weekEnd: Date } {
-  const day = ref.getDay(); // 0=dom … 6=sáb
-  const diffToMonday = day === 0 ? -6 : 1 - day;
-  const monday = new Date(ref);
-  monday.setDate(ref.getDate() + diffToMonday);
-  monday.setHours(0, 0, 0, 0);
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-  sunday.setHours(23, 59, 59, 999);
-  return { weekStart: monday, weekEnd: sunday };
+// [weekStart, weekEnd): de lunes 00:00 a lunes siguiente 00:00, hora de la clínica.
+function getWeekBounds(mondayISO: string = mondayOfISO(todayISO())): { weekStart: Date; weekEnd: Date } {
+  const monday = mondayOfISO(mondayISO);
+  return {
+    weekStart: startOfDayInTZ(monday),
+    weekEnd: startOfDayInTZ(addDaysISO(monday, 7)),
+  };
 }
 
-// Lee los turnos `confirmed` para la semana de `refDate` (default: hoy).
+// Lee los turnos `confirmed` para la semana del lunes `mondayISO` (default: la actual).
 // Doctores: solo sus propios turnos. Admin/recepción: todos los turnos de la semana.
-export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppointment[]> {
+export async function getWeeklyAppointments(mondayISO?: string): Promise<WeeklyAppointment[]> {
   const supabase = createClient();
 
   // Rol e identidad con firma verificada (deduplicado por request via cache()).
@@ -240,7 +238,7 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
   if (!hasSession || !userId) redirect("/login");
   const isDoctor = isDoctorRole(role);
 
-  const { weekStart, weekEnd } = getWeekBounds(refDate);
+  const { weekStart, weekEnd } = getWeekBounds(mondayISO);
 
   type ApptRow = {
     id: string;
@@ -271,7 +269,7 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
     )
     .eq("status", "confirmed")
     .gte("start_at", weekStart.toISOString())
-    .lte("start_at", weekEnd.toISOString())
+    .lt("start_at", weekEnd.toISOString())
     .order("start_at", { ascending: true });
 
   if (isDoctor) {
@@ -305,16 +303,16 @@ export async function getWeeklyAppointments(refDate?: Date): Promise<WeeklyAppoi
 }
 
 // Lee los bloqueos de disponibilidad (kind='block') que se solapan con la semana
-// de `refDate`. Incluye los eventos importados de Google Calendar (source
+// del lunes `mondayISO`. Incluye los eventos importados de Google Calendar (source
 // 'google_calendar') y los bloqueos manuales. Doctores: solo los propios.
-export async function getWeeklyBlocks(refDate?: Date): Promise<WeeklyBlock[]> {
+export async function getWeeklyBlocks(mondayISO?: string): Promise<WeeklyBlock[]> {
   const supabase = createClient();
 
   const { hasSession, userId, role } = await getSessionAuth();
   if (!hasSession || !userId) redirect("/login");
   const isDoctor = isDoctorRole(role);
 
-  const { weekStart, weekEnd } = getWeekBounds(refDate);
+  const { weekStart, weekEnd } = getWeekBounds(mondayISO);
 
   type BlockRow = {
     id: string;

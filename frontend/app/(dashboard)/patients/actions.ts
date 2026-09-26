@@ -18,7 +18,7 @@ async function getClinicId(): Promise<string | null> {
 
 export async function upsertPatient(
   formData: FormData
-): Promise<{ error?: string }> {
+): Promise<{ error?: string; id?: string }> {
   const id = (formData.get("id") as string | null) || null;
   const full_name = (formData.get("full_name") as string)?.trim();
   const national_id = (formData.get("national_id") as string)?.trim();
@@ -41,14 +41,18 @@ export async function upsertPatient(
   } else {
     const clinicId = await getClinicId();
     if (!clinicId) return { error: "No se pudo determinar la clínica." };
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("patients")
-      .insert({ full_name, national_id, phone, email, birth_date, clinic_id: clinicId });
+      .insert({ full_name, national_id, phone, email, birth_date, clinic_id: clinicId })
+      .select("id")
+      .single();
     if (error) return { error: `No se pudo crear el paciente: ${error.message}` };
+    revalidatePath("/patients");
+    return { id: data.id };
   }
 
   revalidatePath("/patients");
-  return {};
+  return { id };
 }
 
 // ─── Notas clínicas ────────────────────────────────────────────────────────────

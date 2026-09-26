@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft } from "lucide-react";
+import { CalendarPlus, ChevronLeft } from "lucide-react";
 
 import {
   getPatientById,
@@ -72,6 +72,7 @@ export default async function PatientDetailPage({
     notFound();
   }
   const patientAge = patient.birth_date ? calculateAge(patient.birth_date) : null;
+  const canSchedule = role === "admin" || role === "reception" || role === "doctor";
 
   return (
     <div className="mx-auto max-w-[1000px]">
@@ -110,7 +111,18 @@ export default async function PatientDetailPage({
             </div>
           </div>
         </div>
-        <EditPatientButton patient={patient} />
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <EditPatientButton patient={patient} />
+          {canSchedule && (
+            <Link
+              href={`/calendar?nuevo=1&paciente=${patient.id}`}
+              className="flex items-center gap-[6px] rounded-[10px] bg-primary px-[13px] py-[9px] text-[13px] font-bold text-white shadow-[0_4px_12px_rgba(37,99,235,.3)] transition hover:brightness-[1.07]"
+            >
+              <CalendarPlus className="h-[15px] w-[15px]" strokeWidth={2.2} />
+              Nuevo turno
+            </Link>
+          )}
+        </div>
       </div>
 
       {clinicalProfile && (clinicalProfile.allergies || clinicalProfile.medical_history) && (
@@ -144,7 +156,13 @@ export default async function PatientDetailPage({
             Teléfono
           </div>
           <div className="font-mono text-[14px] font-semibold text-slate-800 sm:text-[15px]">
-            {patient.phone ?? "—"}
+            {patient.phone ? (
+              <a href={`tel:${patient.phone.replace(/[^\d+]/g, "")}`} className="hover:text-primary hover:underline">
+                {patient.phone}
+              </a>
+            ) : (
+              "—"
+            )}
           </div>
         </div>
         <div className="col-span-2 sm:col-span-1">
@@ -152,7 +170,13 @@ export default async function PatientDetailPage({
             Email
           </div>
           <div className="flex flex-wrap items-center gap-2 text-[14px] font-medium text-slate-800 sm:text-[15px]">
-            <span>{patient.email ?? "—"}</span>
+            {patient.email ? (
+              <a href={`mailto:${patient.email}`} className="break-all hover:text-primary hover:underline">
+                {patient.email}
+              </a>
+            ) : (
+              <span>—</span>
+            )}
             {patient.email ? (
               <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
                 Portal activo

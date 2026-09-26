@@ -46,7 +46,7 @@ jobs:
 #
 #   NEXT_PUBLIC_SUPABASE_URL       URL del proyecto Supabase
 #   NEXT_PUBLIC_SUPABASE_ANON_KEY  Clave anon pública de Supabase
-#   NEXT_PUBLIC_API_URL            URL del backend NestJS (ej. https://api.tudominio.com)
+#   API_URL                        URL del backend NestJS (opcional; por defecto el servidor de Oracle)
 #
 # Secrets de GitHub requeridos (Settings → Secrets → Actions):
 #   VERCEL_TOKEN       Token de API de Vercel (vercel.com/account/tokens)

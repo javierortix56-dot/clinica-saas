@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 
 import type {
@@ -117,9 +118,14 @@ function NowIndicator({ weekDays }: { weekDays: Date[] }) {
   );
 }
 
+// Parámetros de "abrir formulario con contexto" que se consumen una sola vez.
+const PREFILL_PARAMS = ["nuevo", "paciente", "fecha", "profesional", "reemplaza"];
+
 export function CalendarGrid({
   view,
   weekDays: weekDayStrs,
+  prevWeek,
+  nextWeek,
   appointments,
   blocks = [],
   availability = [],
@@ -131,6 +137,8 @@ export function CalendarGrid({
 }: {
   view: "day" | "week";
   weekDays: string[];
+  prevWeek: string;
+  nextWeek: string;
   appointments: WeeklyAppointment[];
   blocks?: WeeklyBlock[];
   availability?: AvailabilityWindow[];
@@ -140,34 +148,63 @@ export function CalendarGrid({
   treatmentTypes?: TreatmentTypeOption[];
   defaultDurationMinutes?: number;
 }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newApptOpen, setNewApptOpen] = useState(false);
   const [prefill, setPrefill] = useState<{
     patientId?: string;
+    professionalId?: string;
     date?: string;
     startTime?: string;
     endTime?: string;
+    replacesAppointmentId?: string;
   }>({});
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const weekDays = weekDayStrs.map(parseISODate);
+  const weekKey = weekDayStrs[0];
 
-  const [mobileDayIdx, setMobileDayIdx] = useState(() => {
+  // Día visible en la vista "Jornada": ?dia=N (al cruzar de semana), hoy, o lunes.
+  function initialDayIdx(): number {
+    const dia = Number(searchParams.get("dia"));
+    if (Number.isInteger(dia) && dia >= 0 && dia <= 5 && searchParams.has("dia")) return dia;
     const todayIdx = weekDays.findIndex((d) => isToday(d));
     return todayIdx >= 0 ? todayIdx : 0;
-  });
+  }
+  const [mobileDayIdx, setMobileDayIdx] = useState(initialDayIdx);
 
   useEffect(() => {
-    if (!canCreateAppointment) return;
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("nuevo") === "1") {
-      setPrefill({
-        patientId: params.get("paciente") ?? undefined,
-        date: params.get("fecha") ?? undefined,
-      });
-      setNewApptOpen(true);
-      window.history.replaceState(null, "", "/calendar");
+    setMobileDayIdx(initialDayIdx());
+    // Solo al cambiar de semana; el día elegido dentro de la semana se conserva.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekKey]);
+
+  // ?nuevo=1 abre el formulario con el contexto recibido. Reacciona también
+  // cuando ya estamos en /calendar (el componente no se remonta).
+  useEffect(() => {
+    if (!canCreateAppointment || searchParams.get("nuevo") !== "1") return;
+    setPrefill({
+      patientId: searchParams.get("paciente") ?? undefined,
+      professionalId: searchParams.get("profesional") ?? undefined,
+      date: searchParams.get("fecha") ?? undefined,
+      replacesAppointmentId: searchParams.get("reemplaza") ?? undefined,
+    });
+    setNewApptOpen(true);
+    const rest = new URLSearchParams(searchParams.toString());
+    PREFILL_PARAMS.forEach((k) => rest.delete(k));
+    const qs = rest.toString();
+    window.history.replaceState(null, "", qs ? `/calendar?${qs}` : "/calendar");
+  }, [canCreateAppointment, searchParams]);
+
+  function goToDay(idx: number) {
+    if (idx < 0) {
+      router.push(`/calendar?week=${prevWeek}&view=${view}&dia=5`, { scroll: false });
+    } else if (idx > 5) {
+      router.push(`/calendar?week=${nextWeek}&view=${view}&dia=0`, { scroll: false });
+    } else {
+      setMobileDayIdx(idx);
     }
-  }, [canCreateAppointment]);
+  }
 
   const profNames = useMemo(() => {
     const names = new Set<string>();
@@ -293,9 +330,8 @@ export function CalendarGrid({
         <div className="flex items-center border-b border-border bg-[#fbfcfe]">
           <button
             type="button"
-            onClick={() => setMobileDayIdx((i) => Math.max(0, i - 1))}
-            disabled={mobileDayIdx === 0}
-            className="flex h-10 w-9 shrink-0 items-center justify-center text-slate-400 transition hover:text-slate-700 disabled:opacity-30"
+            onClick={() => goToDay(mobileDayIdx - 1)}
+            className="flex h-10 w-9 shrink-0 items-center justify-center text-slate-400 transition hover:text-slate-700"
             aria-label="Día anterior"
           >
             <ChevronLeft className="h-4 w-4" strokeWidth={2} />
@@ -309,6 +345,8 @@ export function CalendarGrid({
                   key={i}
                   type="button"
                   onClick={() => setMobileDayIdx(i)}
+                  aria-pressed={active}
+                  aria-label={`${DAY_LABELS[i]} ${formatDayDate(day)}${today ? " (hoy)" : ""}`}
                   className={`flex flex-col items-center rounded-lg px-1.5 py-1.5 transition ${
                     active ? "bg-primary/10" : "hover:bg-slate-50"
                   }`}
@@ -327,9 +365,8 @@ export function CalendarGrid({
           </div>
           <button
             type="button"
-            onClick={() => setMobileDayIdx((i) => Math.min(5, i + 1))}
-            disabled={mobileDayIdx === 5}
-            className="flex h-10 w-9 shrink-0 items-center justify-center text-slate-400 transition hover:text-slate-700 disabled:opacity-30"
+            onClick={() => goToDay(mobileDayIdx + 1)}
+            className="flex h-10 w-9 shrink-0 items-center justify-center text-slate-400 transition hover:text-slate-700"
             aria-label="Día siguiente"
           >
             <ChevronRight className="h-4 w-4" strokeWidth={2} />
@@ -338,10 +375,23 @@ export function CalendarGrid({
 
         {/* Lista de turnos */}
         {mobileDayAppts.length === 0 && mobileDayBlocks.length === 0 ? (
-          <div className="py-8 text-center text-[13px] font-medium text-slate-400">
-            {appointments.length === 0 && blocks.length === 0
+          <div className="flex flex-col items-center gap-3 py-8 text-center text-[13px] font-medium text-slate-400">
+            {hidden.size === 0
               ? "Sin turnos este día."
               : "Nada visible. Activá un profesional arriba."}
+            {canCreateAppointment && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPrefill({ date: weekDayStrs[mobileDayIdx] });
+                  setNewApptOpen(true);
+                }}
+                className="flex items-center gap-[6px] rounded-[10px] border border-border bg-white px-3 py-[7px] text-[12.5px] font-bold text-primary transition hover:bg-primary/5"
+              >
+                <Plus className="h-[13px] w-[13px]" strokeWidth={2.4} />
+                Agendar en este día
+              </button>
+            )}
           </div>
         ) : (
           <div className="divide-y divide-[#eef2f7]">
@@ -654,6 +704,8 @@ export function CalendarGrid({
         professionals={professionals}
         treatmentTypes={treatmentTypes}
         initialPatientId={prefill.patientId}
+        initialProfessionalId={prefill.professionalId}
+        replacesAppointmentId={prefill.replacesAppointmentId}
         initialDate={prefill.date}
         initialStartTime={prefill.startTime}
         initialEndTime={prefill.endTime}

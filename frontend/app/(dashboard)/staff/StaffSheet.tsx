@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -12,6 +12,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
+import { isGcalStale } from "@/lib/gcal-status";
+import { clinicDateFormatter } from "@/lib/dates";
 import {
   upsertStaff,
   deactivateStaff,
@@ -103,6 +105,7 @@ function AvailabilityEditor({
               className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2"
             >
               <select
+                aria-label={`Día de la franja ${i + 1}`}
                 value={block.weekday}
                 onChange={(e) =>
                   updateBlock(i, { weekday: Number(e.target.value) })
@@ -117,6 +120,8 @@ function AvailabilityEditor({
               </select>
               <input
                 type="time"
+                aria-label={`Inicio de la franja ${i + 1}`}
+                aria-invalid={invalid || undefined}
                 value={block.start}
                 onChange={(e) => updateBlock(i, { start: e.target.value })}
                 className={`rounded border px-2 py-1 text-sm ${
@@ -126,6 +131,8 @@ function AvailabilityEditor({
               <span className="text-slate-400">–</span>
               <input
                 type="time"
+                aria-label={`Fin de la franja ${i + 1}`}
+                aria-invalid={invalid || undefined}
                 value={block.end}
                 onChange={(e) => updateBlock(i, { end: e.target.value })}
                 className={`rounded border px-2 py-1 text-sm ${
@@ -135,6 +142,7 @@ function AvailabilityEditor({
               <button
                 type="button"
                 onClick={() => removeBlock(i)}
+                aria-label={`Quitar franja ${i + 1}`}
                 className="ml-auto rounded px-1.5 py-0.5 text-sm text-red-400 hover:text-red-600"
               >
                 ×
@@ -151,6 +159,12 @@ function AvailabilityEditor({
 }
 
 // ─── Google Calendar section ──────────────────────────────────────────────────
+
+const syncDateFormatter = clinicDateFormatter({ dateStyle: "short", timeStyle: "short" });
+
+function formatSyncDate(iso: string): string {
+  return syncDateFormatter.format(iso);
+}
 
 function GoogleCalendarSection({
   professionalId,
@@ -190,6 +204,8 @@ function GoogleCalendarSection({
     });
   }
 
+  const stale = connected && isGcalStale(lastSyncedAt);
+
   return (
     <div className="space-y-2 rounded-lg border border-slate-200 p-3">
       <div className="flex items-center justify-between">
@@ -198,9 +214,15 @@ function GoogleCalendarSection({
             Google Calendar
           </span>
           {connected ? (
-            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
-              Conectado
-            </span>
+            stale ? (
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                Sin sincronizar
+              </span>
+            ) : (
+              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                Sincronizado
+              </span>
+            )
           ) : (
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
               Sin conectar
@@ -229,14 +251,16 @@ function GoogleCalendarSection({
             {isConnecting ? "Redirigiendo…" : "Conectar"}
           </Button>
         )}
-        {connected && (
-          <p className="mt-2 text-xs text-slate-400">
-            {lastSyncedAt
-              ? `Última sincronización: ${new Intl.DateTimeFormat("es-AR", { dateStyle: "short", timeStyle: "short" }).format(new Date(lastSyncedAt))}`
-              : "Conectado. La primera sincronización está pendiente."}
-          </p>
-        )}
       </div>
+      {connected && (
+        <p className={`text-xs ${stale ? "font-medium text-amber-700" : "text-slate-400"}`}>
+          {lastSyncedAt
+            ? `Última sincronización: ${formatSyncDate(lastSyncedAt)}.`
+            : "La primera sincronización está pendiente."}
+          {stale &&
+            " La sincronización debería ocurrir cada pocos minutos: revisá que el servidor esté activo o desconectá y volvé a conectar la cuenta."}
+        </p>
+      )}
       <p className="text-xs text-slate-400">
         {connected
           ? "Los turnos confirmados se sincronizan automáticamente con el Google Calendar del profesional."
@@ -260,6 +284,7 @@ export function StaffSheet({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
+  const fid = useId();
   const formRef = useRef<HTMLFormElement>(null);
   const [isPending, startTransition] = useTransition();
   const [isDeactivating, startDeactivating] = useTransition();
@@ -430,10 +455,11 @@ export function StaffSheet({
 
           {/* Nombre */}
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
+            <label htmlFor={`${fid}-name`} className="text-sm font-medium text-slate-700">
               Nombre completo
             </label>
             <input
+              id={`${fid}-name`}
               name="full_name"
               required
               defaultValue={member?.full_name ?? ""}
@@ -444,10 +470,11 @@ export function StaffSheet({
 
           {/* Email */}
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
+            <label htmlFor={`${fid}-email`} className="text-sm font-medium text-slate-700">
               Email <span className="text-slate-400">(opcional)</span>
             </label>
             <input
+              id={`${fid}-email`}
               name="email"
               type="email"
               defaultValue={member?.email ?? ""}
@@ -458,11 +485,13 @@ export function StaffSheet({
 
           {/* Contraseña de acceso */}
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
+            <label htmlFor={`${fid}-password`} className="text-sm font-medium text-slate-700">
               Contraseña de acceso{" "}
               <span className="text-slate-400">(opcional)</span>
             </label>
             <input
+              id={`${fid}-password`}
+              aria-describedby={`${fid}-password-hint`}
               name="password"
               type="text"
               autoComplete="new-password"
@@ -473,7 +502,7 @@ export function StaffSheet({
               }
               className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400"
             />
-            <p className="text-xs text-slate-400">
+            <p id={`${fid}-password-hint`} className="text-xs text-slate-400">
               Si cargás un email, se crea el usuario para iniciar sesión.{" "}
               {mode === "create"
                 ? "Si dejás la contraseña vacía, se genera una automáticamente."
@@ -483,8 +512,9 @@ export function StaffSheet({
 
           {/* Rol */}
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">Rol</label>
+            <label htmlFor={`${fid}-role`} className="text-sm font-medium text-slate-700">Rol</label>
             <select
+              id={`${fid}-role`}
               name="role"
               defaultValue={roleForForm}
               onChange={(e) => setCurrentRole(e.target.value)}
@@ -503,12 +533,12 @@ export function StaffSheet({
             <input
               type="checkbox"
               name="is_owner"
-              id="is_owner"
+              id={`${fid}-owner`}
               value="true"
               defaultChecked={member?.is_owner ?? false}
               className="mt-0.5 h-4 w-4 rounded border-slate-300"
             />
-            <label htmlFor="is_owner" className="text-sm text-slate-700">
+            <label htmlFor={`${fid}-owner`} className="text-sm text-slate-700">
               Dueño de la clínica
               <span className="block text-xs text-slate-500">
                 Único que puede gestionar equipo, configuraciones e integraciones.
@@ -522,12 +552,12 @@ export function StaffSheet({
               <input
                 type="checkbox"
                 name="is_active"
-                id="is_active"
+                id={`${fid}-active`}
                 value="true"
                 defaultChecked={member?.is_active ?? true}
                 className="h-4 w-4 rounded border-slate-300"
               />
-              <label htmlFor="is_active" className="text-sm text-slate-700">
+              <label htmlFor={`${fid}-active`} className="text-sm text-slate-700">
                 Miembro activo
               </label>
             </div>
@@ -536,10 +566,11 @@ export function StaffSheet({
           {/* Matrícula (solo para doctores) */}
           {currentRole === "doctor" && (
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-700">
+              <label htmlFor={`${fid}-license`} className="text-sm font-medium text-slate-700">
                 Matrícula <span className="text-slate-400">(opcional)</span>
               </label>
               <input
+                id={`${fid}-license`}
                 name="license_number"
                 defaultValue={member?.license_number ?? ""}
                 placeholder="MP 12345"
