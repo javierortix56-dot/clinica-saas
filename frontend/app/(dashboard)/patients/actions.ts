@@ -129,6 +129,34 @@ function parseStructuredData(formData: FormData): Json {
   return structured;
 }
 
+// Edición: los campos que el formulario no envió (p. ej. ocultos porque cambió
+// la planilla del profesional) conservan su valor anterior en vez de borrarse.
+function mergeStructuredData(
+  formData: FormData,
+  parsed: Record<string, unknown>,
+  existing: Record<string, unknown> | null
+): Json {
+  if (!existing) return parsed as Json;
+  const merged: Record<string, unknown> = { ...parsed };
+  for (const key of ["motivo", "enfermedad_actual", "diagnostico", "indicaciones", "fecha_control"]) {
+    if (!formData.has(key) && existing[key] !== undefined) merged[key] = existing[key];
+  }
+  if (!VITAL_KEYS.some((k) => formData.has(`vital_${k}`)) && existing.vitals !== undefined) {
+    merged.vitals = existing.vitals;
+  }
+  const mergeGroup = (group: string, prefix: string) => {
+    const prev = (existing[group] ?? {}) as Record<string, unknown>;
+    const next = { ...((parsed[group] ?? {}) as Record<string, unknown>) };
+    for (const [k, v] of Object.entries(prev)) {
+      if (!formData.has(`${prefix}${k}`)) next[k] = v;
+    }
+    if (Object.keys(next).length > 0) merged[group] = next;
+  };
+  mergeGroup("examen_fisico", "examen_fisico_");
+  mergeGroup("especializados", "esp_");
+  return merged as Json;
+}
+
 // Valida tipo/tamaño de los adjuntos. Devuelve mensaje de error o null si OK.
 function validateAttachmentFiles(files: File[]): string | null {
   for (const file of files) {
@@ -297,7 +325,7 @@ export async function updateClinicalNote(
   // Cargar la nota para validar autoría y ventana temporal (server-side).
   const { data: existing } = await supabase
     .from("clinical_notes")
-    .select("author_id, created_at, patient_id, clinic_id")
+    .select("author_id, created_at, patient_id, clinic_id, structured_data")
     .eq("id", id)
     .single();
   const cur = existing as {
@@ -305,6 +333,7 @@ export async function updateClinicalNote(
     created_at?: string;
     patient_id?: string;
     clinic_id?: string;
+    structured_data?: Record<string, unknown> | null;
   } | null;
   if (!cur) return { error: "La nota no existe o no tenés acceso." };
   if (cur.author_id !== (prof as { id: string }).id) {
@@ -322,7 +351,11 @@ export async function updateClinicalNote(
     return { error: "Tipo y contenido son obligatorios." };
   }
 
-  const structured = parseStructuredData(formData);
+  const structured = mergeStructuredData(
+    formData,
+    parseStructuredData(formData) as Record<string, unknown>,
+    cur.structured_data ?? null
+  );
 
   const files = formData
     .getAll("attachments")
