@@ -63,16 +63,18 @@ export default async function CalendarPage({
 
   const professionals = canCreateAppointment ? await getProfessionalsForScheduling() : [];
 
-  // Selector de profesional (admin/recepción con más de un profesional): el
-  // parámetro ?prof= manda; si no, la última elección guardada en cookie. Un id
-  // que ya no corresponde a un profesional activo vuelve a "todos".
-  const showProfessionalSelect = !isDoctor && professionals.length > 1;
+  // Selector de profesional (admin/recepción): con uno solo muestra su nombre;
+  // con varios, el parámetro ?prof= manda y si no, la última elección guardada
+  // en cookie. Un id que ya no es de un profesional activo vuelve a "todos".
+  const showProfessionalSelect = !isDoctor && professionals.length > 0;
   const profParam =
     (typeof searchParams.prof === "string" ? searchParams.prof : null) ??
     cookies().get(CALENDAR_PROF_COOKIE)?.value ??
     ALL_PROFESSIONALS;
   const selectedProfessionalId =
-    showProfessionalSelect && professionals.some((p) => p.id === profParam) ? profParam : null;
+    professionals.length > 1 && !isDoctor && professionals.some((p) => p.id === profParam)
+      ? profParam
+      : null;
 
   const [appointments, blocks, availability, patients, treatmentTypes, currentWeekAppointments, clinicSettings] = await Promise.all([
     getWeeklyAppointments(displayedMonday, selectedProfessionalId),

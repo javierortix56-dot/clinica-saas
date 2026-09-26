@@ -28,9 +28,23 @@ export function ProfessionalSelect({
     router.push(`/calendar?${params.toString()}`, { scroll: false });
   }
 
+  const box =
+    "flex items-center gap-2 rounded-[10px] border border-border bg-white px-3 shadow-card-soft";
+  const icon = <UserRound className="h-3.5 w-3.5 shrink-0 text-slate-400" strokeWidth={2} />;
+
+  // Un solo profesional: no hay nada que elegir, pero se muestra de quién es la agenda.
+  if (professionals.length === 1) {
+    return (
+      <div className={`${box} h-[40px] text-xs font-bold text-slate-700`}>
+        {icon}
+        <span className="truncate">{professionals[0].name}</span>
+      </div>
+    );
+  }
+
   return (
-    <label className="flex items-center gap-2 rounded-[10px] border border-border bg-white px-3 shadow-card-soft focus-within:border-primary">
-      <UserRound className="h-3.5 w-3.5 shrink-0 text-slate-400" strokeWidth={2} />
+    <label className={`${box} focus-within:border-primary`}>
+      {icon}
       <span className="sr-only">Profesional</span>
       <select
         value={selectedId ?? ALL_PROFESSIONALS}
