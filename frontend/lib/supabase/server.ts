@@ -229,8 +229,12 @@ function getWeekBounds(mondayISO: string = mondayOfISO(todayISO())): { weekStart
 }
 
 // Lee los turnos `confirmed` para la semana del lunes `mondayISO` (default: la actual).
-// Doctores: solo sus propios turnos. Admin/recepción: todos los turnos de la semana.
-export async function getWeeklyAppointments(mondayISO?: string): Promise<WeeklyAppointment[]> {
+// Doctores: solo sus propios turnos. Admin/recepción: todos, o los de
+// `professionalId` si se eligió uno en el selector de la agenda.
+export async function getWeeklyAppointments(
+  mondayISO?: string,
+  professionalId?: string | null
+): Promise<WeeklyAppointment[]> {
   const supabase = createClient();
 
   // Rol e identidad con firma verificada (deduplicado por request via cache()).
@@ -277,6 +281,8 @@ export async function getWeeklyAppointments(mondayISO?: string): Promise<WeeklyA
     const profId = await getCurrentProfessionalId();
     if (!profId) return [];
     query = query.eq("professional_id", profId);
+  } else if (professionalId) {
+    query = query.eq("professional_id", professionalId);
   }
 
   const { data, error } = await query;
@@ -305,7 +311,11 @@ export async function getWeeklyAppointments(mondayISO?: string): Promise<WeeklyA
 // Lee los bloqueos de disponibilidad (kind='block') que se solapan con la semana
 // del lunes `mondayISO`. Incluye los eventos importados de Google Calendar (source
 // 'google_calendar') y los bloqueos manuales. Doctores: solo los propios.
-export async function getWeeklyBlocks(mondayISO?: string): Promise<WeeklyBlock[]> {
+// Admin/recepción: todos, o los de `professionalId`.
+export async function getWeeklyBlocks(
+  mondayISO?: string,
+  professionalId?: string | null
+): Promise<WeeklyBlock[]> {
   const supabase = createClient();
 
   const { hasSession, userId, role } = await getSessionAuth();
@@ -346,6 +356,8 @@ export async function getWeeklyBlocks(mondayISO?: string): Promise<WeeklyBlock[]
     const profId = await getCurrentProfessionalId();
     if (!profId) return [];
     query = query.eq("professional_id", profId);
+  } else if (professionalId) {
+    query = query.eq("professional_id", professionalId);
   }
 
   const { data, error } = await query;
@@ -377,8 +389,10 @@ export interface AvailabilityWindow {
 
 // Lee las franjas de disponibilidad de los profesionales. Doctores: solo las
 // propias (así el sombreado de la grilla refleja exactamente su horario).
-// Admin/recepción: las de todos los profesionales activos.
-export async function getWeeklyAvailability(): Promise<AvailabilityWindow[]> {
+// Admin/recepción: las de todos los profesionales activos, o las de `professionalId`.
+export async function getWeeklyAvailability(
+  professionalId?: string | null
+): Promise<AvailabilityWindow[]> {
   const supabase = createClient();
 
   const { hasSession, userId, role } = await getSessionAuth();
@@ -409,6 +423,8 @@ export async function getWeeklyAvailability(): Promise<AvailabilityWindow[]> {
     const profId = await getCurrentProfessionalId();
     if (!profId) return [];
     query = query.eq("professional_id", profId);
+  } else if (professionalId) {
+    query = query.eq("professional_id", professionalId);
   }
 
   const { data, error } = await query;

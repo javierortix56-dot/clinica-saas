@@ -15,7 +15,13 @@ import {
 } from "@/lib/supabase/server";
 import { CalendarGrid } from "./CalendarGrid";
 import { RememberView } from "./RememberView";
-import { CALENDAR_VIEW_COOKIE, parseCalendarView } from "./view-preference";
+import { ProfessionalSelect } from "./ProfessionalSelect";
+import {
+  ALL_PROFESSIONALS,
+  CALENDAR_PROF_COOKIE,
+  CALENDAR_VIEW_COOKIE,
+  parseCalendarView,
+} from "./view-preference";
 import { buildDaySummary, formatTime } from "./grid-utils";
 import {
   addDaysISO,
@@ -53,15 +59,28 @@ export default async function CalendarPage({
 
   const { role } = await getSessionAuth();
   const canCreateAppointment = role === "admin" || role === "reception" || role === "doctor";
+  const isDoctor = isDoctorRole(role);
 
-  const [appointments, blocks, availability, patients, professionals, treatmentTypes, currentWeekAppointments, clinicSettings] = await Promise.all([
-    getWeeklyAppointments(displayedMonday),
-    getWeeklyBlocks(displayedMonday),
-    getWeeklyAvailability(),
+  const professionals = canCreateAppointment ? await getProfessionalsForScheduling() : [];
+
+  // Selector de profesional (admin/recepción con más de un profesional): el
+  // parámetro ?prof= manda; si no, la última elección guardada en cookie. Un id
+  // que ya no corresponde a un profesional activo vuelve a "todos".
+  const showProfessionalSelect = !isDoctor && professionals.length > 1;
+  const profParam =
+    (typeof searchParams.prof === "string" ? searchParams.prof : null) ??
+    cookies().get(CALENDAR_PROF_COOKIE)?.value ??
+    ALL_PROFESSIONALS;
+  const selectedProfessionalId =
+    showProfessionalSelect && professionals.some((p) => p.id === profParam) ? profParam : null;
+
+  const [appointments, blocks, availability, patients, treatmentTypes, currentWeekAppointments, clinicSettings] = await Promise.all([
+    getWeeklyAppointments(displayedMonday, selectedProfessionalId),
+    getWeeklyBlocks(displayedMonday, selectedProfessionalId),
+    getWeeklyAvailability(selectedProfessionalId),
     canCreateAppointment ? getPatients() : Promise.resolve([]),
-    canCreateAppointment ? getProfessionalsForScheduling() : Promise.resolve([]),
     canCreateAppointment ? getTreatmentTypeOptions() : Promise.resolve([]),
-    isCurrentWeek ? Promise.resolve(null) : getWeeklyAppointments(currentMonday),
+    isCurrentWeek ? Promise.resolve(null) : getWeeklyAppointments(currentMonday, selectedProfessionalId),
     getClinicSettings(),
   ]);
   // Lun–Sáb de la semana mostrada.
@@ -83,6 +102,11 @@ export default async function CalendarPage({
     year: "numeric",
   })}`;
 
+  // Enlaces de la agenda: conservan el profesional elegido.
+  const profQS = selectedProfessionalId ? `&prof=${selectedProfessionalId}` : "";
+  const calendarHref = (week: string | null, v: string) =>
+    `/calendar?${week ? `week=${week}&` : ""}view=${v}${profQS}`;
+
   const iconBtn =
     "flex cursor-pointer items-center px-3 py-[9px] text-slate-600 transition hover:bg-slate-50";
 
@@ -102,7 +126,7 @@ export default async function CalendarPage({
         <div className="flex shrink-0 items-center gap-2">
           {!isCurrentWeek && (
             <Link
-              href={`/calendar?view=${view}`}
+              href={calendarHref(null, view)}
               className="rounded-[10px] border border-border bg-white px-[12px] py-[7px] text-[12px] font-semibold text-slate-700 transition hover:bg-slate-50 sm:px-[14px] sm:py-[9px] sm:text-[13px]"
             >
               Hoy
@@ -110,14 +134,14 @@ export default async function CalendarPage({
           )}
           <div className="flex overflow-hidden rounded-[10px] border border-border bg-white">
             <Link
-              href={`/calendar?week=${prevWeek}&view=${view}`}
+              href={calendarHref(prevWeek, view)}
               className={`${iconBtn} border-r border-border`}
               aria-label="Semana anterior"
             >
               <ChevronLeft className="h-4 w-4" strokeWidth={2} />
             </Link>
             <Link
-              href={`/calendar?week=${nextWeek}&view=${view}`}
+              href={calendarHref(nextWeek, view)}
               className={iconBtn}
               aria-label="Semana siguiente"
             >
@@ -127,19 +151,25 @@ export default async function CalendarPage({
         </div>
       </div>
 
-      <div className="mb-3 flex w-fit overflow-hidden rounded-[10px] border border-border bg-white p-1 shadow-card-soft">
-        <Link
-          href={`/calendar?week=${displayedMonday}&view=day`}
-          className={`flex items-center gap-1.5 rounded-[7px] px-3 py-1.5 text-xs font-bold transition ${view === "day" ? "bg-primary text-white" : "text-slate-500 hover:bg-slate-50"}`}
-        >
-          <List className="h-3.5 w-3.5" /> Jornada
-        </Link>
-        <Link
-          href={`/calendar?week=${displayedMonday}&view=week`}
-          className={`flex items-center gap-1.5 rounded-[7px] px-3 py-1.5 text-xs font-bold transition ${view === "week" ? "bg-primary text-white" : "text-slate-500 hover:bg-slate-50"}`}
-        >
-          <CalendarDays className="h-3.5 w-3.5" /> Semana
-        </Link>
+      {/* Barra de herramientas: vista + profesional */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="flex w-fit overflow-hidden rounded-[10px] border border-border bg-white p-1 shadow-card-soft">
+          <Link
+            href={calendarHref(displayedMonday, "day")}
+            className={`flex items-center gap-1.5 rounded-[7px] px-3 py-1.5 text-xs font-bold transition ${view === "day" ? "bg-primary text-white" : "text-slate-500 hover:bg-slate-50"}`}
+          >
+            <List className="h-3.5 w-3.5" /> Jornada
+          </Link>
+          <Link
+            href={calendarHref(displayedMonday, "week")}
+            className={`flex items-center gap-1.5 rounded-[7px] px-3 py-1.5 text-xs font-bold transition ${view === "week" ? "bg-primary text-white" : "text-slate-500 hover:bg-slate-50"}`}
+          >
+            <CalendarDays className="h-3.5 w-3.5" /> Semana
+          </Link>
+        </div>
+        {showProfessionalSelect && (
+          <ProfessionalSelect professionals={professionals} selectedId={selectedProfessionalId} />
+        )}
       </div>
 
       {/* Resumen compacto — barra horizontal única en lugar de 3 cards */}
@@ -199,14 +229,13 @@ export default async function CalendarPage({
       <CalendarGrid
         view={view}
         weekDays={weekDays}
-        prevWeek={prevWeek}
-        nextWeek={nextWeek}
         appointments={appointments}
         blocks={blocks}
         availability={availability}
         canCreateAppointment={canCreateAppointment}
         patients={patients.map((p) => ({ id: p.id, full_name: p.full_name, national_id: p.national_id }))}
         professionals={professionals}
+        selectedProfessionalId={selectedProfessionalId}
         treatmentTypes={treatmentTypes}
         defaultDurationMinutes={clinicSettings?.default_appointment_minutes ?? 30}
       />
