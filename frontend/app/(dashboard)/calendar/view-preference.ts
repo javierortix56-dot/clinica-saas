@@ -8,3 +8,8 @@ export type CalendarView = "day" | "week";
 export function parseCalendarView(value: string | undefined | null): CalendarView | null {
   return value === "week" || value === "day" ? value : null;
 }
+
+// Profesional elegido en el selector de la agenda (admin/recepción). Mismo
+// criterio que la vista: cookie para que el enlace del menú lo respete.
+export const CALENDAR_PROF_COOKIE = "calendar_prof";
+export const ALL_PROFESSIONALS = "all";

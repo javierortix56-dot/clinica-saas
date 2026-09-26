@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { ChevronRight, Plus } from "lucide-react";
 
 import type {
   WeeklyAppointment,
@@ -124,31 +124,29 @@ const PREFILL_PARAMS = ["nuevo", "paciente", "fecha", "profesional", "reemplaza"
 export function CalendarGrid({
   view,
   weekDays: weekDayStrs,
-  prevWeek,
-  nextWeek,
   appointments,
   blocks = [],
   availability = [],
   canCreateAppointment,
   patients,
   professionals,
+  selectedProfessionalId = null,
   treatmentTypes = [],
   defaultDurationMinutes = 30,
 }: {
   view: "day" | "week";
   weekDays: string[];
-  prevWeek: string;
-  nextWeek: string;
   appointments: WeeklyAppointment[];
   blocks?: WeeklyBlock[];
   availability?: AvailabilityWindow[];
   canCreateAppointment: boolean;
   patients: Pick<Patient, "id" | "full_name" | "national_id">[];
   professionals: ProfessionalForScheduling[];
+  // Profesional elegido en el selector de la agenda: preselecciona el formulario.
+  selectedProfessionalId?: string | null;
   treatmentTypes?: TreatmentTypeOption[];
   defaultDurationMinutes?: number;
 }) {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newApptOpen, setNewApptOpen] = useState(false);
@@ -160,14 +158,11 @@ export function CalendarGrid({
     endTime?: string;
     replacesAppointmentId?: string;
   }>({});
-  const [hidden, setHidden] = useState<Set<string>>(new Set());
   const weekDays = weekDayStrs.map(parseISODate);
   const weekKey = weekDayStrs[0];
 
-  // Día visible en la vista "Jornada": ?dia=N (al cruzar de semana), hoy, o lunes.
+  // Día visible en la vista "Jornada": hoy si cae en la semana, si no el lunes.
   function initialDayIdx(): number {
-    const dia = Number(searchParams.get("dia"));
-    if (Number.isInteger(dia) && dia >= 0 && dia <= 5 && searchParams.has("dia")) return dia;
     const todayIdx = weekDays.findIndex((d) => isToday(d));
     return todayIdx >= 0 ? todayIdx : 0;
   }
@@ -185,7 +180,7 @@ export function CalendarGrid({
     if (!canCreateAppointment || searchParams.get("nuevo") !== "1") return;
     setPrefill({
       patientId: searchParams.get("paciente") ?? undefined,
-      professionalId: searchParams.get("profesional") ?? undefined,
+      professionalId: searchParams.get("profesional") ?? selectedProfessionalId ?? undefined,
       date: searchParams.get("fecha") ?? undefined,
       replacesAppointmentId: searchParams.get("reemplaza") ?? undefined,
     });
@@ -194,17 +189,7 @@ export function CalendarGrid({
     PREFILL_PARAMS.forEach((k) => rest.delete(k));
     const qs = rest.toString();
     window.history.replaceState(null, "", qs ? `/calendar?${qs}` : "/calendar");
-  }, [canCreateAppointment, searchParams]);
-
-  function goToDay(idx: number) {
-    if (idx < 0) {
-      router.push(`/calendar?week=${prevWeek}&view=${view}&dia=5`, { scroll: false });
-    } else if (idx > 5) {
-      router.push(`/calendar?week=${nextWeek}&view=${view}&dia=0`, { scroll: false });
-    } else {
-      setMobileDayIdx(idx);
-    }
-  }
+  }, [canCreateAppointment, searchParams, selectedProfessionalId]);
 
   const profNames = useMemo(() => {
     const names = new Set<string>();
@@ -213,26 +198,13 @@ export function CalendarGrid({
     return Array.from(names).sort();
   }, [appointments, blocks]);
 
-  // Cuando solo hay un profesional no necesitamos chips de filtro ni left-border de color.
+  // Con un solo profesional visible no hace falta color por profesional. El
+  // filtro por profesional lo resuelve el selector de la cabecera (servidor).
   const multiProf = profNames.length > 1;
 
-  function toggleProf(name: string) {
-    setHidden((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name); else next.add(name);
-      return next;
-    });
-  }
-
-  const visibleAppts = appointments.filter(
-    (a) => !a.professional_name || !hidden.has(a.professional_name)
-  );
-  const visibleBlocks = blocks.filter(
-    (b) => !b.professional_name || !hidden.has(b.professional_name)
-  );
-  const visibleAvail = availability.filter(
-    (w) => !w.professional_name || !hidden.has(w.professional_name)
-  );
+  const visibleAppts = appointments;
+  const visibleBlocks = blocks;
+  const visibleAvail = availability;
 
   // Set de celdas "disponibles" (clave `${dayIdx}-${slotIdx}`): un slot está
   // disponible si algún profesional visible tiene una franja que lo cubre ese día.
@@ -277,48 +249,6 @@ export function CalendarGrid({
 
   return (
     <>
-      {/* Barra de filtros + Nuevo turno */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        {multiProf && (
-          <span className="mr-1 text-[11px] font-semibold uppercase tracking-[.06em] text-slate-400">
-            Profesionales
-          </span>
-        )}
-        {multiProf && profNames.map((name) => {
-          const color = profColor(name);
-          const off = hidden.has(name);
-          return (
-            <button
-              key={name}
-              type="button"
-              onClick={() => toggleProf(name)}
-              className="flex items-center gap-[6px] rounded-full border px-[10px] py-[4px] text-[12px] font-semibold transition"
-              style={
-                off
-                  ? { borderColor: "#e2e8f0", background: "#fff", color: "#94a3b8" }
-                  : { borderColor: `${color}40`, background: `${color}14`, color }
-              }
-            >
-              <span
-                className="h-[6px] w-[6px] rounded-full"
-                style={{ background: off ? "#cbd5e1" : color }}
-              />
-              {name}
-            </button>
-          );
-        })}
-        {canCreateAppointment && (
-          <button
-            type="button"
-            onClick={() => { setPrefill({}); setNewApptOpen(true); }}
-            className="ml-auto flex items-center gap-[6px] rounded-[10px] bg-primary px-[12px] py-[7px] text-[12px] font-bold text-white shadow-[0_4px_12px_rgba(37,99,235,.3)] transition hover:brightness-[1.07] sm:px-[13px] sm:py-[8px] sm:text-[12.5px]"
-          >
-            <Plus className="h-[13px] w-[13px]" strokeWidth={2.4} />
-            Nuevo turno
-          </button>
-        )}
-      </div>
-
       {/* ── Vista MOBILE ──────────────────────────────────────────────────── */}
       {/* key por semana: al navegar ?week= el contenedor se remonta y el
           animate-fade-up suaviza el cambio (sin salto duro entre semanas). */}
@@ -328,15 +258,7 @@ export function CalendarGrid({
       >
         {/* Selector de día */}
         <div className="flex items-center border-b border-border bg-[#fbfcfe]">
-          <button
-            type="button"
-            onClick={() => goToDay(mobileDayIdx - 1)}
-            className="flex h-10 w-9 shrink-0 items-center justify-center text-slate-400 transition hover:text-slate-700"
-            aria-label="Día anterior"
-          >
-            <ChevronLeft className="h-4 w-4" strokeWidth={2} />
-          </button>
-          <div className="flex flex-1 items-center justify-around px-1">
+          <div className="flex flex-1 items-center justify-around px-2 py-0.5">
             {weekDays.map((day, i) => {
               const today = isToday(day);
               const active = i === mobileDayIdx;
@@ -363,27 +285,20 @@ export function CalendarGrid({
               );
             })}
           </div>
-          <button
-            type="button"
-            onClick={() => goToDay(mobileDayIdx + 1)}
-            className="flex h-10 w-9 shrink-0 items-center justify-center text-slate-400 transition hover:text-slate-700"
-            aria-label="Día siguiente"
-          >
-            <ChevronRight className="h-4 w-4" strokeWidth={2} />
-          </button>
         </div>
 
         {/* Lista de turnos */}
         {mobileDayAppts.length === 0 && mobileDayBlocks.length === 0 ? (
           <div className="flex flex-col items-center gap-3 py-8 text-center text-[13px] font-medium text-slate-400">
-            {hidden.size === 0
-              ? "Sin turnos este día."
-              : "Nada visible. Activá un profesional arriba."}
+            Sin turnos este día.
             {canCreateAppointment && (
               <button
                 type="button"
                 onClick={() => {
-                  setPrefill({ date: weekDayStrs[mobileDayIdx] });
+                  setPrefill({
+                    date: weekDayStrs[mobileDayIdx],
+                    professionalId: selectedProfessionalId ?? undefined,
+                  });
                   setNewApptOpen(true);
                 }}
                 className="flex items-center gap-[6px] rounded-[10px] border border-border bg-white px-3 py-[7px] text-[12.5px] font-bold text-primary transition hover:bg-primary/5"
@@ -494,9 +409,7 @@ export function CalendarGrid({
                   className="border-b border-l border-[#eef2f7] px-4 py-10 text-center text-[13px] font-medium text-slate-400"
                   style={{ gridRow: 2, gridColumn: "2 / span 6" }}
                 >
-                  {appointments.length === 0 && blocks.length === 0
-                    ? "No hay turnos confirmados en esta semana."
-                    : "Ningún profesional visible. Activá un chip para ver sus turnos."}
+                  No hay turnos confirmados en esta semana.
                 </div>
               </React.Fragment>
             )}
@@ -554,6 +467,7 @@ export function CalendarGrid({
                           date: weekDayStrs[di],
                           startTime: `${String(slot.hour).padStart(2, "0")}:${String(slot.minute).padStart(2, "0")}`,
                           endTime: `${String(Math.floor(endMinutes / 60)).padStart(2, "0")}:${String(endMinutes % 60).padStart(2, "0")}`,
+                          professionalId: selectedProfessionalId ?? undefined,
                         });
                         setNewApptOpen(true);
                       }}
