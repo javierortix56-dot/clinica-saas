@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { loginSchema } from "@clinica/shared";
 import { Plus, Check, Mail, Lock } from "lucide-react";
@@ -16,7 +15,6 @@ const BULLETS = [
 ];
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -39,16 +37,15 @@ export default function LoginPage() {
       email: parsed.data.email,
       password: parsed.data.password,
     });
-    setLoading(false);
-
     if (signInError) {
+      setLoading(false);
       setError("Email o contraseña incorrectos.");
       return;
     }
 
-    // En éxito, la sesión queda en cookies (@supabase/ssr).
-    router.replace(HOME_PATH);
-    router.refresh();
+    // Carga completa: el server lee las cookies de sesión recién creadas.
+    // replace()+refresh() seguidos competían y dejaban la pantalla en /login.
+    window.location.assign(HOME_PATH);
   }
 
   return (
