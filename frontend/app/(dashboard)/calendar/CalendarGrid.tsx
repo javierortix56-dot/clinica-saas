@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { ChevronRight, Plus } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 
 import type {
   WeeklyAppointment,
@@ -12,170 +12,128 @@ import type {
   TreatmentTypeOption,
 } from "@/lib/supabase/server";
 import type { Patient } from "@clinica/shared";
-import {
-  DAY_LABELS,
-  SLOTS,
-  formatDayDate,
-  formatDuration,
-  formatSlot,
-  formatTime,
-  getDayIndex,
-  getSlotIndex,
-  getSlotSpan,
-  isSameLocalDay,
-  isToday,
-  parseISODate,
-  timeToMinutes,
-  TZ,
-} from "./grid-utils";
+import { dateISOInTZ } from "@/lib/dates";
+import { buildWeekModel, formatHours, minutesInTZ, weekRange } from "./agenda-model";
+import { DayView, type NewAppointmentPrefill } from "./DayView";
+import { WeekView } from "./WeekView";
+import { SummaryView } from "./SummaryView";
 import { AppointmentSheet } from "./AppointmentSheet";
 import { ManualAppointmentSheet } from "./ManualAppointmentSheet";
-
-// Paleta de colores por profesional — solo se usa como left-border cuando hay
-// múltiples profesionales visibles.
-const PROF_COLORS = [
-  "#2563eb",
-  "#0d9488",
-  "#7c3aed",
-  "#db2777",
-  "#ea580c",
-  "#0891b2",
-];
-
-function profColor(name: string | null): string {
-  if (!name) return "#2563eb";
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-  }
-  return PROF_COLORS[hash % PROF_COLORS.length];
-}
-
-function calcAge(birthDate: string | null): number | null {
-  if (!birthDate) return null;
-  const birth = new Date(birthDate);
-  const now = new Date();
-  let age = now.getFullYear() - birth.getFullYear();
-  const m = now.getMonth() - birth.getMonth();
-  if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) age--;
-  return age >= 0 ? age : null;
-}
-
-// Altura fija de cada franja de 30 min en el grid desktop.
-const SLOT_H = "1.75rem";
-
-// Minutos desde medianoche en la TZ de la clínica, actualizado cada 30s.
-// null hasta el primer efecto (SSR-safe: el server no dibuja la línea y el
-// cliente la agrega tras hidratar, sin mismatch).
-function useNowMinutes(): number | null {
-  const [minutes, setMinutes] = useState<number | null>(null);
-  useEffect(() => {
-    const compute = () => {
-      const hm = new Intl.DateTimeFormat("en-GB", {
-        timeZone: TZ,
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      }).format(new Date());
-      const [h, m] = hm.split(":").map(Number);
-      setMinutes(h * 60 + m);
-    };
-    compute();
-    const id = setInterval(compute, 30_000);
-    return () => clearInterval(id);
-  }, []);
-  return minutes;
-}
-
-// Línea de "ahora": marcador rojo en la columna de hoy a la altura de la hora
-// actual. Solo se dibuja si la semana visible incluye hoy y la hora cae dentro
-// de la grilla (08:00–20:00).
-function NowIndicator({ weekDays }: { weekDays: Date[] }) {
-  const minutes = useNowMinutes();
-  if (minutes === null) return null;
-
-  const di = weekDays.findIndex((d) => isToday(d));
-  if (di < 0) return null;
-
-  const gridStart = SLOTS[0].hour * 60;
-  const gridEnd = gridStart + SLOTS.length * 30;
-  if (minutes < gridStart || minutes >= gridEnd) return null;
-
-  const si = Math.floor((minutes - gridStart) / 30);
-  const frac = ((minutes - gridStart) % 30) / 30;
-
-  return (
-    <div
-      className="pointer-events-none relative z-30"
-      style={{ gridRow: si + 2, gridColumn: di + 2 }}
-    >
-      <div className="absolute inset-x-0" style={{ top: `${frac * 100}%` }}>
-        <div className="relative h-[2px] bg-red-500/70">
-          <span className="absolute -left-[3px] -top-[3px] h-2 w-2 rounded-full bg-red-500 shadow-[0_0_0_2px_rgba(255,255,255,.8)]" />
-        </div>
-      </div>
-    </div>
-  );
-}
+import { confirmAppointment } from "../approvals/actions";
+import type { CalendarView } from "./view-preference";
 
 // Parámetros de "abrir formulario con contexto" que se consumen una sola vez.
 const PREFILL_PARAMS = ["nuevo", "paciente", "fecha", "profesional", "reemplaza"];
+const RANGE_KEY = "agenda-rango";
+
+// "Ahora" arranca con el valor del servidor (misma primera pintura en server y
+// cliente) y se actualiza cada minuto.
+function useNow(initialISO: string): Date {
+  const [now, setNow] = useState(() => new Date(initialISO));
+  useEffect(() => {
+    setNow(new Date());
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  return now;
+}
 
 export function CalendarGrid({
   view,
-  weekDays: weekDayStrs,
+  weekDays,
+  nowISO,
   appointments,
-  blocks = [],
-  availability = [],
+  blocks,
+  availability,
   canCreateAppointment,
+  canAttend,
+  singleProfessional,
   patients,
   professionals,
   selectedProfessionalId = null,
   treatmentTypes = [],
   defaultDurationMinutes = 30,
 }: {
-  view: "day" | "week";
+  view: CalendarView;
   weekDays: string[];
+  nowISO: string;
   appointments: WeeklyAppointment[];
-  blocks?: WeeklyBlock[];
-  availability?: AvailabilityWindow[];
+  blocks: WeeklyBlock[];
+  availability: AvailabilityWindow[];
   canCreateAppointment: boolean;
+  // El usuario tiene perfil profesional: puede iniciar la consulta.
+  canAttend: boolean;
+  // Un único profesional a la vista: se muestran huecos libres y no hace
+  // falta el nombre del profesional en cada turno.
+  singleProfessional: boolean;
   patients: Pick<Patient, "id" | "full_name" | "national_id">[];
   professionals: ProfessionalForScheduling[];
-  // Profesional elegido en el selector de la agenda: preselecciona el formulario.
   selectedProfessionalId?: string | null;
   treatmentTypes?: TreatmentTypeOption[];
   defaultDurationMinutes?: number;
 }) {
+  const router = useRouter();
   const searchParams = useSearchParams();
+  const now = useNow(nowISO);
+  const todayISO = dateISOInTZ(now);
+  const nowMin = minutesInTZ(now);
+  const slotMinutes = defaultDurationMinutes;
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newApptOpen, setNewApptOpen] = useState(false);
-  const [prefill, setPrefill] = useState<{
-    patientId?: string;
-    professionalId?: string;
-    date?: string;
-    startTime?: string;
-    endTime?: string;
-    replacesAppointmentId?: string;
-  }>({});
-  const weekDays = weekDayStrs.map(parseISODate);
-  const weekKey = weekDayStrs[0];
-
-  // Día visible en la vista "Jornada": hoy si cae en la semana, si no el lunes.
-  function initialDayIdx(): number {
-    const todayIdx = weekDays.findIndex((d) => isToday(d));
-    return todayIdx >= 0 ? todayIdx : 0;
-  }
-  const [mobileDayIdx, setMobileDayIdx] = useState(initialDayIdx);
+  const [prefill, setPrefill] = useState<NewAppointmentPrefill>({});
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [rangeMode, setRangeMode] = useState<"fit" | "full">("fit");
 
   useEffect(() => {
-    setMobileDayIdx(initialDayIdx());
-    // Solo al cambiar de semana; el día elegido dentro de la semana se conserva.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekKey]);
+    try {
+      if (window.localStorage.getItem(RANGE_KEY) === "full") setRangeMode("full");
+    } catch {
+      // Sin almacenamiento: queda "ajustado".
+    }
+  }, []);
+  function changeRange(mode: "fit" | "full") {
+    setRangeMode(mode);
+    try {
+      window.localStorage.setItem(RANGE_KEY, mode);
+    } catch {
+      // Preferencia solo de esta sesión.
+    }
+  }
 
-  // ?nuevo=1 abre el formulario con el contexto recibido. Reacciona también
-  // cuando ya estamos en /calendar (el componente no se remonta).
+  const days = useMemo(
+    () =>
+      buildWeekModel({
+        days: weekDays,
+        appointments,
+        blocks,
+        availability,
+        now,
+        slotMinutes,
+        showFree: singleProfessional,
+      }),
+    [appointments, availability, blocks, now, singleProfessional, slotMinutes, weekDays]
+  );
+
+  // Día de la vista "Día": ?dia=N, hoy si cae en la semana, o el primer día con
+  // atención (no un lunes vacío).
+  const diaParam = searchParams.get("dia");
+  function initialDayIdx(): number {
+    const dia = Number(diaParam);
+    if (diaParam !== null && Number.isInteger(dia) && dia >= 0 && dia <= 5) return dia;
+    const todayIdx = weekDays.indexOf(todayISO);
+    if (todayIdx >= 0) return todayIdx;
+    const firstWithAttention = days.findIndex((d) => d.hasAttention);
+    return firstWithAttention >= 0 ? firstWithAttention : 0;
+  }
+  const [dayIdx, setDayIdx] = useState(initialDayIdx);
+  useEffect(() => {
+    setDayIdx(initialDayIdx());
+    // Solo al cambiar de semana o de ?dia=; el día elegido dentro de la semana se conserva.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekDays[0], diaParam]);
+
+  // ?nuevo=1 abre el formulario con el contexto recibido.
   useEffect(() => {
     if (!canCreateAppointment || searchParams.get("nuevo") !== "1") return;
     setPrefill({
@@ -191,419 +149,99 @@ export function CalendarGrid({
     window.history.replaceState(null, "", qs ? `/calendar?${qs}` : "/calendar");
   }, [canCreateAppointment, searchParams, selectedProfessionalId]);
 
-  const profNames = useMemo(() => {
-    const names = new Set<string>();
-    for (const a of appointments) if (a.professional_name) names.add(a.professional_name);
-    for (const b of blocks) if (b.professional_name) names.add(b.professional_name);
-    return Array.from(names).sort();
-  }, [appointments, blocks]);
+  function openNew(p: NewAppointmentPrefill) {
+    setPrefill(p);
+    setNewApptOpen(true);
+  }
 
-  // Con un solo profesional visible no hace falta color por profesional. El
-  // filtro por profesional lo resuelve el selector de la cabecera (servidor).
-  const multiProf = profNames.length > 1;
-
-  const visibleAppts = appointments;
-  const visibleBlocks = blocks;
-  const visibleAvail = availability;
-
-  // Set de celdas "disponibles" (clave `${dayIdx}-${slotIdx}`): un slot está
-  // disponible si algún profesional visible tiene una franja que lo cubre ese día.
-  // Solo sombreamos cuando hay franjas configuradas — si no hay ninguna, no
-  // sombreamos nada (evita pintar toda la grilla cuando aún no se parametrizó).
-  const availableCells = useMemo(() => {
-    const set = new Set<string>();
-    for (const w of visibleAvail) {
-      const di = w.weekday - 1; // weekday 1=Lun → columna 0
-      if (di < 0 || di > 5) continue;
-      const startM = timeToMinutes(w.start_time);
-      const endM = timeToMinutes(w.end_time);
-      SLOTS.forEach((slot, si) => {
-        const slotM = slot.hour * 60 + slot.minute;
-        if (slotM >= startM && slotM < endM) set.add(`${di}-${si}`);
-      });
+  async function confirm(id: string) {
+    setConfirmingId(id);
+    const result = await confirmAppointment(id);
+    setConfirmingId(null);
+    if (result.error) {
+      toast.error(result.error);
+      return;
     }
-    return set;
-  }, [visibleAvail]);
+    toast.success("Turno confirmado.");
+    router.refresh();
+  }
 
-  const hasAvailability = visibleAvail.length > 0;
-  const hasData = visibleAppts.length > 0 || visibleBlocks.length > 0;
-  // Mostramos la grilla horaria si hay turnos/bloqueos O si hay franjas
-  // configuradas (para ver el horario sombreado aunque la semana esté vacía).
-  const showGrid = hasData || hasAvailability;
+  function reschedule(a: WeeklyAppointment) {
+    openNew({
+      patientId: a.patient_id,
+      professionalId: a.professional_id ?? undefined,
+      date: dateISOInTZ(a.start_at),
+      replacesAppointmentId: a.id,
+    });
+  }
 
-  const mobileDayAppts = useMemo(
-    () =>
-      visibleAppts
-        .filter((a) => isSameLocalDay(a.start_at, weekDays[mobileDayIdx]))
-        .sort((a, b) => (a.start_at < b.start_at ? -1 : 1)),
-    [visibleAppts, mobileDayIdx, weekDays]
+  function goToDay(idx: number) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("view", "day");
+    params.set("dia", String(idx));
+    router.push(`/calendar?${params.toString()}`, { scroll: false });
+  }
+
+  const totals = days.reduce(
+    (t, d) => ({
+      confirmed: t.confirmed + d.confirmedCount,
+      pending: t.pending + d.pendingCount,
+      free: t.free + d.freeMinutes,
+    }),
+    { confirmed: 0, pending: 0, free: 0 }
   );
+  const weekStats = [
+    `${totals.confirmed} ${totals.confirmed === 1 ? "turno" : "turnos"}`,
+    totals.pending ? `${totals.pending} por confirmar` : null,
+    singleProfessional && totals.free ? `${formatHours(totals.free)} libres` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
-  const mobileDayBlocks = useMemo(
-    () =>
-      visibleBlocks
-        .filter((b) => isSameLocalDay(b.start_at, weekDays[mobileDayIdx]))
-        .sort((a, b) => (a.start_at < b.start_at ? -1 : 1)),
-    [visibleBlocks, mobileDayIdx, weekDays]
-  );
+  const common = {
+    todayISO,
+    slotMinutes,
+    showProfessional: !singleProfessional,
+    selectedProfessionalId,
+    onOpen: setSelectedId,
+    onNew: openNew,
+  };
 
   return (
     <>
-      {/* ── Vista MOBILE ──────────────────────────────────────────────────── */}
-      {/* key por semana: al navegar ?week= el contenedor se remonta y el
-          animate-fade-up suaviza el cambio (sin salto duro entre semanas). */}
-      <div
-        key={`m-${weekDayStrs[0]}`}
-        className={`${view === "day" ? "block" : "md:hidden"} animate-fade-up overflow-hidden rounded-card border border-border bg-white shadow-card`}
-      >
-        {/* Selector de día */}
-        <div className="flex items-center border-b border-border bg-[#fbfcfe]">
-          <div className="flex flex-1 items-center justify-around px-2 py-0.5">
-            {weekDays.map((day, i) => {
-              const today = isToday(day);
-              const active = i === mobileDayIdx;
-              return (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => setMobileDayIdx(i)}
-                  aria-pressed={active}
-                  aria-label={`${DAY_LABELS[i]} ${formatDayDate(day)}${today ? " (hoy)" : ""}`}
-                  className={`flex flex-col items-center rounded-lg px-1.5 py-1.5 transition ${
-                    active ? "bg-primary/10" : "hover:bg-slate-50"
-                  }`}
-                >
-                  <span className={`text-[10px] font-semibold uppercase tracking-wide ${today ? "text-primary" : "text-slate-400"}`}>
-                    {DAY_LABELS[i].slice(0, 2)}
-                  </span>
-                  <span className={`mt-0.5 flex h-6 w-6 items-center justify-center rounded-full text-[13px] font-bold ${
-                    today && active ? "bg-primary text-white" : today ? "text-primary" : active ? "text-foreground" : "text-slate-400"
-                  }`}>
-                    {day.getDate()}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Lista de turnos */}
-        {mobileDayAppts.length === 0 && mobileDayBlocks.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 py-8 text-center text-[13px] font-medium text-slate-400">
-            Sin turnos este día.
-            {canCreateAppointment && (
-              <button
-                type="button"
-                onClick={() => {
-                  setPrefill({
-                    date: weekDayStrs[mobileDayIdx],
-                    professionalId: selectedProfessionalId ?? undefined,
-                  });
-                  setNewApptOpen(true);
-                }}
-                className="flex items-center gap-[6px] rounded-[10px] border border-border bg-white px-3 py-[7px] text-[12.5px] font-bold text-primary transition hover:bg-primary/5"
-              >
-                <Plus className="h-[13px] w-[13px]" strokeWidth={2.4} />
-                Agendar en este día
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="divide-y divide-[#eef2f7]">
-            {mobileDayAppts.map((a) => {
-              const age = calcAge(a.patient_birth_date);
-              const color = multiProf ? profColor(a.professional_name) : "var(--color-primary)";
-              return (
-                <button
-                  key={a.id}
-                  type="button"
-                  onClick={() => setSelectedId(a.id)}
-                  className="flex w-full items-center gap-3 px-4 py-[10px] text-left transition hover:bg-slate-50 active:bg-slate-100"
-                >
-                  <div className="h-8 w-[3px] shrink-0 rounded-full" style={{ background: color }} />
-                  <div className="w-[48px] shrink-0 text-right">
-                    <div className="font-mono text-[12px] font-bold text-slate-700">{formatTime(a.start_at)}</div>
-                    <div className="text-[10px] text-slate-400">{formatDuration(a.start_at, a.end_at)}</div>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13px] font-semibold text-foreground">
-                      {a.patient_name}
-                      {age !== null && <span className="ml-1 font-normal text-slate-400 text-[11px]">{age}a</span>}
-                    </div>
-                    {/* Mostrar doctor solo en vista multi-profesional */}
-                    {(a.treatment_label || (multiProf && a.professional_name)) && (
-                      <div className="truncate text-[11px] text-slate-400">
-                        {[a.treatment_label, multiProf ? a.professional_name : null]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </div>
-                    )}
-                  </div>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />
-                </button>
-              );
-            })}
-
-            {mobileDayBlocks.map((b) => (
-              <div key={b.id} className="flex w-full items-center gap-3 bg-slate-50/60 px-4 py-[10px]">
-                <div className="h-8 w-[3px] shrink-0 rounded-full bg-slate-300" />
-                <div className="w-[48px] shrink-0 text-right">
-                  <div className="font-mono text-[12px] font-bold text-slate-500">{formatTime(b.start_at)}</div>
-                  <div className="text-[10px] text-slate-400">{formatDuration(b.start_at, b.end_at)}</div>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] font-semibold text-slate-500">{b.reason || "Ocupado"}</div>
-                  <div className="truncate text-[11px] text-slate-400">
-                    {b.source === "google_calendar" ? "Google Calendar" : "Bloqueo"}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* ── Vista DESKTOP: grilla con filas de altura fija ─────────────────── */}
-      <div
-        key={`d-${weekDayStrs[0]}`}
-        className={`${view === "week" ? "hidden md:block" : "hidden"} animate-fade-up overflow-hidden rounded-card border border-border bg-white shadow-card`}
-      >
-        <div className="overflow-x-auto">
-          <div
-            className="grid min-w-[640px]"
-            style={{
-              gridTemplateColumns: "3.25rem repeat(6, 1fr)",
-              gridTemplateRows: showGrid
-                ? `auto repeat(${SLOTS.length}, ${SLOT_H})`
-                : "auto auto",
-            }}
-          >
-            {/* ── Header (posición explícita: fila 1) ── */}
-            <div
-              className="border-b border-border bg-[#fbfcfe]"
-              style={{ gridRow: 1, gridColumn: 1 }}
+      {view === "day" ? (
+        <DayView
+          {...common}
+          days={days}
+          selectedIdx={dayIdx}
+          onSelectDay={setDayIdx}
+          nowMin={nowMin}
+          showFree={singleProfessional}
+          canAttend={canAttend}
+          canCreate={canCreateAppointment}
+          onConfirm={confirm}
+          onReschedule={reschedule}
+          confirmingId={confirmingId}
+        />
+      ) : (
+        <div className="flex flex-col gap-2">
+          <p className="text-[13px] font-semibold text-slate-600">Semana: {weekStats}</p>
+          {view === "week" ? (
+            <WeekView
+              {...common}
+              days={days}
+              range={weekRange(days, rangeMode)}
+              rangeMode={rangeMode}
+              onRangeMode={changeRange}
+              nowMin={nowMin}
+              canCreate={canCreateAppointment}
+              onGoToDay={goToDay}
             />
-            {weekDays.map((day, i) => {
-              const today = isToday(day);
-              return (
-                <div
-                  key={i}
-                  style={{ gridRow: 1, gridColumn: i + 2 }}
-                  className={`border-b border-l border-[#eef2f7] px-2 py-[8px] text-center ${today ? "bg-primary/10" : "bg-[#fbfcfe]"}`}
-                >
-                  <p className={`text-[10.5px] font-semibold uppercase tracking-wide ${today ? "text-primary" : "text-muted-foreground"}`}>
-                    {DAY_LABELS[i]}
-                  </p>
-                  <p className={`mt-[1px] text-[12px] ${today ? "font-bold text-primary" : "text-slate-400"}`}>
-                    {formatDayDate(day)}
-                  </p>
-                </div>
-              );
-            })}
-
-            {/* ── Estado vacío ── */}
-            {!showGrid && (
-              <React.Fragment>
-                <div className="border-b border-[#eef2f7]" style={{ gridRow: 2, gridColumn: 1 }} />
-                <div
-                  className="border-b border-l border-[#eef2f7] px-4 py-10 text-center text-[13px] font-medium text-slate-400"
-                  style={{ gridRow: 2, gridColumn: "2 / span 6" }}
-                >
-                  No hay turnos confirmados en esta semana.
-                </div>
-              </React.Fragment>
-            )}
-
-            {/* ── Celdas de fondo (bordes, hoy, sombreado fuera de horario) ──
-                 Posición EXPLÍCITA en el grid para que los turnos (que se ubican
-                 con gridRow/gridColumn) no desplacen las etiquetas de hora. */}
-            {showGrid && SLOTS.map((slot, si) => (
-              <React.Fragment key={`${slot.hour}-${slot.minute}`}>
-                {/* Etiqueta de hora (columna 1) */}
-                <div
-                  className="relative border-b border-[#eef2f7] pr-1.5"
-                  style={{ gridRow: si + 2, gridColumn: 1 }}
-                >
-                  {slot.minute === 0 && (
-                    <span className="absolute right-[5px] top-[3px] font-mono text-[9.5px] leading-none text-slate-400">
-                      {formatSlot(slot)}
-                    </span>
-                  )}
-                </div>
-                {/* Celdas de cada día */}
-                {weekDays.map((day, di) => {
-                  const shaded = hasAvailability && !availableCells.has(`${di}-${si}`);
-                  // Solo las celdas realmente reservables son interactivas. Las
-                  // demás se dibujan como <div> para no meter cientos de
-                  // paradas de tabulación inútiles (6 días x 24 franjas).
-                  const canBook = canCreateAppointment && !shaded;
-                  const cellStyle = {
-                    gridRow: si + 2,
-                    gridColumn: di + 2,
-                    ...(shaded
-                      ? {
-                          backgroundImage:
-                            "repeating-linear-gradient(45deg, rgba(100,116,139,0.09), rgba(100,116,139,0.09) 5px, transparent 5px, transparent 10px)",
-                        }
-                      : null),
-                  };
-                  const cellClass = `border-b border-l border-[#eef2f7] ${
-                    isToday(day) ? "bg-primary/[.03]" : shaded ? "bg-slate-50/40" : ""
-                  }`;
-
-                  if (!canBook) {
-                    return <div key={di} style={cellStyle} className={cellClass} />;
-                  }
-
-                  return (
-                    <button
-                      key={di}
-                      type="button"
-                      aria-label={`Crear turno el ${formatDayDate(day)} a las ${formatSlot(slot)}`}
-                      onClick={() => {
-                        const startMinutes = slot.hour * 60 + slot.minute;
-                        const endMinutes = startMinutes + defaultDurationMinutes;
-                        setPrefill({
-                          date: weekDayStrs[di],
-                          startTime: `${String(slot.hour).padStart(2, "0")}:${String(slot.minute).padStart(2, "0")}`,
-                          endTime: `${String(Math.floor(endMinutes / 60)).padStart(2, "0")}:${String(endMinutes % 60).padStart(2, "0")}`,
-                          professionalId: selectedProfessionalId ?? undefined,
-                        });
-                        setNewApptOpen(true);
-                      }}
-                      style={cellStyle}
-                      className={`${cellClass} cursor-pointer text-left hover:bg-primary/[.08]`}
-                    />
-                  );
-                })}
-              </React.Fragment>
-            ))}
-
-            {/* ── Bloqueos: explícitamente posicionados en el grid, con span real ── */}
-            {showGrid && visibleBlocks.map((b) => {
-              const si = getSlotIndex(b.start_at);
-              const span = getSlotSpan(b.start_at, b.end_at);
-              const di = getDayIndex(b.start_at, weekDays);
-              if (si < 0 || di < 0) return null;
-              return (
-                <div
-                  key={b.id}
-                  className="relative z-10 pointer-events-none"
-                  style={{
-                    gridRow: `${si + 2} / span ${span}`,
-                    gridColumn: di + 2,
-                  }}
-                >
-                  <div
-                    title={`${formatTime(b.start_at)}–${formatTime(b.end_at)} · ${b.reason || "Ocupado"}`}
-                    className="pointer-events-auto absolute inset-[1px] flex items-start overflow-hidden rounded-[3px] border border-slate-200 border-l-[2px] border-l-slate-300 bg-slate-100 px-[4px] py-[2px]"
-                  >
-                    <p className="truncate font-mono text-[8.5px] text-slate-400">
-                      {b.reason || "Ocupado"}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* ── Turnos: explícitamente posicionados en el grid, con span real ── */}
-            {showGrid && visibleAppts.map((a) => {
-              const si = getSlotIndex(a.start_at);
-              const span = getSlotSpan(a.start_at, a.end_at);
-              const di = getDayIndex(a.start_at, weekDays);
-              if (si < 0 || di < 0) return null;
-              const age = calcAge(a.patient_birth_date);
-              // Multi-profesional: además del borde izquierdo, un tinte de fondo
-              // suave con el color del profesional (sufijos hex = alpha ~8%/20%)
-              // para escanear la grilla por profesional de un vistazo.
-              const color = multiProf ? profColor(a.professional_name) : undefined;
-              // Orden importa: borderColor (4 lados) antes que borderLeftColor.
-              const profTint = color
-                ? { background: `${color}14`, borderColor: `${color}33`, borderLeftColor: color, borderLeftWidth: 2 }
-                : undefined;
-              return (
-                <div
-                  key={a.id}
-                  className="relative z-20 pointer-events-none"
-                  style={{
-                    gridRow: `${si + 2} / span ${span}`,
-                    gridColumn: di + 2,
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setSelectedId(a.id)}
-                    className="pointer-events-auto absolute inset-[1px] flex flex-col justify-start overflow-hidden rounded-[3px] border border-status-confirmado-border border-l-[2px] bg-status-confirmado-bg px-[4px] py-[2px] text-left transition-shadow hover:shadow-[0_2px_8px_rgba(15,23,42,.12)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
-                    style={profTint}
-                  >
-                    <p className="truncate font-mono text-[8.5px] leading-tight text-status-confirmado-fg/70">
-                      {formatTime(a.start_at)}
-                    </p>
-                    <p className="truncate text-[10px] font-semibold leading-tight text-status-confirmado-fg">
-                      {a.patient_name}
-                      {age !== null && (
-                        <span className="ml-1 font-normal text-[8.5px] opacity-70">{age}a</span>
-                      )}
-                    </p>
-                    {(a.reason ?? a.treatment_label) && (
-                      <p className="truncate text-[8px] leading-tight text-status-confirmado-fg/60">
-                        {a.reason ?? a.treatment_label}
-                      </p>
-                    )}
-                    {multiProf && a.professional_name && (
-                      <p className="truncate text-[8px] leading-tight text-status-confirmado-fg/60">
-                        {a.professional_name}
-                      </p>
-                    )}
-                  </button>
-                </div>
-              );
-            })}
-
-            {/* ── Línea de "ahora" (columna de hoy) ── */}
-            {showGrid && <NowIndicator weekDays={weekDays} />}
-          </div>
+          ) : (
+            <SummaryView {...common} days={days} canCreate={canCreateAppointment} onGoToDay={goToDay} />
+          )}
         </div>
-      </div>
-
-      {/* Leyenda (solo desktop) */}
-      <div className="mt-2 hidden flex-wrap items-center gap-4 md:flex">
-        <div className="flex items-center gap-[6px] text-[11.5px] font-medium text-muted-foreground">
-          <span className="h-[9px] w-[9px] rounded-[2px] border border-status-confirmado-border bg-status-confirmado-bg" />
-          Confirmado
-        </div>
-        {visibleBlocks.length > 0 && (
-          <div className="flex items-center gap-[6px] text-[11.5px] font-medium text-muted-foreground">
-            <span className="h-[9px] w-[9px] rounded-[2px] border border-slate-200 bg-slate-100" />
-            Ocupado (Google)
-          </div>
-        )}
-        {hasAvailability && (
-          <div className="flex items-center gap-[6px] text-[11.5px] font-medium text-muted-foreground">
-            <span
-              className="h-[9px] w-[9px] rounded-[2px] border border-slate-200"
-              style={{
-                backgroundImage:
-                  "repeating-linear-gradient(45deg, rgba(100,116,139,0.30), rgba(100,116,139,0.30) 2px, transparent 2px, transparent 4px)",
-              }}
-            />
-            Fuera de horario
-          </div>
-        )}
-        {multiProf && (
-          <>
-            <div className="flex-1" />
-            <div className="flex flex-wrap items-center gap-3">
-              {profNames.map((name) => (
-                <div key={name} className="flex items-center gap-[5px] text-[11.5px] font-medium text-muted-foreground">
-                  <span className="h-[3px] w-[10px] rounded-full" style={{ background: profColor(name) }} />
-                  {name}
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
+      )}
 
       <AppointmentSheet
         appointmentId={selectedId}

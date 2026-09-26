@@ -200,7 +200,10 @@ export interface WeeklyAppointment {
   patient_id: string;
   start_at: string;
   end_at: string;
+  status: "proposed" | "confirmed" | "in_progress" | "completed" | "no_show";
+  professional_id: string | null;
   patient_name: string;
+  patient_phone: string | null;
   patient_birth_date: string | null;
   reason: string | null;
   treatment_label: string | null;
@@ -228,7 +231,9 @@ function getWeekBounds(mondayISO: string = mondayOfISO(todayISO())): { weekStart
   };
 }
 
-// Lee los turnos `confirmed` para la semana del lunes `mondayISO` (default: la actual).
+// Lee los turnos de la semana del lunes `mondayISO` (default: la actual) que se
+// muestran en la agenda: confirmados, en curso, atendidos, ausentes y las
+// solicitudes por confirmar. Los cancelados no.
 // Doctores: solo sus propios turnos. Admin/recepción: todos, o los de
 // `professionalId` si se eligió uno en el selector de la agenda.
 export async function getWeeklyAppointments(
@@ -249,8 +254,10 @@ export async function getWeeklyAppointments(
     patient_id: string;
     start_at: string;
     end_at: string;
+    status: WeeklyAppointment["status"];
+    professional_id: string | null;
     reason: string | null;
-    patients: { full_name: string; birth_date: string | null } | null;
+    patients: { full_name: string; birth_date: string | null; phone: string | null } | null;
     treatments: { treatment_types: { name: string } | null } | null;
     treatment_phase_templates: { name: string } | null;
     professionals: {
@@ -265,13 +272,13 @@ export async function getWeeklyAppointments(
   let query = supabase
     .from("appointments")
     .select(
-      `id, patient_id, start_at, end_at, reason,
-       patients ( full_name, birth_date ),
+      `id, patient_id, start_at, end_at, status, professional_id, reason,
+       patients ( full_name, birth_date, phone ),
        treatments ( treatment_types ( name ) ),
        treatment_phase_templates ( name ),
        professionals ( staff_members ( full_name, is_active, deleted_at ) )`
     )
-    .eq("status", "confirmed")
+    .in("status", ["proposed", "confirmed", "in_progress", "completed", "no_show"])
     .gte("start_at", weekStart.toISOString())
     .lt("start_at", weekEnd.toISOString())
     .order("start_at", { ascending: true });
@@ -296,7 +303,10 @@ export async function getWeeklyAppointments(
       patient_id: row.patient_id,
       start_at: row.start_at,
       end_at: row.end_at,
+      status: row.status,
+      professional_id: row.professional_id ?? null,
       patient_name: row.patients?.full_name ?? "Paciente",
+      patient_phone: row.patients?.phone ?? null,
       patient_birth_date: row.patients?.birth_date ?? null,
       reason: row.reason ?? null,
       treatment_label:
