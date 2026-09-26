@@ -47,7 +47,7 @@ export const BLOCK_STYLE = {
   sub: "text-slate-600",
 };
 
-export const FREE_STYLE = "border-[1.5px] border-dashed border-slate-300 bg-white text-blue-700 hover:border-blue-400 hover:bg-blue-50/40";
+export const FREE_STYLE = "border-[1.5px] border-dashed border-slate-300 bg-white text-blue-700 hover:border-blue-400 hover:bg-blue-50";
 
 export function calcAge(birthDate: string | null): number | null {
   if (!birthDate) return null;
@@ -57,6 +57,11 @@ export function calcAge(birthDate: string | null): number | null {
   const m = now.getMonth() - birth.getMonth();
   if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) age--;
   return age >= 0 ? age : null;
+}
+
+// "martes, 29 de septiembre" → "Martes, 29 de septiembre".
+export function capitalizeFirst(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 export function firstName(fullName: string): string {

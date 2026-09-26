@@ -18,6 +18,7 @@ import {
   appointmentWhatsapp,
   blockLabel,
   calcAge,
+  capitalizeFirst,
 } from "./agenda-ui";
 
 export interface NewAppointmentPrefill {
@@ -262,8 +263,8 @@ export function DayView({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
         <section className="min-w-0 flex-1 rounded-card border border-border bg-white p-3 shadow-card-soft sm:p-4">
           <header className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-1">
-            <h2 className="text-[17px] font-extrabold capitalize tracking-[-.01em]">
-              {formatISODate(day.dateISO, { weekday: "long", day: "numeric", month: "long" })}
+            <h2 className="text-[17px] font-extrabold tracking-[-.01em]">
+              {capitalizeFirst(formatISODate(day.dateISO, { weekday: "long", day: "numeric", month: "long" }))}
             </h2>
             <span className="text-[12.5px] font-semibold text-slate-500">
               {hoursLabel ? `Atención ${hoursLabel}` : "Sin horario de atención"}
@@ -322,7 +323,10 @@ export function DayView({
                         className={`flex w-full items-center justify-between gap-3 rounded-xl px-3.5 py-3 text-left transition ${FREE_STYLE}`}
                       >
                         <span className="text-[14px] font-bold text-slate-600">
-                          Libre{e.endMin - e.startMin > slotMinutes ? ` hasta las ${formatMinutes(e.endMin)}` : ""}
+                          Libre
+                          {e.endMin - e.startMin > slotMinutes && (
+                            <span className="hidden sm:inline"> hasta las {formatMinutes(e.endMin)}</span>
+                          )}
                         </span>
                         <span className="flex items-center gap-1.5 text-[13px] font-extrabold">
                           <Plus className="h-4 w-4" strokeWidth={2.4} />
@@ -400,7 +404,7 @@ export function DayView({
                     <span>
                       {d.dateISO === todayISO
                         ? "Hoy"
-                        : formatISODate(d.dateISO, { weekday: "short", day: "numeric" })}{" "}
+                        : capitalizeFirst(formatISODate(d.dateISO, { weekday: "short", day: "numeric" }))}{" "}
                       · {formatMinutes(e.startMin)}
                     </span>
                     <span className="text-primary">Agendar</span>
