@@ -29,8 +29,13 @@ export default function PrivacyPage() {
         <p>Usamos la API de WhatsApp Business de Meta para recibir y enviar mensajes relacionados con turnos. Al enviarnos un mensaje, aceptás que procesemos esa comunicación con el fin de gestionar tu turno.</p>
       </section>
 
+      <section style={{ marginBottom: 24 }}>
+        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>6. Google Calendar</h2>
+        <p>Si un profesional conecta su cuenta de Google Calendar, la aplicación lee sus eventos para marcar como ocupados esos horarios en la agenda, y crea, actualiza o elimina en su calendario los eventos de los turnos confirmados. Los datos de Google se usan solo para esa sincronización, no se comparten con terceros ni se usan con fines publicitarios. Las credenciales de acceso se guardan cifradas, y el profesional puede desconectar su cuenta en cualquier momento desde la aplicación o desde su cuenta de Google.</p>
+      </section>
+
       <section>
-        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>6. Contacto</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>7. Contacto</h2>
         <p>Para consultas sobre privacidad, contactanos por WhatsApp al número registrado de la clínica.</p>
       </section>
     </main>

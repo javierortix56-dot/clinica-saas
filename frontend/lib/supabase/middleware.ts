@@ -64,6 +64,11 @@ export async function updateSession(request: NextRequest) {
     return supabaseResponse;
   }
 
+  // Política de privacidad: pública (Google la exige accesible sin sesión).
+  if (pathname === "/privacy") {
+    return supabaseResponse;
+  }
+
   // ─── Dashboard guards ─────────────────────────────────────────────────────────
 
   // Guard: sin sesión y fuera de /login → redirige a /login.
