@@ -3,10 +3,10 @@
 
 export const CALENDAR_VIEW_COOKIE = "calendar_view";
 
-export type CalendarView = "day" | "week";
+export type CalendarView = "day" | "week" | "summary";
 
 export function parseCalendarView(value: string | undefined | null): CalendarView | null {
-  return value === "week" || value === "day" ? value : null;
+  return value === "week" || value === "day" || value === "summary" ? value : null;
 }
 
 // Profesional elegido en el selector de la agenda (admin/recepción). Mismo

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { CheckCircle2, Clock, Activity, ChevronLeft, ChevronRight, CalendarDays, List } from "lucide-react";
+import { ChevronLeft, ChevronRight, CalendarDays, LayoutGrid, List } from "lucide-react";
 
 import {
   getWeeklyAppointments,
@@ -12,6 +12,7 @@ import {
   getProfessionalsForScheduling,
   getTreatmentTypeOptions,
   getClinicSettings,
+  getCurrentProfessionalId,
 } from "@/lib/supabase/server";
 import { CalendarGrid } from "./CalendarGrid";
 import { RememberView } from "./RememberView";
@@ -21,8 +22,8 @@ import {
   CALENDAR_PROF_COOKIE,
   CALENDAR_VIEW_COOKIE,
   parseCalendarView,
+  type CalendarView,
 } from "./view-preference";
-import { buildDaySummary, formatTime } from "./grid-utils";
 import {
   addDaysISO,
   formatISODate,
@@ -35,13 +36,17 @@ export const dynamic = "force-dynamic";
 
 // Todos los roles autenticados tienen acceso. Guard de sesión en middleware.ts.
 
+const VIEWS: { value: CalendarView; label: string; Icon: typeof List }[] = [
+  { value: "day", label: "Día", Icon: List },
+  { value: "week", label: "Semana", Icon: CalendarDays },
+  { value: "summary", label: "Resumen", Icon: LayoutGrid },
+];
+
 export default async function CalendarPage({
   searchParams,
 }: {
   searchParams: Record<string, string | string[] | undefined>;
 }) {
-
-  const now = new Date();
   const currentMonday = mondayOfISO(todayISO());
 
   // ?week=YYYY-MM-DD — cualquier día de la semana a mostrar. Default: semana actual.
@@ -61,7 +66,10 @@ export default async function CalendarPage({
   const canCreateAppointment = role === "admin" || role === "reception" || role === "doctor";
   const isDoctor = isDoctorRole(role);
 
-  const professionals = canCreateAppointment ? await getProfessionalsForScheduling() : [];
+  const [professionals, currentProfessionalId] = await Promise.all([
+    canCreateAppointment ? getProfessionalsForScheduling() : Promise.resolve([]),
+    getCurrentProfessionalId(),
+  ]);
 
   // Selector de profesional (admin/recepción): con uno solo muestra su nombre;
   // con varios, el parámetro ?prof= manda y si no, la última elección guardada
@@ -75,23 +83,21 @@ export default async function CalendarPage({
     professionals.length > 1 && !isDoctor && professionals.some((p) => p.id === profParam)
       ? profParam
       : null;
+  // Un único profesional a la vista: el doctor (ve lo suyo), uno elegido, o
+  // una clínica con un solo profesional.
+  const singleProfessional = isDoctor || selectedProfessionalId !== null || professionals.length <= 1;
 
-  const [appointments, blocks, availability, patients, treatmentTypes, currentWeekAppointments, clinicSettings] = await Promise.all([
+  const [appointments, blocks, availability, patients, treatmentTypes, clinicSettings] = await Promise.all([
     getWeeklyAppointments(displayedMonday, selectedProfessionalId),
     getWeeklyBlocks(displayedMonday, selectedProfessionalId),
     getWeeklyAvailability(selectedProfessionalId),
     canCreateAppointment ? getPatients() : Promise.resolve([]),
     canCreateAppointment ? getTreatmentTypeOptions() : Promise.resolve([]),
-    isCurrentWeek ? Promise.resolve(null) : getWeeklyAppointments(currentMonday, selectedProfessionalId),
     getClinicSettings(),
   ]);
   // Lun–Sáb de la semana mostrada.
   const weekDays = Array.from({ length: 6 }, (_, i) => addDaysISO(displayedMonday, i));
 
-  // El resumen siempre refleja "hoy", aunque se navegue a otra semana.
-  const summary = buildDaySummary(currentWeekAppointments ?? appointments, now);
-
-  // Navegación semanal
   const prevWeek = addDaysISO(displayedMonday, -7);
   const nextWeek = addDaysISO(displayedMonday, 7);
 
@@ -156,85 +162,32 @@ export default async function CalendarPage({
       {/* Barra de herramientas: vista + profesional */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <div className="flex w-fit overflow-hidden rounded-[10px] border border-border bg-white p-1 shadow-card-soft">
-          <Link
-            href={calendarHref(displayedMonday, "day")}
-            className={`flex items-center gap-1.5 rounded-[7px] px-3 py-1.5 text-xs font-bold transition ${view === "day" ? "bg-primary text-white" : "text-slate-500 hover:bg-slate-50"}`}
-          >
-            <List className="h-3.5 w-3.5" /> Jornada
-          </Link>
-          <Link
-            href={calendarHref(displayedMonday, "week")}
-            className={`flex items-center gap-1.5 rounded-[7px] px-3 py-1.5 text-xs font-bold transition ${view === "week" ? "bg-primary text-white" : "text-slate-500 hover:bg-slate-50"}`}
-          >
-            <CalendarDays className="h-3.5 w-3.5" /> Semana
-          </Link>
+          {VIEWS.map(({ value, label, Icon }) => (
+            <Link
+              key={value}
+              href={calendarHref(displayedMonday, value)}
+              aria-current={view === value ? "page" : undefined}
+              className={`flex items-center gap-1.5 rounded-[7px] px-3 py-1.5 text-xs font-bold transition ${view === value ? "bg-primary text-white" : "text-slate-600 hover:bg-slate-50"}`}
+            >
+              <Icon className="h-3.5 w-3.5" /> {label}
+            </Link>
+          ))}
         </div>
         {showProfessionalSelect && (
           <ProfessionalSelect professionals={professionals} selectedId={selectedProfessionalId} />
         )}
       </div>
 
-      {/* Resumen compacto — barra horizontal única en lugar de 3 cards */}
-      <div className="mb-3 grid grid-cols-3 divide-x divide-border overflow-hidden rounded-card border border-border bg-white shadow-card-soft">
-        <div className="flex items-center gap-2 px-3 py-2 sm:gap-2.5 sm:px-4 sm:py-2.5">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <CheckCircle2 className="h-[14px] w-[14px]" strokeWidth={2} />
-          </span>
-          <div>
-            <div className="text-[20px] font-extrabold leading-none tracking-[-.02em] sm:text-[22px]">
-              {summary.todayCount}
-            </div>
-            <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-[.05em] text-slate-400">
-              Turnos hoy
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 px-3 py-2 sm:gap-2.5 sm:px-4 sm:py-2.5">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-orange-50 text-orange-500">
-            <Clock className="h-[14px] w-[14px]" strokeWidth={2} />
-          </span>
-          <div className="min-w-0">
-            {summary.next ? (
-              <>
-                <div className="truncate text-[13px] font-bold leading-none sm:text-[14px]">
-                  {summary.next.patient_name}
-                </div>
-                <div className="mt-0.5 text-[10px] font-medium text-slate-400">
-                  {formatTime(summary.next.start_at)}
-                </div>
-              </>
-            ) : (
-              <div className="text-[11px] font-medium text-slate-400">
-                Sin próximo
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 px-3 py-2 sm:gap-2.5 sm:px-4 sm:py-2.5">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-cyan-50 text-cyan-600">
-            <Activity className="h-[14px] w-[14px]" strokeWidth={2} />
-          </span>
-          <div>
-            <div className="text-[20px] font-extrabold leading-none tracking-[-.02em] sm:text-[22px]">
-              {summary.remaining.length}
-            </div>
-            <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-[.05em] text-slate-400">
-              Restantes
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Grilla interactiva (Client Component: maneja el turno seleccionado) */}
       <CalendarGrid
         view={view}
         weekDays={weekDays}
+        nowISO={new Date().toISOString()}
         appointments={appointments}
         blocks={blocks}
         availability={availability}
         canCreateAppointment={canCreateAppointment}
+        canAttend={currentProfessionalId !== null}
+        singleProfessional={singleProfessional}
         patients={patients.map((p) => ({ id: p.id, full_name: p.full_name, national_id: p.national_id }))}
         professionals={professionals}
         selectedProfessionalId={selectedProfessionalId}
