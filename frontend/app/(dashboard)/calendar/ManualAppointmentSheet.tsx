@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useId, useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { UserPlus } from "lucide-react";
@@ -18,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { todayISO } from "@/lib/dates";
 import { createManualAppointment } from "./actions";
 import { rejectAppointment } from "../approvals/actions";
+import { PatientSheet, prefillFromSearch, type CreatedPatient } from "../patients/PatientSheet";
 
 const INPUT =
   "w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400";
@@ -71,6 +71,10 @@ export function ManualAppointmentSheet({
   const [date, setDate] = useState("");
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("09:30");
+  // Alta de paciente sin salir del turno: se precarga con lo buscado y, al
+  // crearlo, queda elegido (la lista de `patients` llega recién tras el refresh).
+  const [newPatientOpen, setNewPatientOpen] = useState(false);
+  const [createdPatients, setCreatedPatients] = useState<CreatedPatient[]>([]);
   const minDate = todayISO();
 
   useEffect(() => {
@@ -88,15 +92,19 @@ export function ManualAppointmentSheet({
   // Un profesional que ya no está disponible (inactivo) no queda preseleccionado.
   const professionalValue = professionals.some((p) => p.id === professionalId) ? professionalId : "";
 
-  const selectedPatient = patients.find((p) => p.id === selectedPatientId) ?? null;
+  const allPatients = [
+    ...createdPatients.filter((c) => !patients.some((p) => p.id === c.id)),
+    ...patients,
+  ];
+  const selectedPatient = allPatients.find((p) => p.id === selectedPatientId) ?? null;
   const query = patientSearch.trim().toLowerCase();
   const matches = query
-    ? patients.filter(
+    ? allPatients.filter(
         (p) =>
           p.full_name.toLowerCase().includes(query) ||
           (p.national_id ?? "").toLowerCase().includes(query)
       )
-    : patients;
+    : allPatients;
   // El paciente elegido queda siempre visible arriba, aunque no esté entre los primeros.
   const visiblePatients = [
     ...(selectedPatient ? [selectedPatient] : []),
@@ -170,17 +178,18 @@ export function ManualAppointmentSheet({
                 </button>
               ))}
               {matches.length === 0 && (
-                <div className="flex flex-col items-center gap-2 px-3 py-4 text-center text-xs text-slate-400">
-                  No se encontraron pacientes.
-                  <Link
-                    href="/patients?nuevo=1"
-                    className="inline-flex items-center gap-1.5 font-bold text-primary hover:underline"
-                  >
-                    <UserPlus className="h-3.5 w-3.5" />
-                    Registrar paciente nuevo
-                  </Link>
-                </div>
+                <p className="px-3 py-3 text-center text-xs text-slate-400">No se encontraron pacientes.</p>
               )}
+              <button
+                type="button"
+                onClick={() => setNewPatientOpen(true)}
+                className="mt-1 flex w-full items-center justify-center gap-1.5 rounded border-t border-slate-100 px-3 py-2 text-xs font-bold text-primary hover:bg-primary/5"
+              >
+                <UserPlus className="h-3.5 w-3.5" />
+                {patientSearch.trim()
+                  ? `Registrar paciente nuevo: “${patientSearch.trim()}”`
+                  : "Registrar paciente nuevo"}
+              </button>
             </div>
             {!selectedPatientId && <p className="text-xs font-medium text-amber-600">Seleccioná un paciente para continuar.</p>}
           </div>
@@ -305,6 +314,16 @@ export function ManualAppointmentSheet({
           </div>
         </form>
       </SheetContent>
+      <PatientSheet
+        open={newPatientOpen}
+        onOpenChange={setNewPatientOpen}
+        initialValues={prefillFromSearch(patientSearch)}
+        onCreated={(created) => {
+          setCreatedPatients((prev) => [created, ...prev]);
+          setSelectedPatientId(created.id);
+          setPatientSearch("");
+        }}
+      />
     </Sheet>
   );
 }
