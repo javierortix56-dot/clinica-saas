@@ -15,6 +15,8 @@ import {
   CalendarDays,
   ClipboardList,
   FileText,
+  Mic,
+  Send,
 } from "lucide-react";
 
 import type {
@@ -38,6 +40,7 @@ import {
   type DictationResult,
 } from "./actions";
 import { updateAppointmentStatus } from "../calendar/actions";
+import { SendToPatientSheet, type PatientContact } from "./SendToPatientSheet";
 import {
   FIELD_DEFS,
   VITAL_DEFS,
@@ -133,15 +136,15 @@ function DictationButton({
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
-  const supported =
-    typeof navigator !== "undefined" &&
-    !!navigator.mediaDevices?.getUserMedia &&
-    typeof window !== "undefined" &&
-    typeof window.MediaRecorder !== "undefined";
-
-  if (!supported) return null;
-
   async function start() {
+    // Sin soporte (navegador viejo o página sin HTTPS) el botón se muestra
+    // igual y explica la alternativa, en vez de desaparecer.
+    const supported =
+      !!navigator.mediaDevices?.getUserMedia && typeof window.MediaRecorder !== "undefined";
+    if (!supported) {
+      toast.error("Este navegador no permite grabar audio. Usá “Subir audio” o probá con Chrome.");
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const prefs = [
@@ -217,8 +220,9 @@ function DictationButton({
     );
   }
   return (
-    <Button type="button" size="sm" variant="outline" onClick={start}>
-      🎤 Dictar
+    <Button type="button" size="sm" onClick={start} className="gap-1.5">
+      <Mic className="h-4 w-4" strokeWidth={2} />
+      Dictar
     </Button>
   );
 }
@@ -508,9 +512,14 @@ function NoteForm({
       <input type="hidden" name="patient_id" value={patientId} />
       {mode === "edit" && note && <input type="hidden" name="id" value={note.id} />}
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-medium text-slate-700">
-          {mode === "edit" ? "Editar nota" : "Nueva nota"}
+      <p className="text-sm font-medium text-slate-700">
+        {mode === "edit" ? "Editar nota" : "Nueva nota"}
+      </p>
+
+      {/* Dictado con IA: completa todos los campos, por eso va arriba. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-indigo-200 bg-indigo-50/60 px-3 py-2.5">
+        <p className="text-xs font-medium text-indigo-900">
+          Dictá la consulta y la IA completa los campos. Después revisás y guardás.
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <DictationButton fields={dictationFields} onResult={applyDictation} />
@@ -684,7 +693,7 @@ function NoteForm({
           rows={4}
           value={body}
           onChange={(e) => setBody(e.target.value)}
-          placeholder="Texto libre de la consulta… o usá 🎤 Dictar"
+          placeholder="Texto libre de la consulta… o usá “Dictar” (arriba) para completarla por voz"
           className={fieldInput}
         />
       </div>
@@ -1227,6 +1236,8 @@ export function PatientTabs({
   noteConfig,
   specialties,
   customSpecialtyFields,
+  isProfessional,
+  patientContact,
 }: {
   patientId: string;
   appointments: PatientAppointment[];
@@ -1237,6 +1248,9 @@ export function PatientTabs({
   noteConfig: NoteFieldConfig;
   specialties: ClinicSpecialty[];
   customSpecialtyFields: CustomSpecialtyField[];
+  // El usuario tiene perfil profesional: solo así puede firmar notas clínicas.
+  isProfessional: boolean;
+  patientContact: PatientContact;
 }) {
   // Catálogo de campos = base estático + campos propios de la clínica (DB).
   const specialtyFieldDefs: SpecialtyFieldDef[] = [
@@ -1259,6 +1273,7 @@ export function PatientTabs({
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteSearch, setNoteSearch] = useState("");
   const [lightbox, setLightbox] = useState<{ url: string; alt: string } | null>(null);
+  const [sendNote, setSendNote] = useState<ClinicalNote | null>(null);
 
   function openImage(url: string, alt: string) {
     setLightbox({ url, alt });
@@ -1268,11 +1283,14 @@ export function PatientTabs({
     setTab(next);
     if (next !== "historia") setNoteSearch("");
   }
-  const canCreateNote = role === "admin" || role === "doctor";
+  // Las notas las firma un profesional (author_id): un admin sin perfil
+  // profesional puede leer la historia pero no crear notas ni dictar.
+  const canCreateNote = isProfessional;
+  const canManageHistory = role === "admin" || role === "doctor" || isProfessional;
   const canScheduleAppointment = role === "admin" || role === "reception" || role === "doctor";
   const showPersonales = isFieldEnabled(noteConfig, "antecedentes_personales");
   const showFamiliares = isFieldEnabled(noteConfig, "antecedentes_familiares");
-  const showAntecedentes = canCreateNote && (showPersonales || showFamiliares);
+  const showAntecedentes = canManageHistory && (showPersonales || showFamiliares);
 
   const filteredNotes = noteSearch.trim()
     ? notes.filter((n) => {
@@ -1409,17 +1427,24 @@ export function PatientTabs({
             <ClinicalProfileCard
               patientId={patientId}
               profile={clinicalProfile}
-              canEdit={canCreateNote}
+              canEdit={canManageHistory}
               showPersonales={showPersonales}
               showFamiliares={showFamiliares}
             />
           )}
 
-          {canCreateNote && notes.length > 0 && (
+          {!canCreateNote && canManageHistory && (
+            <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+              Las notas clínicas las registra un profesional. Tu cuenta es de administración:
+              podés leer la historia y enviar indicaciones, pero no crear notas.
+            </p>
+          )}
+
+          {canManageHistory && notes.length > 0 && (
             <AiSummaryPanel patientId={patientId} />
           )}
 
-          {showForm && (
+          {showForm && canCreateNote && (
             <NoteForm
               patientId={patientId}
               treatments={treatments}
@@ -1502,7 +1527,7 @@ export function PatientTabs({
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-wrap items-center gap-3">
                           <span className="text-[12.5px] font-medium text-slate-400">
                             {dateFormatter.format(new Date(note.created_at))}
                             {note.author_name && ` · ${note.author_name}`}
@@ -1516,6 +1541,16 @@ export function PatientTabs({
                             >
                               <Pencil className="h-[13px] w-[13px]" strokeWidth={1.9} />
                               Editar
+                            </button>
+                          )}
+                          {canManageHistory && (
+                            <button
+                              type="button"
+                              onClick={() => setSendNote(note)}
+                              className="flex items-center gap-[5px] text-[12.5px] font-semibold text-muted-foreground transition-colors hover:text-primary"
+                            >
+                              <Send className="h-[13px] w-[13px]" strokeWidth={1.9} />
+                              Enviar al paciente
                             </button>
                           )}
                         </div>
@@ -1539,6 +1574,13 @@ export function PatientTabs({
           )}
         </div>
       )}
+
+      <SendToPatientSheet
+        note={sendNote}
+        patient={patientContact}
+        open={sendNote !== null}
+        onOpenChange={(o) => { if (!o) setSendNote(null); }}
+      />
 
       {lightbox && (
         <Lightbox

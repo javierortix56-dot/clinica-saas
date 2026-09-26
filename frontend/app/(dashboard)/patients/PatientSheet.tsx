@@ -53,14 +53,36 @@ function Field({
   );
 }
 
+export interface CreatedPatient {
+  id: string;
+  full_name: string;
+  national_id: string;
+}
+
+// Separa lo que se venía buscando en DNI (solo dígitos) o nombre, para no
+// volver a escribirlo en el alta.
+export function prefillFromSearch(search: string): { full_name?: string; national_id?: string } {
+  const text = search.trim();
+  if (!text) return {};
+  const digits = text.replace(/[.\s-]/g, "");
+  return /^\d{6,}$/.test(digits) ? { national_id: digits } : { full_name: text };
+}
+
 export function PatientSheet({
   patient,
   open,
   onOpenChange,
+  initialValues,
+  onCreated,
 }: {
   patient?: Patient | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  // Alta: valores precargados (p. ej. lo que se buscó antes de crear).
+  initialValues?: { full_name?: string; national_id?: string };
+  // Alta desde otro flujo (p. ej. un turno): en vez de ir a la ficha, devuelve
+  // el paciente creado para seguir donde se estaba.
+  onCreated?: (created: CreatedPatient) => void;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -77,9 +99,19 @@ export function PatientSheet({
       }
       toast.success(patient ? "Paciente actualizado." : "Paciente creado.");
       onOpenChange(false);
-      // Alta nueva → directo a su ficha, desde donde se agenda el primer turno.
-      if (!patient && result.id) router.push(`/patients/${result.id}`);
-      else router.refresh();
+      if (!patient && result.id && onCreated) {
+        onCreated({
+          id: result.id,
+          full_name: String(formData.get("full_name") ?? "").trim(),
+          national_id: String(formData.get("national_id") ?? "").trim(),
+        });
+        router.refresh();
+      } else if (!patient && result.id) {
+        // Alta nueva → directo a su ficha, desde donde se agenda el primer turno.
+        router.push(`/patients/${result.id}`);
+      } else {
+        router.refresh();
+      }
     });
   }
 
@@ -89,19 +121,25 @@ export function PatientSheet({
         <SheetHeader className="border-b border-slate-200 p-6">
           <SheetTitle>{patient ? "Editar paciente" : "Nuevo paciente"}</SheetTitle>
         </SheetHeader>
-        <form ref={formRef} onSubmit={handleSubmit} className="space-y-5 p-6">
+        {/* key: al reabrir con otra búsqueda, los defaultValue se vuelven a leer. */}
+        <form
+          key={`${initialValues?.full_name ?? ""}|${initialValues?.national_id ?? ""}`}
+          ref={formRef}
+          onSubmit={handleSubmit}
+          className="space-y-5 p-6"
+        >
           {patient && <input type="hidden" name="id" value={patient.id} />}
           <Field
             label="Nombre completo"
             name="full_name"
-            defaultValue={patient?.full_name}
+            defaultValue={patient?.full_name ?? initialValues?.full_name}
             required
             placeholder="María González"
           />
           <Field
             label="DNI"
             name="national_id"
-            defaultValue={patient?.national_id}
+            defaultValue={patient?.national_id ?? initialValues?.national_id}
             required
             placeholder="12345678"
           />

@@ -8,7 +8,7 @@ import { Search, Plus, ChevronRight, Users, SearchX } from "lucide-react";
 import type { Patient } from "@clinica/shared";
 import { avatarColorOf, initialsOf } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/empty-state";
-import { PatientSheet } from "./PatientSheet";
+import { PatientSheet, prefillFromSearch } from "./PatientSheet";
 import { clinicDateFormatter } from "@/lib/dates";
 
 const dateFormatter = clinicDateFormatter({ dateStyle: "medium" });
@@ -156,7 +156,7 @@ export function PatientsClient({ patients }: { patients: Patient[] }) {
         </div>
       )}
 
-      <PatientSheet open={sheetOpen} onOpenChange={setSheetOpen} />
+      <PatientSheet open={sheetOpen} onOpenChange={setSheetOpen} initialValues={prefillFromSearch(search)} />
     </div>
   );
 }
